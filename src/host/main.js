@@ -221,14 +221,17 @@ function createCard(playerId) {
   const plus = h('button', { class: 'score-btn', onclick: () => room.adjustScore(playerId, +1) }, '+');
   const unlock = h('button', { class: 'pc-unlock', onclick: () => room.unlockPlayer(playerId) }, 'Desbloquear');
   const remove = h('button', { class: 'pc-remove', onclick: () => confirmRemove(playerId) }, '✕');
+  // Rejilla: avatar | nombre (todo el ancho que necesite) | puntos
+  //          avatar | estado · Desbloquear · ✕             | − +
   const root = h(
     'li',
     { class: 'player-card' },
     avatar,
-    h('div', { class: 'pc-main' }, name, h('div', { class: 'pc-meta' }, h('span', { class: 'dot' }), meta, unlock)),
-    h('div', { class: 'pc-score' }, minus, score, plus),
+    name,
+    h('div', { class: 'pc-meta' }, h('span', { class: 'dot' }), meta, unlock, remove),
+    score,
+    h('div', { class: 'pc-controls' }, minus, plus),
     place,
-    remove,
   );
   return { root, avatar, name, meta, place, score, minus, plus, unlock, remove };
 }

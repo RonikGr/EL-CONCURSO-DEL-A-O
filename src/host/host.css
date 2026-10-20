@@ -278,15 +278,18 @@ kbd {
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(21rem, 1fr));
   gap: 0.9rem;
 }
 
 .player-card {
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  align-items: center;
-  gap: 0.9rem;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    'avatar name score'
+    'avatar meta controls';
+  column-gap: 0.9rem;
+  row-gap: 0.25rem;
   padding: 0.8rem 1rem;
   background: var(--surface);
   border-radius: var(--radius);
@@ -303,6 +306,8 @@ kbd {
 }
 
 .avatar {
+  grid-area: avatar;
+  align-self: center;
   width: 3.6rem;
   height: 3.6rem;
   border-radius: 50%;
@@ -313,19 +318,24 @@ kbd {
   color: var(--pc-fg);
 }
 
-.pc-main {
-  min-width: 0;
-}
-
+/* El nombre entero: si no cabe en una línea, pasa a dos (16 caracteres como mucho). */
 .pc-name {
-  font-size: 1.6rem;
+  grid-area: name;
+  align-self: end;
+  font-size: 1.5rem;
   font-weight: 800;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .pc-meta {
+  grid-area: meta;
+  align-self: start;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -374,40 +384,44 @@ kbd {
   font-weight: 900;
 }
 
-.pc-score {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
 .score {
+  grid-area: score;
+  align-self: end;
+  justify-self: center;
   min-width: 2.2ch;
   text-align: center;
-  font-size: 2.6rem;
+  font-size: 2.8rem;
   font-weight: 900;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
+.pc-controls {
+  grid-area: controls;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
 .score-btn {
-  width: 2.2rem;
-  height: 2.2rem;
+  width: 1.9rem;
+  height: 1.9rem;
   border-radius: 50%;
   border: 2px solid var(--border);
   background: var(--surface-2);
-  font-size: 1.3rem;
+  font-size: 1.1rem;
   font-weight: 900;
   line-height: 1;
 }
 
 .pc-remove {
-  position: absolute;
-  top: 0.25rem;
-  right: 0.35rem;
+  margin-left: auto;
   border: 0;
   background: none;
   color: var(--muted);
   font-size: 0.9rem;
-  padding: 0.2rem 0.35rem;
+  padding: 0.2rem 0.3rem;
   opacity: 0;
 }
 
