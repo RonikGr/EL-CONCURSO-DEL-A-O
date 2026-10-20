@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <!-- Sin zoom: el doble toque rápido en el pulsador no debe ampliar la página. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#0b0d17" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <title>Concurso del año</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔴</text></svg>" />
+  </head>
+  <body class="player">
+    <section id="screen-join" class="screen join" hidden>
+      <h1>Concurso del año</h1>
+      <form id="join-form" novalidate>
+        <label class="field">
+          <span>Código de sala</span>
+          <input id="code" class="code-input" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="6" placeholder="ABCD" />
+        </label>
+        <div id="join-picker"></div>
+        <p id="join-error" class="form-error" role="alert"></p>
+        <button type="submit" class="btn primary big">Entrar</button>
+      </form>
+    </section>
+
+    <section id="screen-connecting" class="screen center" hidden>
+      <div class="spinner" aria-hidden="true"></div>
+      <p id="connecting-text" class="lead">Conectando…</p>
+      <button id="connecting-cancel" class="btn" type="button">Cancelar</button>
+    </section>
+
+    <section id="screen-game" class="screen game" hidden>
+      <header class="me">
+        <div id="me-avatar" class="avatar emoji" aria-hidden="true"></div>
+        <div class="me-text">
+          <div id="me-name" class="me-name"></div>
+          <div id="room-line" class="room-line"></div>
+        </div>
+        <div class="me-score"><span id="me-score">0</span><small>puntos</small></div>
+        <button id="edit-profile" class="btn small" type="button">Cambiar</button>
+      </header>
+      <div id="net-banner" class="net-banner" role="status" hidden></div>
+      <button id="buzzer" class="buzzer" type="button" data-state="wait">
+        <span id="buzzer-label" class="buzzer-label">Espera</span>
+        <span id="buzzer-sub" class="buzzer-sub"></span>
+      </button>
+    </section>
+
+    <section id="screen-message" class="screen center" hidden>
+      <h2 id="message-title"></h2>
+      <p id="message-text" class="lead"></p>
+      <button id="message-action" class="btn primary big" type="button">Volver</button>
+    </section>
+
+    <dialog id="profile-dialog" class="sheet">
+      <form id="profile-form" method="dialog" novalidate>
+        <h2>Tu perfil</h2>
+        <div id="edit-picker"></div>
+        <div class="sheet-actions">
+          <button value="cancel" class="btn" type="submit">Cancelar</button>
+          <button value="save" class="btn primary" type="submit">Guardar</button>
+        </div>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" role="status" hidden></div>
+
+    <script type="module" src="./src/player/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,334 @@
+@import '../shared/base.css';
+
+/* Pensado para leerse a 3 m: todo escala con el ancho de la pantalla (≈22 px en una tele 1080p). */
+html {
+  font-size: clamp(14px, 1.15vw, 30px);
+}
+
+.host-shell {
+  display: grid;
+  grid-template-rows: auto auto 1fr auto;
+  min-height: 100vh;
+  padding: 1.25rem 2rem;
+  gap: 1rem;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.topbar h1 {
+  margin: 0;
+  font-size: 2rem;
+  letter-spacing: 0.02em;
+}
+
+.net-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  padding: 0.35em 0.9em;
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-weight: 700;
+}
+
+.net-pill::before {
+  content: '';
+  width: 0.7em;
+  height: 0.7em;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.net-pill[data-state='ready']::before {
+  background: var(--ok);
+}
+.net-pill[data-state='id-busy']::before,
+.net-pill[data-state='signaling-lost']::before,
+.net-pill[data-state='connecting']::before {
+  background: var(--warn);
+}
+.net-pill[data-state='fatal']::before {
+  background: var(--danger);
+}
+
+.banners:empty {
+  display: none;
+}
+
+.banner {
+  padding: 0.8rem 1.2rem;
+  border-radius: var(--radius);
+  border: 2px solid var(--warn);
+  background: color-mix(in srgb, var(--warn) 14%, var(--surface));
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.banner.error {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 16%, var(--surface));
+}
+
+.banner + .banner {
+  margin-top: 0.6rem;
+}
+
+/* --- Sala --- */
+.lobby {
+  display: grid;
+  grid-template-columns: minmax(18rem, 26rem) 1fr;
+  gap: 2rem;
+  align-items: start;
+}
+
+.join-panel {
+  background: var(--surface);
+  border-radius: calc(var(--radius) * 1.5);
+  padding: 1.5rem;
+  text-align: center;
+  position: sticky;
+  top: 1rem;
+}
+
+.join-label {
+  margin: 0 0 1rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+.qr {
+  background: #ffffff;
+  border-radius: var(--radius);
+  padding: 0.75rem;
+  aspect-ratio: 1;
+  width: 100%;
+}
+
+.qr svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.join-url {
+  margin: 1rem 0 0.25rem;
+  font-size: 1.15rem;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.join-code {
+  margin: 0;
+  font-size: 6rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+.players-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+
+.players-head h2 {
+  margin: 0;
+  font-size: 2rem;
+}
+
+.players-count {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.ready-hint {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--warn);
+}
+
+.ready-hint.ok {
+  color: var(--ok);
+}
+
+.empty {
+  padding: 3rem 1rem;
+  text-align: center;
+  font-size: 1.5rem;
+  color: var(--muted);
+  border: 3px dashed var(--border);
+  border-radius: calc(var(--radius) * 1.5);
+}
+
+.player-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(19rem, 1fr));
+  gap: 0.9rem;
+}
+
+.player-card {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.8rem 1rem;
+  background: var(--surface);
+  border-radius: var(--radius);
+  border-left: 0.6rem solid var(--pc);
+  position: relative;
+}
+
+.player-card.offline {
+  opacity: 0.5;
+}
+
+.avatar {
+  width: 3.6rem;
+  height: 3.6rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 2.2rem;
+  background: var(--pc);
+  color: var(--pc-fg);
+}
+
+.pc-name {
+  font-size: 1.6rem;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pc-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+  color: var(--muted);
+  font-size: 1rem;
+}
+
+.pc-meta .dot {
+  width: 0.7em;
+  height: 0.7em;
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+.offline .pc-meta .dot {
+  background: var(--danger);
+}
+
+.pc-score {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.score {
+  min-width: 2.2ch;
+  text-align: center;
+  font-size: 2.6rem;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.score-btn {
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--surface-2);
+  font-size: 1.3rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.pc-remove {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.35rem;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 0.9rem;
+  padding: 0.2rem 0.35rem;
+  opacity: 0;
+}
+
+.player-card:hover .pc-remove,
+.pc-remove:focus-visible {
+  opacity: 1;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.toolbar .hint {
+  margin-right: auto;
+  color: var(--muted);
+}
+
+/* --- Recuperar sala --- */
+.recover {
+  min-height: 100vh;
+  display: grid;
+  place-content: center;
+  gap: 1.5rem;
+  text-align: center;
+  padding: 2rem;
+}
+
+.recover h1 {
+  margin: 0;
+  font-size: 3rem;
+}
+
+.recover .lead {
+  margin: 0;
+  font-size: 1.6rem;
+}
+
+.recover .actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: center;
+  font-size: 1.4rem;
+}
+
+.code-inline {
+  color: var(--accent);
+  letter-spacing: 0.08em;
+}
+
+@media (max-width: 900px) {
+  .lobby {
+    grid-template-columns: 1fr;
+  }
+  .join-panel {
+    position: static;
+  }
+}

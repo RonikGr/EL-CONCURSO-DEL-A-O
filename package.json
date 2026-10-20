@@ -1,0 +1,27 @@
+{
+  "name": "concurso-pulsador",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Pulsador de concurso con móviles (estilo Kahoot) sobre WebRTC, 100 % estático.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "vite --host",
+    "dev:http": "vite --mode http --port 5174",
+    "build": "vite build",
+    "preview": "vite preview --host",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "peerjs": "1.5.5",
+    "qrcode": "1.5.4"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-basic-ssl": "2.3.0",
+    "vite": "8.3.4",
+    "vitest": "5.0.5"
+  }
+}
