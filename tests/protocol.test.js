@@ -22,6 +22,13 @@ describe('protocolo', () => {
     expect(msg.color).toBe('');
   });
 
+  it('valida pulsaciones', () => {
+    expect(parsePlayerMessage({ t: MSG.BUZZ, seq: 1, epoch: 4, x: 1 })).toEqual({ t: 'buzz', seq: 1, epoch: 4 });
+    expect(parsePlayerMessage({ t: MSG.BUZZ, seq: 1 })).toBeNull();
+    expect(parseHostMessage({ t: MSG.BUZZ_ACK, seq: 1, result: 'ok' })).not.toBeNull();
+    expect(parseHostMessage({ t: MSG.BUZZ_ACK, seq: 1 })).toBeNull();
+  });
+
   it('valida mensajes del presentador', () => {
     expect(parseHostMessage({ t: MSG.HB, h0: 12.5 })).not.toBeNull();
     expect(parseHostMessage({ t: MSG.STATE })).toBeNull();

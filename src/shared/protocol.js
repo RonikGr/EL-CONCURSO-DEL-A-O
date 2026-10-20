@@ -6,10 +6,12 @@ export const MSG = {
   HELLO: 'hello',
   PROFILE: 'profile',
   HB_ACK: 'hbAck',
+  BUZZ: 'buzz',
   // presentador → jugador
   WELCOME: 'welcome',
   STATE: 'state',
   HB: 'hb',
+  BUZZ_ACK: 'buzzAck',
   ERROR: 'error',
 };
 
@@ -17,6 +19,7 @@ export const ERROR_CODE = {
   ROOM_FULL: 'room-full',
   VERSION: 'version',
   REMOVED: 'removed',
+  REPLACED: 'replaced',
 };
 
 const isStr = (v, max) => typeof v === 'string' && v.length > 0 && v.length <= max;
@@ -48,6 +51,8 @@ export function parsePlayerMessage(msg) {
       };
     case MSG.HB_ACK:
       return isNum(msg.h0) ? { t: msg.t, h0: msg.h0 } : null;
+    case MSG.BUZZ:
+      return isNum(msg.seq) && isNum(msg.epoch) ? { t: msg.t, seq: msg.seq, epoch: msg.epoch } : null;
     default:
       return null;
   }
@@ -64,6 +69,8 @@ export function parseHostMessage(msg) {
       return msg.you && typeof msg.you === 'object' ? msg : null;
     case MSG.ERROR:
       return typeof msg.code === 'string' ? msg : null;
+    case MSG.BUZZ_ACK:
+      return isNum(msg.seq) && typeof msg.result === 'string' ? msg : null;
     default:
       return null;
   }

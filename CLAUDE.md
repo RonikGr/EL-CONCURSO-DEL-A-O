@@ -11,6 +11,8 @@ servidor de enlace público (`0.peerjs.com`). **El presentador es la autoridad**
 - `npm run build` — genera `dist/`. El despliegue lo hace `.github/workflows/deploy.yml` al hacer push a `main`.
 
 En este Windows, Node y Git se instalaron con winget; si una terminal antigua no los encuentra, refrescar `PATH`.
+Ojo con PowerShell 5.1: `Get-Content`/`Set-Content` sin `-Encoding` rompen los acentos (leen ANSI, escriben BOM). Editar con las herramientas de archivo.
+`npm run dev:http` (puerto 5174, sin certificado) sirve para probar en el navegador del portátil.
 
 ## Decisiones
 
@@ -39,11 +41,25 @@ En este Windows, Node y Git se instalaron con winget; si una terminal antigua no
 ### Protocolo (JSON por DataConnection fiable, campo `t` = tipo)
 
 Jugador → presentador: `hello {v, playerId, name, color, icon}`, `profile {name, color, icon}`, `hbAck {h0}`,
-(fase 3) `sync {id, t0}`, `syncReport {offset, rtt, err}`, `buzz {seq, qid, tLocal, offset, err}`.
+`buzz {seq, epoch}` (fase 3 añadirá `tLocal, offset, err`), (fase 3) `sync {id, t0}`, `syncReport {offset, rtt, err}`.
 
-Presentador → jugador: `welcome {playerId, name, color, icon, score, adjusted}`, `state {...}` (foto completa y
-personalizada en cada cambio, para que reconectar sea trivial), `hb {h0}` cada 2 s, `error {code, message}`,
-(fase 3) `syncReply {id, t0, t1, t2}`, `buzzAck {seq, result}`.
+Presentador → jugador: `welcome {you, adjusted}`, `state {room, playerCount, minPlayers, taken, you, game, winner}`
+(foto completa y personalizada en cada cambio, para que reconectar sea trivial; `game` = `playerView()`),
+`hb {h0}` cada 2 s, `buzzAck {seq, result}`, `error {code, message}` (`room-full`, `version`, `removed`, `replaced`),
+(fase 3) `syncReply {id, t0, t1, t2}`.
+
+- Mismo `playerId` desde otra conexión (otra pestaña): la vieja recibe `replaced` y deja de reconectar; si no, se echarían mutuamente.
+- `?perfil=X` en la página del jugador usa otra identidad (clave de localStorage distinta): para probar varios jugadores en un navegador.
+
+### Motor de preguntas (`src/core/game.js`)
+
+Fases `idle` ("Pregunta en el aire") → `open` (apertura programada en `tOpen`) → `result` (ganador; `judged` = correct) o,
+tras "Fallo" sin nadie más, `closed`. "Fallo" bloquea al ganador y abre una ronda nueva para el resto (todos vuelven a pulsar).
+`epoch` crece con cada apertura, reinicio (R) y pregunta nueva; el móvil manda la época que veía al pulsar. Una pulsación
+de época vieja se descarta (`stale`, sin bloquear) salvo que caiga dentro del turno abierto ahora (`tPress ≥ tOpen`).
+El móvil envía también en "Espera": decide el presentador (antes de tiempo → bloqueo si la opción está activa).
+Fase 2: `tPress = tArrival` (orden de llegada); la fase 3 solo cambia cómo se calcula `tPress` en `peerSource.js`.
+Teclas de la tele: Espacio (abrir / siguiente), A (acierto), F (fallo), R (reiniciar pregunta).
 
 - Latido: el presentador manda `hb` cada 2 s; RTT = mediana de los últimos 5. Sin respuesta en 6 s → desconectado.
   El jugador, si no recibe `hb` en 6 s, cierra y reconecta.
@@ -64,8 +80,8 @@ orden por `tHost`, desempate por llegada y `playerId`; "casi empate" < 30 ms. La
 
 ## Fases
 
-1. Conexión, sala, QR, lista de jugadores, reconexión, persistencia. ← en curso
-2. Flujo del pulsador (orden por llegada).
+1. Conexión, sala, QR, lista de jugadores, reconexión, persistencia. ✔
+2. Flujo del pulsador (orden por llegada). ✔
 3. Sincronización de tiempos y modo depuración.
 4. Pulido visual, sonido, vibración, wake lock.
 

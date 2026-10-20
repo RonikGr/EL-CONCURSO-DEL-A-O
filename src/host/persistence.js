@@ -13,8 +13,8 @@ export function loadSavedRoom(nowMs = Date.now()) {
   return saved;
 }
 
-export function saveRoom({ code, players, settings }) {
-  saveJSON(KEY, { code, players, settings, savedAt: Date.now() });
+export function saveRoom({ code, players, settings, qid }) {
+  saveJSON(KEY, { code, players, settings, qid, savedAt: Date.now() });
 }
 
 export function clearSavedRoom() {

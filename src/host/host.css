@@ -81,33 +81,132 @@ html {
   margin-top: 0.6rem;
 }
 
-/* --- Sala --- */
-.lobby {
+kbd {
+  display: inline-block;
+  padding: 0.05em 0.45em;
+  border-radius: 0.35em;
+  border: 1px solid currentColor;
+  font: inherit;
+  font-size: 0.7em;
+  font-weight: 700;
+  opacity: 0.75;
+  vertical-align: middle;
+}
+
+.btn.huge {
+  font-size: 1.5rem;
+  min-height: 3.6rem;
+  padding: 0.5em 1.4em;
+}
+
+.btn.ok {
+  background: var(--ok);
+  border-color: var(--ok);
+  color: #06210f;
+}
+
+.btn.bad {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #ffffff;
+}
+
+/* --- Tablero --- */
+.board {
   display: grid;
-  grid-template-columns: minmax(18rem, 26rem) 1fr;
-  gap: 2rem;
+  grid-template-columns: 1fr minmax(16rem, 22rem);
+  grid-template-areas:
+    'stage join'
+    'players join';
+  grid-template-rows: auto 1fr;
+  gap: 1.5rem 2rem;
   align-items: start;
 }
 
+.stage {
+  grid-area: stage;
+  display: grid;
+  justify-items: center;
+  gap: 0.75rem;
+  padding: 2rem 1.5rem;
+  border-radius: calc(var(--radius) * 1.5);
+  background: var(--surface);
+  text-align: center;
+  border: 4px solid transparent;
+  transition: background-color 150ms;
+}
+
+.stage[data-phase='ready'] {
+  border-color: var(--warn);
+}
+
+.stage[data-phase='open'] {
+  background: color-mix(in srgb, var(--ok) 22%, var(--surface));
+  border-color: var(--ok);
+}
+
+.stage-q {
+  margin: 0;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.stage-title {
+  margin: 0;
+  font-size: 5rem;
+  font-weight: 900;
+  line-height: 1.05;
+}
+
+.stage[data-phase='open'] .stage-title {
+  color: var(--ok);
+}
+
+.stage-timer {
+  margin: 0;
+  font-size: 3.5rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.stage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-top: 0.5rem;
+}
+
+.stage-hint {
+  margin: 0;
+  color: var(--warn);
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
 .join-panel {
+  grid-area: join;
   background: var(--surface);
   border-radius: calc(var(--radius) * 1.5);
-  padding: 1.5rem;
+  padding: 1.25rem;
   text-align: center;
   position: sticky;
   top: 1rem;
 }
 
 .join-label {
-  margin: 0 0 1rem;
-  font-size: 1.5rem;
+  margin: 0 0 0.75rem;
+  font-size: 1.3rem;
   font-weight: 700;
 }
 
 .qr {
   background: #ffffff;
   border-radius: var(--radius);
-  padding: 0.75rem;
+  padding: 0.6rem;
   aspect-ratio: 1;
   width: 100%;
 }
@@ -119,20 +218,24 @@ html {
 }
 
 .join-url {
-  margin: 1rem 0 0.25rem;
-  font-size: 1.15rem;
+  margin: 0.8rem 0 0.2rem;
+  font-size: 1rem;
   color: var(--muted);
   word-break: break-all;
 }
 
 .join-code {
   margin: 0;
-  font-size: 6rem;
+  font-size: 4.5rem;
   font-weight: 900;
   letter-spacing: 0.12em;
   line-height: 1.1;
   font-variant-numeric: tabular-nums;
   color: var(--accent);
+}
+
+.players-panel {
+  grid-area: players;
 }
 
 .players-head {
@@ -159,10 +262,6 @@ html {
   font-size: 1.25rem;
   font-weight: 700;
   color: var(--warn);
-}
-
-.ready-hint.ok {
-  color: var(--ok);
 }
 
 .empty {
@@ -199,6 +298,10 @@ html {
   opacity: 0.5;
 }
 
+.player-card.locked {
+  background: color-mix(in srgb, var(--danger) 18%, var(--surface));
+}
+
 .avatar {
   width: 3.6rem;
   height: 3.6rem;
@@ -208,6 +311,10 @@ html {
   font-size: 2.2rem;
   background: var(--pc);
   color: var(--pc-fg);
+}
+
+.pc-main {
+  min-width: 0;
 }
 
 .pc-name {
@@ -220,6 +327,7 @@ html {
 
 .pc-meta {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 0.4em;
   color: var(--muted);
@@ -233,8 +341,37 @@ html {
   background: var(--ok);
 }
 
-.offline .pc-meta .dot {
+.offline .pc-meta .dot,
+.locked .pc-meta .dot {
   background: var(--danger);
+}
+
+.locked .pc-meta {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.pc-unlock {
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: 0.5em;
+  font-size: 0.85rem;
+  padding: 0.1em 0.5em;
+}
+
+.pc-place {
+  position: absolute;
+  top: -0.6rem;
+  left: -0.6rem;
+  min-width: 2.2rem;
+  height: 2.2rem;
+  padding: 0 0.3rem;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 900;
 }
 
 .pc-score {
@@ -292,6 +429,184 @@ html {
   color: var(--muted);
 }
 
+/* --- Ganador a pantalla completa --- */
+.result-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 2rem;
+  background: var(--win);
+  color: var(--win-fg);
+  text-align: center;
+  overflow: auto;
+  animation: pop 220ms ease-out;
+}
+
+@keyframes pop {
+  from {
+    transform: scale(1.04);
+    opacity: 0.4;
+  }
+}
+
+.result-q {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.8;
+}
+
+.result-avatar {
+  font-size: 9rem;
+  filter: drop-shadow(0 0.4rem 0.8rem rgb(0 0 0 / 0.35));
+}
+
+.result-name {
+  margin: 0;
+  font-size: 7rem;
+  font-weight: 900;
+  line-height: 1;
+  overflow-wrap: anywhere;
+}
+
+.result-time {
+  margin: 0;
+  font-size: 3rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.result-verdict {
+  margin: 0;
+  padding: 0.2em 0.8em;
+  border-radius: 999px;
+  background: var(--ok);
+  color: #06210f;
+  font-size: 2.5rem;
+  font-weight: 900;
+}
+
+.followers {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius);
+  background: rgb(0 0 0 / 0.55);
+  color: #ffffff;
+  display: grid;
+  gap: 0.35rem;
+  min-width: min(40rem, 100%);
+  font-size: 1.5rem;
+}
+
+.followers li {
+  display: grid;
+  grid-template-columns: 2.5em 1.5em 1fr auto auto;
+  align-items: center;
+  gap: 0.6rem;
+  text-align: left;
+  border-left: 0.35em solid var(--fc);
+  padding-left: 0.5rem;
+}
+
+.f-place {
+  font-weight: 900;
+}
+
+.f-name {
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.f-delta {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.f-tie {
+  padding: 0.05em 0.5em;
+  border-radius: 999px;
+  background: var(--warn);
+  color: #111111;
+  font-size: 0.8em;
+  font-weight: 800;
+}
+
+.result-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  justify-content: center;
+  margin-top: 1rem;
+  color: var(--text);
+}
+
+/* --- Ajustes --- */
+.settings-dialog {
+  width: min(40rem, calc(100vw - 2rem));
+  border: 0;
+  border-radius: calc(var(--radius) * 1.5);
+  background: var(--surface);
+  color: var(--text);
+  padding: 1.5rem;
+}
+
+.settings-dialog::backdrop {
+  background: rgb(0 0 0 / 0.7);
+}
+
+.settings-dialog h2 {
+  margin: 0 0 1rem;
+}
+
+.setting {
+  display: grid;
+  grid-template-columns: 1fr 7rem;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.setting.checkbox {
+  grid-template-columns: 1fr auto;
+}
+
+.setting-label small {
+  display: block;
+  color: var(--muted);
+  font-size: 0.85em;
+}
+
+.setting input[type='number'] {
+  padding: 0.4rem 0.6rem;
+  border-radius: 0.5rem;
+  border: 2px solid var(--border);
+  background: var(--surface-2);
+  text-align: right;
+}
+
+.setting input[type='checkbox'] {
+  width: 1.6rem;
+  height: 1.6rem;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+
 /* --- Recuperar sala --- */
 .recover {
   min-height: 100vh;
@@ -325,8 +640,9 @@ html {
 }
 
 @media (max-width: 900px) {
-  .lobby {
+  .board {
     grid-template-columns: 1fr;
+    grid-template-areas: 'stage' 'join' 'players';
   }
   .join-panel {
     position: static;

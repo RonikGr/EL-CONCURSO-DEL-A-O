@@ -20,6 +20,7 @@ export class PeerSource {
   /**
    * @param handlers.onHello(playerId, msg) → {ok: true} | {ok: false, error: {code, message}}
    * @param handlers.onProfile(playerId, msg)
+   * @param handlers.onBuzz(playerId, {seq, epoch, tPress, tArrival}) — tiempos en el reloj del presentador
    * @param handlers.onLeave(playerId)
    * @param handlers.onRtt(playerId, ms)
    * @param handlers.onStatus({state, message})
@@ -63,9 +64,10 @@ export class PeerSource {
   }
 
   #onData(connId, data) {
+    const tArrival = now(); // lo primero: es la hora de llegada de una posible pulsación
     const entry = this.#conns.get(connId);
     if (!entry) return;
-    entry.lastSeen = now();
+    entry.lastSeen = tArrival;
     const msg = parsePlayerMessage(data);
     if (!msg) return;
 
@@ -73,8 +75,12 @@ export class PeerSource {
     if (!entry.playerId) return; // nada antes del hello
 
     switch (msg.t) {
+      case MSG.BUZZ:
+        // Fase 2: sin sincronización de relojes, la pulsación cuenta en el instante en que llega.
+        this.handlers.onBuzz?.(entry.playerId, { ...msg, tPress: tArrival, tArrival });
+        break;
       case MSG.HB_ACK:
-        entry.rtt.add(now() - msg.h0);
+        entry.rtt.add(tArrival - msg.h0);
         this.handlers.onRtt?.(entry.playerId, entry.rtt.median());
         break;
       case MSG.PROFILE:
@@ -90,12 +96,15 @@ export class PeerSource {
         message: 'La versión de la página no coincide con la del presentador. Recarga la página.',
       });
     }
-    // Mismo jugador por una conexión nueva (p. ej. el móvil reconectó antes de que caducara la vieja).
+    // Mismo jugador por una conexión nueva: o el móvil reconectó antes de que caducara la vieja, o abrió
+    // otra pestaña. Se avisa a la vieja para que no intente reconectar (si no, se echarían mutuamente sin fin).
     const previous = this.#connOf.get(msg.playerId);
     if (previous && previous !== connId) {
       this.#unbind(previous);
-      this.#conns.delete(previous);
-      this.#network.close(previous);
+      this.#sendErrorAndClose(previous, {
+        code: ERROR_CODE.REPLACED,
+        message: 'Has entrado desde otra pestaña o ventana. Solo una puede jugar a la vez.',
+      });
     }
     entry.playerId = msg.playerId;
     this.#connOf.set(msg.playerId, connId);

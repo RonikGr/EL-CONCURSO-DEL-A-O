@@ -28,3 +28,10 @@ export function clear(el) {
   el.replaceChildren();
   return el;
 }
+
+/** Como replaceChildren, pero ignorando null/false y aplanando arrays (igual que h). */
+export function fill(el, ...children) {
+  el.replaceChildren();
+  append(el, children);
+  return el;
+}

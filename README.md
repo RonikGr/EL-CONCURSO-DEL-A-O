@@ -4,7 +4,27 @@ Pulsador de concurso con móviles, estilo Kahoot. La pantalla del presentador se
 conectado por HDMI); cada jugador usa su móvil como pulsador, sin instalar nada. Web 100 % estática
 (GitHub Pages) con WebRTC mediante [PeerJS](https://peerjs.com/).
 
-> Estado: **fase 1** — sala, QR, lista de jugadores, marcador manual y reconexión. El flujo de preguntas llega en la fase 2.
+> Estado: **fase 2** — sala, QR, jugadores, reconexión y flujo completo del pulsador (gana quien llega antes).
+> La sincronización de relojes (gana quien pulsó antes de verdad) llega en la fase 3.
+
+## Cómo se juega
+
+1. Abre `host.html` en el portátil conectado a la tele y pon la ventana a pantalla completa.
+2. Los jugadores escanean el QR y eligen nombre, color e icono (mínimo 2, máximo 20).
+3. Lee la pregunta en voz alta y pulsa **Espacio** («Abrir turno»). A los 300 ms la tele y los móviles pasan a
+   **¡Pulsad!** a la vez.
+4. La primera pulsación llena la tele con el color y el nombre del ganador, su tiempo y el orden de los siguientes
+   (con «casi empate» si la diferencia es menor de 30 ms).
+5. Decide:
+   - **A** — Acierto: suma los puntos al ganador.
+   - **F** — Fallo: bloquea a quien falló y reabre el turno para los demás (tienen que volver a pulsar).
+   - **Espacio** — Siguiente pregunta.
+   - **R** — Reiniciar la pregunta (también quita los bloqueos).
+6. Quien pulse antes de abrir el turno queda **bloqueado** en esa pregunta (se puede desactivar en **Ajustes** o
+   perdonar con «Desbloquear» en su tarjeta).
+
+En **Ajustes** se cambian los puntos por acierto y por fallo (negativos para restar), el umbral de casi empate,
+la ventana de decisión y la apertura programada. Los botones +/− de cada tarjeta corrigen el marcador a mano.
 
 ## Requisitos
 
@@ -42,9 +62,10 @@ desde otro dispositivo.
 
 Si Windows pregunta por el firewall al arrancar Vite, permite el acceso en **redes privadas**.
 
-Para probar sin móvil: abre `host.html` en una pestaña y la dirección del QR en otra (o en otro navegador para
-tener otro jugador distinto; dos pestañas del mismo navegador comparten jugador porque comparten localStorage).
-Si solo vas a usar el portátil, `npm run dev:http` arranca sin certificado en `http://localhost:5174/host.html`.
+Para probar sin móvil: abre `host.html` en una pestaña y la dirección del QR en otras. Dos pestañas del mismo
+navegador serían el mismo jugador (comparten localStorage), así que añade `&perfil=2`, `&perfil=3`… a la dirección
+de cada pestaña de jugador. Si solo vas a usar el portátil, `npm run dev:http` arranca sin certificado en
+`http://localhost:5174/host.html`.
 
 ### Tests
 
@@ -53,6 +74,13 @@ npm test
 ```
 
 Cubren la lógica que no depende de la red (`src/core`, `src/shared`).
+
+### Qué probar en la fase 2
+
+- Abrir turno, pulsar con dos móviles casi a la vez y ver el orden y el «casi empate».
+- Fallo → rebote: el que falló queda bloqueado y los demás vuelven a pulsar.
+- Pulsar en «Pregunta en el aire»: queda bloqueado esa pregunta.
+- Quitar la wifi a un móvil en mitad de una pregunta y devolvérsela.
 
 ### Qué probar en la fase 1
 

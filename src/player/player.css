@@ -259,6 +259,63 @@ body.player {
   transform: scale(0.97);
 }
 
+/* Estados del pulsador: el color dice lo que pasa antes de leer el texto. */
+.buzzer[data-state='ready'] {
+  border-style: dashed;
+}
+
+.buzzer[data-state='go'] {
+  background: var(--me);
+  color: var(--me-fg);
+  border-color: var(--text);
+  animation: throb 0.9s ease-in-out infinite;
+}
+
+.buzzer[data-state='go'] .buzzer-sub,
+.buzzer[data-state='first'] .buzzer-sub {
+  color: inherit;
+  opacity: 0.85;
+}
+
+@keyframes throb {
+  50% {
+    box-shadow: 0 0 0 0.6rem color-mix(in srgb, var(--me) 45%, transparent);
+  }
+}
+
+.buzzer[data-state='pressed'] {
+  background: color-mix(in srgb, var(--me) 35%, var(--surface));
+}
+
+.buzzer[data-state='first'] {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+
+.buzzer[data-state='placed'] {
+  background: var(--surface-2);
+}
+
+.buzzer[data-state='blocked'] {
+  background: color-mix(in srgb, var(--danger) 35%, var(--surface));
+  border-color: var(--danger);
+}
+
+.buzzer[data-state='first'] .buzzer-label,
+.buzzer[data-state='placed'] .buzzer-label,
+.buzzer[data-state='missed'] .buzzer-label,
+.buzzer[data-state='closed'] .buzzer-label {
+  font-size: clamp(2rem, 10vw, 4.5rem);
+  padding: 0 0.5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .buzzer[data-state='go'] {
+    animation: none;
+  }
+}
+
 .buzzer-label {
   font-size: clamp(2.5rem, 14vw, 6rem);
   font-weight: 900;
