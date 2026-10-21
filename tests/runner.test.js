@@ -10,7 +10,7 @@ function show() {
     teams: [],
     sections: [
       { id: 's1', name: 'Uno', type: 'pulsador', points: [1], items: [q(1), q(2)] },
-      { id: 's2', name: 'Dos', type: 'libre', points: [3], items: [{ title: 'Plancha', description: '', tool: 'stopwatch', teams: false, points: 3 }] },
+      { id: 's2', name: 'Dos', type: 'test', points: [1], items: [] }, // sin filas: no se puede jugar
       { id: 's3', name: 'Tres', type: 'pulsador', points: [1], items: [] },
     ],
   };
@@ -33,7 +33,7 @@ describe('recorrido del concurso', () => {
       [SCREEN.PLAY, 0, 0],
       [SCREEN.PLAY, 0, 1],
       [SCREEN.SCOREBOARD, 0, 0],
-      [SCREEN.INTRO, 1, 0], // Libre aún no se puede jugar: se ve la intro…
+      [SCREEN.INTRO, 1, 0], // Test sin filas: se ve la intro…
       [SCREEN.INTRO, 2, 0], // …y se salta
       [SCREEN.PLAY, 2, 0], // pulsador sin lista: improvisado
       [SCREEN.PLAY, 2, 1],

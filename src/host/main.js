@@ -12,6 +12,7 @@ import { HostRoom } from './room.js';
 import { clearSavedRoom, loadSavedRoom } from './persistence.js';
 import { createStage } from './stage.js';
 import { createAnswerStage } from './answerStage.js';
+import { createFreeStage } from './freeStage.js';
 import { APHASE } from '../core/answers.js';
 import { coverScreen, finalScreen, introScreen, scoreboardScreen, setupScreen } from './screens.js';
 import { openSettingsDialog } from './settingsDialog.js';
@@ -25,6 +26,7 @@ const app = $('#app');
 let room = null;
 let stage = null;
 let answerStage = null;
+let freeStage = null;
 let qrs = null; // {join, joinMini, control}
 let lastScreenSignature = null;
 const debug = createDebugPanel();
@@ -121,6 +123,7 @@ function renderShell() {
   lastScreenSignature = null;
   stage = createStage();
   answerStage = createAnswerStage();
+  freeStage = createFreeStage();
 
   clear(app).append(
     h(
@@ -250,6 +253,11 @@ function renderScreen(view) {
     case SCREEN.INTRO:
       return fill(screen, introScreen(view));
     case SCREEN.PLAY:
+      if (view.free) {
+        freeStage.render(view);
+        if (freeStage.root.parentNode !== screen) fill(screen, freeStage.root);
+        return;
+      }
       if (view.answer) {
         answerStage.render(view);
         if (answerStage.root.parentNode !== screen) fill(screen, answerStage.root);
@@ -436,7 +444,7 @@ document.addEventListener('keydown', (e) => {
       actions.showAnswer();
       break;
     case 'KeyR':
-      if (phase || answerPhase) actions.restart();
+      if (phase || answerPhase || room.inFreePlay) actions.restart();
       break;
     case 'KeyA':
       if (phase === PHASE.RESULT) actions.correct();

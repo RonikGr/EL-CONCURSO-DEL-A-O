@@ -186,6 +186,7 @@ function gameTab() {
     case 'intro':
       return [sectionCard(), bigNext(view.playable ? 'Empezar sección →' : 'Saltar esta sección →'), navRow()];
     case 'play':
+      if (view.free) return freePanel();
       if (view.answer) return answerPanel();
       return view.section?.type === 'pulsador' ? buzzerPanel() : [sectionCard(), bigNext('Siguiente →'), navRow()];
     case 'scoreboard':
@@ -323,6 +324,152 @@ function buzzerPanel() {
     h('div', { class: 'c-row secondary' }, btn('Saltar pregunta', () => cmd('nextItem')), btn('Terminar sección', () => cmd('endSection'))),
     navRow(),
   ];
+}
+
+/** Ganadores marcados en el mando antes de dar los puntos (por prueba). */
+let freeWinners = { roundId: null, ids: new Set() };
+
+/** Sección Libre ("Fit o Fat"): participantes, cronómetro o contador, y ganadores. */
+function freePanel() {
+  const f = view.free;
+  const toolLabel = { none: 'Sin herramienta', stopwatch: 'Cronómetro', counter: 'Contador' }[f.tool];
+  const progress = view.itemCount > 1 ? `Prueba ${view.itemIndex + 1} de ${view.itemCount}` : '';
+  const chosen = new Set(f.participants.map((p) => p.id));
+  const label = (p) => [p.icon ? getIcon(p.icon).glyph : '', p.name].filter(Boolean).join(' ');
+
+  const card = h(
+    'section',
+    { class: 'c-card' },
+    h('p', { class: 'c-kicker' }, [view.section.name, progress, toolLabel].filter(Boolean).join(' · ')),
+    h('h2', {}, f.title),
+    f.description ? h('p', {}, f.description) : null,
+    h('p', { class: 'muted' }, `${f.points} ${f.points === 1 ? 'punto' : 'puntos'} para ${f.byTeams ? 'el equipo ganador' : 'quien gane'}`),
+  );
+
+  let body = [];
+  if (f.phase === 'setup') {
+    const send = (ids) => cmd('freeParticipants', { ids: [...ids].join(',') });
+    body.push(
+      h(
+        'section',
+        { class: 'c-card' },
+        h('p', { class: 'c-kicker' }, f.byTeams ? '¿Qué equipos participan?' : '¿Quién participa?'),
+        h(
+          'div',
+          { class: 'c-checks' },
+          f.pool.map((p) =>
+            h(
+              'label',
+              { class: 'c-check' },
+              h('input', {
+                type: 'checkbox',
+                checked: chosen.has(p.id),
+                onchange: (e) => {
+                  if (e.target.checked) chosen.add(p.id);
+                  else chosen.delete(p.id);
+                  send(chosen);
+                },
+              }),
+              label(p),
+            ),
+          ),
+        ),
+        h('div', { class: 'c-row' }, btn('Todos', () => send(f.pool.map((p) => p.id))), btn('Ninguno', () => send([]))),
+      ),
+    );
+    if (f.tool !== 'none') {
+      body.push(h('button', { class: 'btn primary big', disabled: !chosen.size, onclick: () => cmd('freeStart') }, f.tool === 'stopwatch' ? '¡Empezar! (cronómetro)' : '¡Empezar!'));
+    } else if (chosen.size) {
+      body.push(winnersPicker(f));
+    }
+  } else if (f.phase === 'running') {
+    body.push(
+      h('p', { class: 'c-live' }, f.tool === 'stopwatch' ? 'Cronómetro en marcha: marca a quien caiga' : 'En marcha: suma lo que haga cada uno'),
+      h(
+        'section',
+        { class: 'c-card' },
+        f.participants.map((p) =>
+          h(
+            'div',
+            { class: `c-player ${p.out != null ? 'offline' : ''}` },
+            h('span', { class: 'c-team-dot', style: { '--tc': getColor(p.color).bg } }),
+            h('span', { class: 'c-pname' }, label(p), p.out != null ? h('small', {}, ` · cayó a los ${formatClockText(p.out)}`) : null),
+            f.tool === 'counter'
+              ? [
+                  h('strong', { class: 'c-score' }, String(p.count)),
+                  btn('−', () => cmd('freeCount', { id: p.id, delta: -1 }), 'round'),
+                  btn('+', () => cmd('freeCount', { id: p.id, delta: 1 }), 'round'),
+                ]
+              : [
+                  h('span'),
+                  p.out != null
+                    ? btn('Deshacer', () => cmd('freeRevive', { id: p.id }), 'small')
+                    : btn('Eliminado', () => cmd('freeOut', { id: p.id }), 'bad small'),
+                  h('span'),
+                ],
+          ),
+        ),
+      ),
+      btn('Parar', () => cmd('freeStop')),
+    );
+  } else if (f.phase === 'stopped') {
+    body.push(winnersPicker(f));
+  } else {
+    body.push(
+      h('section', { class: 'c-card' }, h('p', { class: 'c-kicker' }, 'Ganador'), h('p', { class: 'c-question' }, f.winners.map((w) => w.name).join(' y '), ` (+${f.points})`)),
+      h('button', { class: 'btn primary big', onclick: () => cmd('nextItem') }, view.itemIndex + 1 < view.itemCount ? 'Siguiente prueba →' : 'Al marcador →'),
+    );
+  }
+
+  return [
+    card,
+    ...body,
+    h(
+      'div',
+      { class: 'c-row secondary' },
+      btn('Reiniciar prueba', () => (f.phase !== 'awarded' || confirm('¿Reiniciar? Se quitan los puntos de esta prueba.')) && cmd('restart')),
+      btn('Terminar sección', () => cmd('endSection')),
+    ),
+    navRow(),
+  ];
+}
+
+/** Elegir ganadores (viene marcado lo que propone la herramienta) y dar los puntos. */
+function winnersPicker(f) {
+  if (freeWinners.roundId !== f.roundId) freeWinners = { roundId: f.roundId, ids: new Set(f.suggestion) };
+  const picked = freeWinners.ids;
+  const valueOf = (id) => f.ranking.find((r) => r.id === id);
+  return h(
+    'section',
+    { class: 'c-card' },
+    h('p', { class: 'c-kicker' }, f.suggestion.length ? 'Ganador (propuesto por la herramienta: puedes cambiarlo)' : '¿Quién gana?'),
+    h(
+      'div',
+      { class: 'c-checks' },
+      f.participants.map((p) => {
+        const r = valueOf(p.id);
+        const extra = f.tool === 'stopwatch' ? ` · ${formatClockText(r?.value ?? 0)}` : f.tool === 'counter' ? ` · ${r?.value ?? 0}` : '';
+        return h(
+          'label',
+          { class: 'c-check' },
+          h('input', {
+            type: 'checkbox',
+            checked: picked.has(p.id),
+            onchange: (e) => (e.target.checked ? picked.add(p.id) : picked.delete(p.id)),
+          }),
+          `${p.name}${extra}`,
+        );
+      }),
+    ),
+    h('button', { class: 'btn ok big', onclick: () => cmd('freeAward', { ids: [...picked].join(',') }) }, `Dar ${f.points} ${f.points === 1 ? 'punto' : 'puntos'}`),
+  );
+}
+
+/** 83 456 ms → "1:23,4" */
+function formatClockText(ms) {
+  const total = Math.max(0, ms) / 1000;
+  const minutes = Math.floor(total / 60);
+  return `${minutes}:${(total - minutes * 60).toFixed(1).padStart(4, '0').replace('.', ',')}`;
 }
 
 /** Secciones de respuestas: Test, Verdad o mentira, Dos verdades, Votación y Estimación. */

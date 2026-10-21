@@ -1674,3 +1674,107 @@ a.btn {
   font-weight: 900;
   line-height: 1;
 }
+
+/* --- Sección Libre ("Fit o Fat") --- */
+.free-stage {
+  display: grid;
+  justify-items: center;
+  gap: 1rem;
+  padding: 1rem 0;
+  text-align: center;
+}
+
+.free-title {
+  margin: 0;
+  font-size: 3.5rem;
+  font-weight: 900;
+}
+
+.free-title.big {
+  font-size: 6rem;
+  color: var(--accent);
+}
+
+.free-desc {
+  margin: 0;
+  max-width: 50rem;
+  font-size: 2rem;
+}
+
+.free-chips {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.6rem;
+}
+
+.free-chips li {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.3rem 1rem;
+  border-radius: 999px;
+  background: var(--pc);
+  color: var(--pc-fg);
+  font-size: 1.6rem;
+  font-weight: 800;
+}
+
+.free-clock.stopped {
+  color: var(--warn);
+}
+
+.free-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 0.8rem;
+}
+
+.free-cards li {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.8rem 1rem;
+  border-radius: var(--radius);
+  background: var(--surface);
+  border-top: 0.5rem solid var(--pc);
+  transition: opacity 300ms;
+}
+
+.free-cards li.out {
+  opacity: 0.4;
+}
+
+.free-name {
+  font-size: 1.8rem;
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+
+.free-status {
+  font-size: 1.4rem;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.free-count {
+  font-size: 6rem;
+  font-weight: 900;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
+}
+
+.free-winner {
+  margin: 0;
+  font-size: 6rem;
+  font-weight: 900;
+  color: var(--accent);
+  animation: pop 400ms ease-out;
+}

@@ -307,7 +307,12 @@ function displayedStatus() {
 /** Fuera de una pregunta de pulsador el botón solo informa de lo que pasa en la tele. */
 function renderInfo(state) {
   const section = state.section;
-  const [label, sub] = {
+  const free = state.free; // sección Libre: lo arbitra el presentador; aquí solo se informa
+  const freeText = free && [
+    free.won ? '¡Has ganado!' : free.out ? '¡Eliminado!' : free.participating ? '¡Te toca!' : free.title,
+    free.won ? `+${free.points} ${free.byTeams ? 'para tu equipo' : ''}`.trim() : free.participating ? free.title : 'Mira la tele',
+  ];
+  const [label, sub] = freeText ?? {
     setup: ['Espera', state.playerCount < state.minPlayers ? `Esperando jugadores (mínimo ${state.minPlayers})` : 'Enseguida empezamos'],
     cover: ['¡Empezamos!', 'Mira la tele'],
     intro: [section?.name ?? 'Nueva sección', section?.label ?? ''],

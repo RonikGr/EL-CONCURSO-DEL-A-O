@@ -483,3 +483,33 @@ body.offline .c-net {
   border: 2px solid var(--warn);
   font-weight: 700;
 }
+
+/* --- Sección Libre --- */
+.c-checks {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+}
+
+.c-check {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 0.6rem;
+  background: var(--surface-2);
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.c-check input {
+  width: 1.3rem;
+  height: 1.3rem;
+  flex: none;
+}
+
+.btn.small {
+  min-height: 2.2rem;
+  padding: 0.2em 0.7em;
+  font-size: 0.9rem;
+}

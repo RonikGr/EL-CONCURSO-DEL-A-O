@@ -18,6 +18,7 @@ import {
   isTiming,
 } from '../core/answers.js';
 import { ERROR_CODE, MSG } from '../shared/protocol.js';
+import { FPHASE, FreeRound } from '../core/free.js';
 import { PeerSource } from './sources/peerSource.js';
 import { saveRoom } from './persistence.js';
 
@@ -62,9 +63,11 @@ export class HostRoom extends EventTarget {
     this.jokers = new JokerBank(this.show.settings?.jokers ?? SHOW_DEFAULTS.jokers, saved?.jokersUsed ?? {});
     this.itemResults = saved?.itemResults ?? {}; // playKey → resultado ya puntuado de una pregunta de respuestas
     this.answerRound = null;
+    this.freeRound = null; // sección Libre: la prueba actual
     this.duelPick = []; // Duelo de reflejos: los dos que juegan (se mantiene entre rondas)
     this.#playKey = this.runner.playKey;
     this.#syncAnswerRound();
+    this.#syncFreeRound();
     this.lastImport = null;
 
     this.network = { state: 'connecting', message: '' };
@@ -127,6 +130,11 @@ export class HostRoom extends EventTarget {
   /** ¿Se está jugando una pregunta de una sección de respuestas (Test, votación…)? */
   get inAnswerPlay() {
     return this.runner.screen === SCREEN.PLAY && ANSWER_TYPES.has(this.runner.section?.type) && !this.runner.peekScoreboard && !!this.answerRound;
+  }
+
+  /** ¿Se está jugando una prueba de la sección Libre? */
+  get inFreePlay() {
+    return this.runner.screen === SCREEN.PLAY && this.runner.section?.type === 'libre' && !this.runner.peekScoreboard && !!this.freeRound;
   }
 
   /** Dueño de los comodines de un jugador: su equipo, o él mismo si no hay equipos (o aún no tiene). */
@@ -222,6 +230,43 @@ export class HostRoom extends EventTarget {
     };
   }
 
+  /** Prueba de la sección Libre (para la tele y el mando). */
+  freeView({ forControl = false } = {}) {
+    const r = this.freeRound;
+    const t = now();
+    const who = (id) => {
+      if (r.byTeams) {
+        const team = this.roster.team(id);
+        return { id, name: team?.name ?? '¿?', color: team?.color ?? 'gris', icon: null, isTeam: true };
+      }
+      const p = this.roster.get(id);
+      return { id, name: p?.name ?? '¿?', color: p?.color ?? 'gris', icon: p?.icon ?? null, isTeam: false };
+    };
+    const pool = r.byTeams ? this.roster.teams.map((tm) => tm.id) : this.roster.list().map((p) => p.id);
+    return {
+      roundId: r.roundId,
+      title: r.item.title,
+      description: r.item.description,
+      tool: r.tool,
+      byTeams: r.byTeams,
+      points: r.item.points,
+      phase: r.phase,
+      tStart: r.tStart,
+      tStop: r.tStop,
+      participants: r.participants.map((id) => ({
+        ...who(id),
+        out: id in r.out ? r.out[id] : null,
+        count: r.counts[id] ?? 0,
+      })),
+      ranking: r.ranking(t).map((row) => ({ ...row, who: who(row.id) })),
+      winners: r.winners.map(who),
+      awarded: r.points,
+      // Solo el mando: a quién se puede elegir y qué ganador propone la herramienta.
+      pool: forControl ? pool.map(who) : null,
+      suggestion: forControl ? r.suggestion(t) : null,
+    };
+  }
+
   /** Todo lo que necesita pintar la tele. */
   view() {
     const r = this.runner;
@@ -241,6 +286,7 @@ export class HostRoom extends EventTarget {
       shown: r.shown,
       game: this.inBuzzerPlay ? this.gameView() : null,
       answer: this.inAnswerPlay ? this.answerView() : null,
+      free: this.inFreePlay ? this.freeView() : null,
       pointsForCorrect: this.pointsForCorrect,
       pointsForWrong: this.pointsForWrong,
       players: this.players(),
@@ -298,6 +344,7 @@ export class HostRoom extends EventTarget {
         ranking: v.game.ranking.map((r) => ({ place: r.place, deltaMs: r.deltaMs, reactionMs: r.reactionMs, nearTie: r.nearTie, player: pub(r.player) })),
       },
       answer: this.inAnswerPlay ? this.answerView({ forControl: true }) : null,
+      free: this.inFreePlay ? this.freeView({ forControl: true }) : null,
       pointsForCorrect: v.pointsForCorrect,
       pointsForWrong: v.pointsForWrong,
       players: v.players.map((p) => ({ ...pub(p), score: p.score, connected: p.connected, rtt: p.rtt, lock: p.lock })),
@@ -368,6 +415,7 @@ export class HostRoom extends EventTarget {
     },
     restart: () => {
       if (this.inAnswerPlay) return this.#restartAnswerRound();
+      if (this.inFreePlay) return this.#restartFreeRound();
       if (!this.inBuzzerPlay) return false;
       this.#clearTimers();
       this.game.restart();
@@ -395,6 +443,24 @@ export class HostRoom extends EventTarget {
       // Repintar la tele al empezar (para que salgan las opciones a la vez que en los móviles).
       clearTimeout(this.#openTimer);
       this.#openTimer = setTimeout(() => this.#changed({ persist: false }), Math.max(0, r.tOpen - now()));
+      return true;
+    },
+    freeParticipants: ({ ids = '' }) => this.inFreePlay && this.freeRound.setParticipants(String(ids).split(',').filter(Boolean)),
+    freeStart: () => this.inFreePlay && this.freeRound.start(now()),
+    freeOut: ({ id }) => this.inFreePlay && this.freeRound.eliminate(id, now()),
+    freeRevive: ({ id }) => this.inFreePlay && this.freeRound.revive(id),
+    freeCount: ({ id, delta }) => this.inFreePlay && this.freeRound.count(id, Number(delta) || 0),
+    freeStop: () => this.inFreePlay && this.freeRound.stop(now()),
+    freeAward: ({ ids = '' }) => {
+      if (!this.inFreePlay) return false;
+      const r = this.freeRound;
+      const points = r.award(String(ids).split(',').filter(Boolean), now());
+      if (!points) return 'Elige al menos un ganador.';
+      for (const [id, pts] of Object.entries(points)) {
+        if (r.byTeams) this.roster.adjustTeamBonus(id, pts);
+        else this.roster.adjustScore(id, pts);
+      }
+      this.itemResults[this.runner.playKey] = { free: r.toJSON(), byTeams: r.byTeams };
       return true;
     },
     setDuel: ({ a, b }) => {
@@ -440,6 +506,7 @@ export class HostRoom extends EventTarget {
       this.jokers.reset();
       this.itemResults = {};
       this.#syncAnswerRound();
+      this.#syncFreeRound();
       return true;
     },
     removePlayer: ({ playerId }) => {
@@ -602,6 +669,34 @@ export class HostRoom extends EventTarget {
     }
   }
 
+  /** Crea la prueba Libre actual (o la recupera si ya dio sus puntos). */
+  #syncFreeRound() {
+    const key = this.runner.playKey;
+    const section = this.runner.section;
+    if (!key || section?.type !== 'libre' || !this.runner.item) {
+      this.freeRound = null;
+      return;
+    }
+    const stored = this.itemResults[key]?.free;
+    this.freeRound = stored ? FreeRound.fromJSON(this.runner.item, stored) : new FreeRound(this.runner.item, { roundId: `${key}#${++this.#roundSeq}` });
+  }
+
+  /** "R" en una prueba Libre: quita los puntos que dio y empieza de cero. */
+  #restartFreeRound() {
+    const key = this.runner.playKey;
+    const stored = this.itemResults[key];
+    if (stored?.free) {
+      for (const [id, pts] of Object.entries(stored.free.points)) {
+        if (stored.byTeams) this.roster.adjustTeamBonus(id, -pts);
+        else this.roster.adjustScore(id, -pts);
+      }
+      delete this.itemResults[key];
+    }
+    this.freeRound = null;
+    this.#syncFreeRound();
+    return true;
+  }
+
   /** "R" en una pregunta de respuestas: deshace sus puntos, devuelve los comodines y empieza de cero. */
   #restartAnswerRound() {
     const key = this.runner.playKey;
@@ -691,6 +786,24 @@ export class HostRoom extends EventTarget {
       game: play ? playerView(g, player.id, now()) : null,
       winner: winner ? publicPlayer(winner) : null,
       answer: this.inAnswerPlay ? this.#answerViewFor(player) : null,
+      free: this.inFreePlay ? this.#freeViewFor(player) : null,
+    };
+  }
+
+  /** Sección Libre en el móvil: solo saber si le toca y cómo va. */
+  #freeViewFor(player) {
+    const r = this.freeRound;
+    const me = r.byTeams ? player.teamId : player.id;
+    const participating = r.participants.includes(me);
+    return {
+      title: r.item.title,
+      tool: r.tool,
+      phase: r.phase,
+      byTeams: r.byTeams,
+      participating,
+      out: participating && me in r.out,
+      won: r.phase === FPHASE.AWARDED && r.winners.includes(me),
+      points: r.item.points,
     };
   }
 
@@ -772,6 +885,7 @@ export class HostRoom extends EventTarget {
       this.#leaveAnswerRound();
       this.game.next();
       this.#syncAnswerRound();
+      this.#syncFreeRound();
     }
     const ranking = this.game.ranking();
     if (ranking.length) this.lastRound = { qid: this.runner.itemIndex + 1, tOpen: this.game.tOpen, decided: !!this.game.winnerId, ranking };

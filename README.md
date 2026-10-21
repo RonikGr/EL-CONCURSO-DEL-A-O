@@ -7,7 +7,7 @@ conectado por HDMI); cada jugador usa su móvil como pulsador, sin instalar nada
 > Estado: **fase 6** — concurso por secciones con equipos, cargado desde una hoja de cálculo; la tele es el
 > espectáculo y el presentador lo maneja desde su móvil. Se juegan **Pulsador**, **Test** (con comodines),
 > **Verdad o mentira**, **Dos verdades y una mentira**, **¿Quién es más probable…?**, **Estimación**,
-> **Parar el contador** y **Duelo de reflejos**. La sección Libre ya se lee de la hoja y llega en la fase 7.
+> **Parar el contador**, **Duelo de reflejos** y **Libre** (pruebas tipo «Fit o Fat» con cronómetro o contador).
 
 ## Preparar el concurso
 
@@ -51,6 +51,14 @@ conectado por HDMI); cada jugador usa su móvil como pulsador, sin instalar nada
 9. **Duelo de reflejos**: «Poner en rojo» → entre 2 y 6 s después, al azar, todo se pone verde (tele y móviles a la
    vez) → gana la reacción más rápida. Quien pulsa en rojo queda fuera de esa ronda. En modo «Duelo», el presentador
    elige en el mando a los dos que juegan.
+10. **Libre** («Fit o Fat»): cada fila es una prueba. En el mando marcas quién participa (jugadores o equipos, según
+    la columna Participan) y la tele la presenta.
+    - **Cronómetro**: «¡Empezar!» y, cuando alguien cae, «Eliminado» (con «Deshacer» por si te equivocas). Al caer el
+      último se para solo. Gana quien más aguanta.
+    - **Contador**: botones −/+ por participante y números en grande en la tele; «Parar» cuando acabe el tiempo.
+    - **Ninguna**: eliges al ganador directamente.
+    - El mando propone el ganador (puedes cambiarlo o marcar varios) y «Dar puntos»: a cada jugador o, si participan
+      equipos, al equipo entero.
 
 El mando tiene tres pestañas: **Juego** (lo que toca ahora), **Jugadores** (puntos ±, puntos de equipo, mover de
 equipo, quitar) y **Secciones** (saltar a cualquiera).

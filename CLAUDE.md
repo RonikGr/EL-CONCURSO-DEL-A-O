@@ -63,6 +63,7 @@ Mando ↔ tele: `hello {v, role:'control', controlId, token, deviceName}` → `c
 luego `controlState {view}` (vista completa con respuestas, agrupada cada 150 ms) y `cmd {id, action, args}` →
 `cmdResult {id, ok, error}`. Las órdenes son las de `HostRoom.run()`: next, prev, nextItem, gotoSection, endSection,
 scoreboard, toSetup, showQuestion, showAnswer, open, correct, wrong, restart, unlock, openAnswers, closeAnswers, reveal, setDuel,
+freeParticipants, freeStart, freeOut, freeRevive, freeCount, freeStop, freeAward,
 lockTeams, moveTeam, adjustScore, adjustTeamBonus, resetScores, removePlayer, approveControl, denyControl, updateSettings.
 
 - Emparejar mando: la tele (preparación) enseña un QR a `control.html?sala=CÓDIGO#k=CLAVE` (la clave tras `#` no sale del
@@ -99,6 +100,13 @@ En el móvil, opciones y votos se eligen con un toque y se confirman tocando otr
   + 2–6 s al azar (lo elige el portátil); el móvil cambia a verde con su reloj sincronizado. Pulsar en rojo → eliminado de
   la ronda (cuenta como respondido). Valor = ms de reacción; plazo = verde + 3 s; puntos por puestos. Duelo: el presentador
   fija a los dos con `setDuel` (se mantiene entre rondas).
+
+**Sección Libre** (`src/core/free.js`, `FreeRound`): `setup` (el presentador marca participantes: jugadores o equipos
+según la columna Participan) → `running` (cronómetro: "eliminado" guarda el tiempo y al caer el último se para solo;
+contador: ±1 por participante) → `stopped` → `awarded` (el mando propone ganador según la herramienta; se puede cambiar
+y marcar varios; cada ganador recibe los puntos de la fila; con equipos van al bonus del equipo). Sin herramienta se elige
+ganador directamente. Las pruebas puntuadas se guardan en `itemResults` (`{free, byTeams}`) y R las reinicia quitando
+los puntos. El móvil del jugador solo informa ("¡Te toca!", "¡Eliminado!", "¡Has ganado!").
 
 Comodines (solo Test, antes de responder): `JokerBank` por dueño (equipo, o jugador sin equipos), 50 % quita
 floor(n/2) incorrectas, Doble, Público (ve el recuento en directo). Preguntas reveladas se guardan en `itemResults`
@@ -138,7 +146,7 @@ mientras la página no se pinta (ventana oculta o minimizada).
 - Modo depuración (D): por jugador RTT del latido, offset, error y muestras; por ronda pulsó / llegó / red / origen.
 - Límites y trampas: ver README, "Justicia en los tiempos".
 
-## Diseño del concurso (acordado; hecho hasta la fase 6)
+## Diseño del concurso (acordado; hecho hasta la fase 7, salvo que el presentador juegue)
 
 - **Tres papeles:** `host.html` = espectáculo en la tele (sigue siendo la autoridad: estado, puntos, conexiones,
   música); `control.html` = mando del presentador en su móvil (ve preguntas y respuestas en privado, lo controla
@@ -172,7 +180,7 @@ mientras la página no se pinta (ventana oculta o minimizada).
    (Los demás tipos ya se leen y validan desde la hoja; en el juego muestran su intro y se saltan hasta su fase.)
 5. Respuestas desde el móvil: Test (con comodines), Verdad o mentira, Dos verdades, ¿Quién es más probable…?, Estimación. ✔
 6. Secciones de tiempo: Parar el contador y Duelo de reflejos. ✔
-7. Sección Libre (cronómetro y contador).
+7. Sección Libre (cronómetro y contador). ✔ Pendiente de esta fase: que el presentador juegue desde el mando.
 8. Spotify.
 9. Espectáculo: transiciones, marcador animado, podios, sonidos, wake lock, tarjetas compactas para 20 jugadores.
 

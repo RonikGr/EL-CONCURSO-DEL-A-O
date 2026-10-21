@@ -17,7 +17,7 @@ export const SECTION_TYPES = {
 };
 
 /** Tipos que ya se pueden jugar (el resto se muestra como "próximamente"). */
-export const PLAYABLE_TYPES = new Set(['pulsador', 'test', 'verdad', 'dosVerdades', 'votacion', 'estimacion', 'contador', 'reflejos']);
+export const PLAYABLE_TYPES = new Set(Object.keys(SECTION_TYPES)); // todas las secciones ya se pueden jugar
 
 export const DEFAULT_SETTINGS = {
   title: 'Concurso del año',
