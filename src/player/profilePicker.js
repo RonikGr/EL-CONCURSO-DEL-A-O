@@ -49,12 +49,13 @@ export function createProfilePicker(initial) {
   );
 
   const hint = h('p', { class: 'picker-hint' });
+  const colorField = h('fieldset', { class: 'field' }, h('legend', {}, 'Color'), h('div', { class: 'swatches' }, colorButtons));
 
   const root = h(
     'div',
     { class: 'picker' },
     h('label', { class: 'field' }, h('span', {}, 'Tu nombre'), nameInput),
-    h('fieldset', { class: 'field' }, h('legend', {}, 'Color'), h('div', { class: 'swatches' }, colorButtons)),
+    colorField,
     h('fieldset', { class: 'field' }, h('legend', {}, 'Icono'), h('div', { class: 'icons' }, iconButtons)),
     hint,
   );
@@ -88,6 +89,12 @@ export function createProfilePicker(initial) {
     },
     setTaken(keys) {
       taken = new Set(keys);
+      refresh();
+    },
+    /** Con equipos el color lo pone el equipo: se oculta la elección de color. `null` la vuelve a mostrar. */
+    setFixedColor(colorId) {
+      colorField.hidden = !!colorId;
+      if (colorId) value.color = colorId;
       refresh();
     },
     focusName() {

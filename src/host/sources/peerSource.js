@@ -1,30 +1,39 @@
-// Fuente de jugadores por WebRTC (móviles). Asocia cada conexión a un playerId, mide la latencia
-// con un latido y detecta caídas. La futura fuente de mandos (Gamepad API) expondrá los mismos eventos.
+// Conexiones por WebRTC: móviles de jugadores y mandos del presentador. Asocia cada conexión a un
+// playerId / controlId, mide la latencia con un latido y detecta caídas.
+// La futura fuente de mandos físicos (Gamepad API) expondrá los mismos eventos de jugador.
 import { HostNetwork } from '../network.js';
 import { RttTracker } from '../../core/latency.js';
 import { resolvePressTime } from '../../core/plausibility.js';
-import { ERROR_CODE, MSG, PROTOCOL_VERSION, parsePlayerMessage } from '../../shared/protocol.js';
+import { ERROR_CODE, MSG, PROTOCOL_VERSION, ROLE, parsePlayerMessage } from '../../shared/protocol.js';
 
 const HB_INTERVAL_MS = 2000;
 const HB_TIMEOUT_MS = 6000;
 const HELLO_TIMEOUT_MS = 10000;
 const CLOSE_AFTER_ERROR_MS = 500;
 
+const keyOf = (role, id) => `${role}:${id}`;
+
 export class PeerSource {
   #network;
   #timer = null;
-  /** connId → { playerId, lastSeen, openedAt, rtt } */
+  /** connId → { role, id, lastSeen, openedAt, rtt } */
   #conns = new Map();
-  /** playerId → connId */
+  /** `${role}:${id}` → connId */
   #connOf = new Map();
 
   /**
+   * Jugadores:
    * @param handlers.onHello(playerId, msg) → {ok: true} | {ok: false, error: {code, message}}
    * @param handlers.onProfile(playerId, msg)
    * @param handlers.onBuzz(playerId, {seq, epoch, tPress, tArrival, meta}) — tiempos en el reloj del presentador
    * @param handlers.onSyncReport(playerId, {offset, err, rtt, samples})
    * @param handlers.onLeave(playerId)
    * @param handlers.onRtt(playerId, ms)
+   * Mandos:
+   * @param handlers.onControlHello(controlId, msg) → {ok: true} | {ok: false, error} | {pending: true}
+   * @param handlers.onCommand(controlId, msg) → {ok, error?}
+   * @param handlers.onControlLeave(controlId)
+   * General:
    * @param handlers.onStatus({state, message})
    */
   constructor({ roomCode, handlers }) {
@@ -32,7 +41,7 @@ export class PeerSource {
     this.#network = new HostNetwork({
       roomCode,
       onStatus: (s) => handlers.onStatus?.(s),
-      onConnection: (connId) => this.#conns.set(connId, { playerId: null, lastSeen: now(), openedAt: now(), rtt: new RttTracker() }),
+      onConnection: (connId) => this.#conns.set(connId, { role: null, id: null, lastSeen: now(), openedAt: now(), rtt: new RttTracker() }),
       onData: (connId, data) => this.#onData(connId, data),
       onClose: (connId) => this.#drop(connId),
     });
@@ -49,17 +58,33 @@ export class PeerSource {
   }
 
   sendTo(playerId, msg) {
-    const connId = this.#connOf.get(playerId);
-    return connId ? this.#network.send(connId, msg) : false;
+    return this.#send(ROLE.PLAYER, playerId, msg);
+  }
+
+  sendToControl(controlId, msg) {
+    return this.#send(ROLE.CONTROL, controlId, msg);
   }
 
   isOnline(playerId) {
-    return this.#connOf.has(playerId);
+    return this.#connOf.has(keyOf(ROLE.PLAYER, playerId));
   }
 
   /** Echa a un jugador avisándole antes (para que el móvil no intente reconectar). */
   kick(playerId, error) {
-    const connId = this.#connOf.get(playerId);
+    this.#kick(ROLE.PLAYER, playerId, error);
+  }
+
+  kickControl(controlId, error) {
+    this.#kick(ROLE.CONTROL, controlId, error);
+  }
+
+  #send(role, id, msg) {
+    const connId = this.#connOf.get(keyOf(role, id));
+    return connId ? this.#network.send(connId, msg) : false;
+  }
+
+  #kick(role, id, error) {
+    const connId = this.#connOf.get(keyOf(role, id));
     if (!connId) return;
     this.#unbind(connId);
     this.#sendErrorAndClose(connId, error);
@@ -74,7 +99,21 @@ export class PeerSource {
     if (!msg) return;
 
     if (msg.t === MSG.HELLO) return this.#onHello(connId, entry, msg);
-    if (!entry.playerId) return; // nada antes del hello
+    if (!entry.id) return; // nada antes del hello
+
+    if (msg.t === MSG.HB_ACK) {
+      entry.rtt.add(tArrival - msg.h0);
+      if (entry.role === ROLE.PLAYER) this.handlers.onRtt?.(entry.id, entry.rtt.median());
+      return;
+    }
+
+    if (entry.role === ROLE.CONTROL) {
+      if (msg.t === MSG.CMD) {
+        const result = this.handlers.onCommand?.(entry.id, msg) ?? { ok: false, error: 'Sin respuesta' };
+        this.#network.send(connId, { t: MSG.CMD_RESULT, id: msg.id, ok: !!result.ok, error: result.error ?? null });
+      }
+      return;
+    }
 
     switch (msg.t) {
       case MSG.SYNC:
@@ -84,7 +123,7 @@ export class PeerSource {
       case MSG.BUZZ: {
         const rtt = entry.rtt.median();
         const press = resolvePressTime({ tLocal: msg.tLocal, offset: msg.offset, err: msg.err, tArrival, rtt });
-        this.handlers.onBuzz?.(entry.playerId, {
+        this.handlers.onBuzz?.(entry.id, {
           seq: msg.seq,
           epoch: msg.epoch,
           tPress: press.tPress,
@@ -94,14 +133,10 @@ export class PeerSource {
         break;
       }
       case MSG.SYNC_REPORT:
-        this.handlers.onSyncReport?.(entry.playerId, msg);
-        break;
-      case MSG.HB_ACK:
-        entry.rtt.add(tArrival - msg.h0);
-        this.handlers.onRtt?.(entry.playerId, entry.rtt.median());
+        this.handlers.onSyncReport?.(entry.id, msg);
         break;
       case MSG.PROFILE:
-        this.handlers.onProfile?.(entry.playerId, msg);
+        this.handlers.onProfile?.(entry.id, msg);
         break;
     }
   }
@@ -113,21 +148,26 @@ export class PeerSource {
         message: 'La versión de la página no coincide con la del presentador. Recarga la página.',
       });
     }
-    // Mismo jugador por una conexión nueva: o el móvil reconectó antes de que caducara la vieja, o abrió
+    const role = msg.role;
+    const id = role === ROLE.CONTROL ? msg.controlId : msg.playerId;
+    const key = keyOf(role, id);
+
+    // Mismo jugador/mando por una conexión nueva: o el móvil reconectó antes de que caducara la vieja, o abrió
     // otra pestaña. Se avisa a la vieja para que no intente reconectar (si no, se echarían mutuamente sin fin).
-    const previous = this.#connOf.get(msg.playerId);
+    const previous = this.#connOf.get(key);
     if (previous && previous !== connId) {
       this.#unbind(previous);
       this.#sendErrorAndClose(previous, {
         code: ERROR_CODE.REPLACED,
-        message: 'Has entrado desde otra pestaña o ventana. Solo una puede jugar a la vez.',
+        message: 'Has entrado desde otra pestaña o ventana. Solo una puede estar conectada a la vez.',
       });
     }
-    entry.playerId = msg.playerId;
-    this.#connOf.set(msg.playerId, connId);
+    entry.role = role;
+    entry.id = id;
+    this.#connOf.set(key, connId);
 
-    const result = this.handlers.onHello(msg.playerId, msg);
-    if (!result.ok) {
+    const result = role === ROLE.CONTROL ? this.handlers.onControlHello(id, msg) : this.handlers.onHello(id, msg);
+    if (result.ok === false) {
       this.#unbind(connId);
       this.#sendErrorAndClose(connId, result.error);
     }
@@ -136,11 +176,11 @@ export class PeerSource {
   #tick() {
     const t = now();
     for (const [connId, entry] of this.#conns) {
-      const dead = entry.playerId ? t - entry.lastSeen > HB_TIMEOUT_MS : t - entry.openedAt > HELLO_TIMEOUT_MS;
+      const dead = entry.id ? t - entry.lastSeen > HB_TIMEOUT_MS : t - entry.openedAt > HELLO_TIMEOUT_MS;
       if (dead) {
         this.#network.close(connId);
         this.#drop(connId);
-      } else if (entry.playerId) {
+      } else if (entry.id) {
         this.#network.send(connId, { t: MSG.HB, h0: t });
       }
     }
@@ -156,19 +196,23 @@ export class PeerSource {
 
   #unbind(connId) {
     const entry = this.#conns.get(connId);
-    if (entry?.playerId && this.#connOf.get(entry.playerId) === connId) this.#connOf.delete(entry.playerId);
-    if (entry) entry.playerId = null;
+    if (entry?.id) {
+      const key = keyOf(entry.role, entry.id);
+      if (this.#connOf.get(key) === connId) this.#connOf.delete(key);
+    }
+    if (entry) entry.id = null;
   }
 
   #drop(connId) {
     const entry = this.#conns.get(connId);
     if (!entry) return;
     this.#conns.delete(connId);
-    const playerId = entry.playerId;
-    if (playerId && this.#connOf.get(playerId) === connId) {
-      this.#connOf.delete(playerId);
-      this.handlers.onLeave?.(playerId);
-    }
+    if (!entry.id) return;
+    const key = keyOf(entry.role, entry.id);
+    if (this.#connOf.get(key) !== connId) return;
+    this.#connOf.delete(key);
+    if (entry.role === ROLE.CONTROL) this.handlers.onControlLeave?.(entry.id);
+    else this.handlers.onLeave?.(entry.id);
   }
 }
 

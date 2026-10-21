@@ -1,0 +1,463 @@
+@import '../shared/base.css';
+
+body.control {
+  font-size: 17px;
+  min-height: 100dvh;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#app {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
+.c-message {
+  flex: 1;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 1rem;
+  padding: 2rem 1.25rem;
+  text-align: center;
+}
+
+.c-message h1 {
+  margin: 0;
+  font-size: 1.7rem;
+}
+
+.c-message p {
+  margin: 0;
+  max-width: 26rem;
+  color: var(--muted);
+  font-size: 1.1rem;
+}
+
+.spinner {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  border: 0.4rem solid var(--surface-2);
+  border-top-color: var(--accent);
+  animation: spin 0.9s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* --- Cabecera y pestañas --- */
+.c-top {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: max(0.7rem, env(safe-area-inset-top)) 1rem 0.7rem;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.c-top div {
+  display: grid;
+  min-width: 0;
+}
+
+.c-top strong {
+  font-size: 1.1rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.c-top span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.c-net {
+  flex: none;
+  width: 0.8rem;
+  height: 0.8rem;
+  border-radius: 50%;
+  background: var(--ok);
+}
+
+body.offline .c-net {
+  background: var(--danger);
+}
+
+.c-banner {
+  padding: 0.6rem 1rem;
+  background: color-mix(in srgb, var(--warn) 22%, var(--surface));
+  font-weight: 700;
+  text-align: center;
+}
+
+.c-main {
+  flex: 1;
+  display: grid;
+  align-content: start;
+  gap: 0.9rem;
+  padding: 1rem 1rem 6rem;
+}
+
+.c-tabs {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  padding-bottom: env(safe-area-inset-bottom);
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+}
+
+.c-tabs button {
+  min-height: 3.4rem;
+  border: 0;
+  background: none;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.c-tabs button.active {
+  color: var(--accent);
+  box-shadow: inset 0 3px 0 var(--accent);
+}
+
+/* --- Tarjetas --- */
+.c-card {
+  background: var(--surface);
+  border-radius: 1rem;
+  padding: 1rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.c-card h2 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+.c-card p {
+  margin: 0;
+}
+
+.c-kicker {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.center {
+  text-align: center;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.small {
+  font-size: 0.88rem;
+}
+
+.warn {
+  color: var(--warn);
+  font-weight: 700;
+}
+
+.c-question {
+  font-size: 1.45rem;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.c-answer {
+  display: grid;
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.7rem;
+  background: color-mix(in srgb, var(--ok) 18%, var(--surface));
+  border: 2px solid var(--ok);
+  font-size: 1.3rem;
+  font-weight: 800;
+}
+
+.c-answer small {
+  color: var(--ok);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.c-notes {
+  color: var(--muted);
+}
+
+.c-turn {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.c-live {
+  margin: 0;
+  padding: 0.8rem;
+  border-radius: 0.8rem;
+  background: color-mix(in srgb, var(--ok) 20%, var(--surface));
+  text-align: center;
+  font-weight: 800;
+  font-size: 1.2rem;
+}
+
+.c-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+
+.c-row.secondary .btn {
+  font-size: 0.95rem;
+}
+
+.c-nav {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 0.6rem;
+}
+
+.btn.big {
+  width: 100%;
+  min-height: 3.6rem;
+  font-size: 1.25rem;
+}
+
+.btn.ok {
+  background: var(--ok);
+  border-color: var(--ok);
+  color: #06210f;
+}
+
+.btn.bad {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #ffffff;
+}
+
+.btn.round {
+  min-height: 2.4rem;
+  width: 2.4rem;
+  padding: 0;
+  border-radius: 50%;
+  font-size: 1.2rem;
+}
+
+.btn.ghost {
+  background: none;
+  border-color: transparent;
+  color: var(--muted);
+}
+
+/* --- Ganador --- */
+.c-winner {
+  display: grid;
+  gap: 0.5rem;
+  padding: 1rem;
+  border-radius: 1rem;
+  background: var(--wc);
+  color: var(--wc-fg);
+}
+
+.c-winner-main {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.c-winner-main strong {
+  display: block;
+  font-size: 1.6rem;
+}
+
+.big-icon {
+  font-size: 2.6rem;
+}
+
+.c-time {
+  font-size: 1.3rem;
+  font-weight: 800;
+}
+
+.c-verdict {
+  margin: 0;
+  font-weight: 900;
+  font-size: 1.3rem;
+}
+
+.c-followers {
+  margin: 0;
+  padding: 0.5rem 0.8rem 0.5rem 1.8rem;
+  border-radius: 0.7rem;
+  background: rgb(0 0 0 / 0.5);
+  color: #ffffff;
+}
+
+/* --- Equipos y jugadores --- */
+.c-teams {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.c-team {
+  display: grid;
+  padding: 0.5rem 0.7rem;
+  border-left: 0.35rem solid var(--tc, var(--muted));
+  background: var(--surface-2);
+  border-radius: 0.5rem;
+}
+
+.c-team span {
+  color: var(--muted);
+}
+
+.c-player {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.c-player:has(.c-select) {
+  grid-template-columns: auto 1fr auto auto auto;
+  grid-template-areas:
+    'av name score minus plus'
+    '. sel sel sel del';
+}
+
+.c-player.offline {
+  opacity: 0.5;
+}
+
+.c-avatar {
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 50%;
+  display: inline-grid;
+  place-items: center;
+  font-size: 1.3rem;
+}
+
+.c-team-dot {
+  width: 1.2rem;
+  height: 1.2rem;
+  border-radius: 50%;
+  background: var(--tc);
+  margin: 0 0.5rem;
+}
+
+.c-pname {
+  font-weight: 700;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.c-pname small {
+  color: var(--danger);
+}
+
+.c-score {
+  min-width: 2ch;
+  text-align: right;
+  font-size: 1.3rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.c-select {
+  grid-area: sel;
+  padding: 0.35rem 0.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.c-player:has(.c-select) .btn.ghost {
+  grid-area: del;
+}
+
+.c-standings {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.c-standings li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.4rem 0.7rem;
+  border-radius: 0.5rem;
+  background: var(--surface-2);
+  border-left: 0.35rem solid var(--tc, transparent);
+  font-weight: 700;
+}
+
+.c-standings.players li {
+  font-weight: 600;
+}
+
+.c-sections {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.c-sections button {
+  width: 100%;
+  display: grid;
+  text-align: left;
+  padding: 0.7rem 0.9rem;
+  border-radius: 0.7rem;
+  border: 2px solid var(--border);
+  background: var(--surface-2);
+}
+
+.c-sections li.current button {
+  border-color: var(--accent);
+}
+
+.c-sec-name {
+  font-weight: 800;
+}
+
+.c-sections small {
+  color: var(--muted);
+}
+
+.c-toast {
+  position: fixed;
+  left: 1rem;
+  right: 1rem;
+  bottom: 4.5rem;
+  z-index: 10;
+  padding: 0.8rem 1rem;
+  border-radius: 0.8rem;
+  background: var(--surface-2);
+  border: 2px solid var(--warn);
+  font-weight: 700;
+}

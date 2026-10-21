@@ -1,9 +1,7 @@
-// Ajustes de la partida (se guardan con la sala).
+// Ajustes del pulsador (se guardan con la sala). Los puntos vienen de la hoja del concurso.
 import { h } from '../shared/dom.js';
 
 const FIELDS = [
-  { key: 'pointsForCorrect', type: 'number', label: 'Puntos por acierto', min: -10, max: 10 },
-  { key: 'pointsForWrong', type: 'number', label: 'Puntos por fallo', min: -10, max: 10, help: 'Pon un número negativo para restar.' },
   { key: 'lockEarlyBuzz', type: 'checkbox', label: 'Bloquear durante la pregunta a quien pulse antes de abrir el turno' },
   { key: 'nearTieMs', type: 'number', label: 'Umbral de casi empate (ms)', min: 0, max: 500 },
   {
@@ -66,7 +64,7 @@ export function openSettingsDialog(room) {
           if (Number.isFinite(n)) patch[key] = Math.min(field.max, Math.max(field.min, n));
         }
       }
-      room.updateSettings(patch);
+      room.run('updateSettings', patch);
     }
     dismiss();
   });

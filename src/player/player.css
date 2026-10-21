@@ -314,6 +314,61 @@ body.player {
   padding: 0 0.5rem;
 }
 
+.buzzer[data-state='info'] {
+  border-style: dotted;
+}
+
+.buzzer[data-state='info'] .buzzer-label {
+  font-size: clamp(2rem, 10vw, 4.5rem);
+  padding: 0 0.5rem;
+  overflow-wrap: anywhere;
+}
+
+/* --- Elegir equipo --- */
+.team-pick {
+  display: grid;
+  align-content: center;
+  gap: 1rem;
+  max-width: 30rem;
+  margin: 0 auto;
+  text-align: center;
+}
+
+.team-pick h1 {
+  margin: 0;
+  font-size: 2rem;
+}
+
+.team-list {
+  display: grid;
+  gap: 0.8rem;
+  margin-top: 0.5rem;
+}
+
+.team-button {
+  min-height: 4.5rem;
+  border: 0;
+  border-radius: 1.2rem;
+  font-size: 1.6rem;
+  font-weight: 900;
+  box-shadow: 0 0.3rem 0 rgb(0 0 0 / 0.35);
+}
+
+.team-button:active {
+  transform: translateY(0.2rem);
+  box-shadow: none;
+}
+
+.team-select {
+  width: 100%;
+  padding: 0.7rem 0.9rem;
+  border-radius: 0.75rem;
+  border: 2px solid var(--border);
+  background: var(--surface);
+  font-size: 1.15rem;
+  color: var(--text);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .buzzer[data-state='go'] {
     animation: none;

@@ -1,6 +1,6 @@
 // Pantalla del jugador (móvil).
 import './player.css';
-import { $ } from '../shared/dom.js';
+import { $, fill, h } from '../shared/dom.js';
 import { COLORS, ICONS, getColor, getIcon } from '../shared/appearance.js';
 import { isValidRoomCode, normalizeRoomCode } from '../shared/roomCode.js';
 import { ERROR_CODE, MSG, PROTOCOL_VERSION } from '../shared/protocol.js';
@@ -26,6 +26,7 @@ let pressedEpoch = null; // época en la que ya pulsé
 let buzzSeq = 0;
 let goTimer = null;
 let lastShownStatus = null;
+let teamRequested = false; // se ha elegido equipo y se espera la confirmación del presentador
 
 const sync = new SyncClient({ send: (msg) => connection?.send(msg) ?? false });
 // Al volver a primer plano el reloj puede haberse parado (iOS lo hace con la pantalla bloqueada): resincronizar.
@@ -104,7 +105,15 @@ function join(code) {
   connection = new PlayerConnection({
     roomCode: code,
     onOpen: () => {
-      connection.send({ t: MSG.HELLO, v: PROTOCOL_VERSION, playerId: profile.playerId, name: profile.name, color: profile.color, icon: profile.icon });
+      connection.send({
+        t: MSG.HELLO,
+        v: PROTOCOL_VERSION,
+        playerId: profile.playerId,
+        name: profile.name,
+        color: profile.color,
+        icon: profile.icon,
+        teamId: profile.teamId ?? null,
+      });
       sync.start(); // después del hello: el presentador ignora todo lo anterior
     },
     onMessage: handleMessage,
@@ -162,25 +171,33 @@ function handleMessage(msg, tRecv) {
       // Guardar lo que asignó el presentador (color/icono); el nombre se guarda tal como lo escribió la persona.
       profile.color = me.color;
       profile.icon = me.icon;
+      if (me.teamId) profile.teamId = me.teamId;
+      teamRequested = false;
       saveProfile();
       const notes = [];
       if (msg.adjusted?.renamed) notes.push(`Ya había alguien con ese nombre: aparecerás como «${me.name}».`);
-      if (msg.adjusted?.appearanceChanged) notes.push('Esa combinación de color e icono ya estaba cogida: te hemos puesto otra.');
+      if (msg.adjusted?.appearanceChanged) notes.push('Ese icono ya estaba cogido: te hemos puesto otro.');
       if (notes.length) toast(notes.join(' ') + ' Puedes cambiarlo en «Cambiar».');
       if (firstTime) show('screen-game');
       renderMe();
       break;
     }
-    case MSG.STATE:
+    case MSG.STATE: {
       me = msg.you;
       lastState = msg;
       stateReceivedAt = performance.now();
       editPicker.setTaken(msg.taken ?? []);
-      $('#room-line').textContent = `Sala ${msg.room} · ${msg.playerCount} ${msg.playerCount === 1 ? 'jugador' : 'jugadores'}`;
+      const team = msg.teams?.find((t) => t.id === me.teamId);
+      $('#room-line').textContent = [team?.name, `Sala ${msg.room}`, `${msg.playerCount} ${msg.playerCount === 1 ? 'jugador' : 'jugadores'}`]
+        .filter(Boolean)
+        .join(' · ');
       renderMe();
       renderBuzzer();
-      if ($('#screen-game').hidden) show('screen-game');
+      // Con equipos, quien aún no tiene uno tiene que elegirlo antes de nada.
+      if (msg.teams?.length && !me.teamId && !teamRequested) showTeamPicker(msg.teams);
+      else if ($('#screen-game').hidden) show('screen-game');
       break;
+    }
     case MSG.ERROR:
       handleError(msg);
       break;
@@ -232,11 +249,30 @@ function displayedStatus() {
   return g.status;
 }
 
+/** Fuera de una pregunta de pulsador el botón solo informa de lo que pasa en la tele. */
+function renderInfo(state) {
+  const section = state.section;
+  const [label, sub] = {
+    setup: ['Espera', state.playerCount < state.minPlayers ? `Esperando jugadores (mínimo ${state.minPlayers})` : 'Enseguida empezamos'],
+    cover: ['¡Empezamos!', 'Mira la tele'],
+    intro: [section?.name ?? 'Nueva sección', section?.label ?? ''],
+    play: [section?.name ?? 'Espera', 'Mira la tele'],
+    scoreboard: ['Marcador', 'Mira la tele'],
+    final: ['¡Fin del concurso!', `Has hecho ${me?.score ?? 0} ${me?.score === 1 ? 'punto' : 'puntos'}`],
+  }[state.screen] ?? ['Espera', ''];
+  const buzzer = $('#buzzer');
+  buzzer.dataset.state = 'info';
+  $('#buzzer-label').textContent = label;
+  $('#buzzer-sub').textContent = sub;
+  lastShownStatus = 'info';
+}
+
 function renderBuzzer() {
   const state = lastState;
   const g = state?.game;
-  if (!g) return;
   clearTimeout(goTimer);
+  if (!state) return;
+  if (!g) return renderInfo(state);
   const status = displayedStatus();
   if (status === 'ready') {
     // Cambiar a "¡PULSA!" justo cuando empieza el turno.
@@ -302,20 +338,67 @@ document.addEventListener('contextmenu', (e) => {
 // ---------- Cambiar perfil ----------
 
 const dialog = $('#profile-dialog');
+const teamSelect = $('#team-select');
+
 $('#edit-profile').addEventListener('click', () => {
+  const teams = lastState?.teams ?? [];
+  const locked = !!lastState?.teamsLocked;
+  $('#team-field').hidden = !teams.length || locked;
+  $('#team-locked').hidden = !(teams.length && locked);
+  fill(
+    teamSelect,
+    teams.map((t) => h('option', { value: t.id, selected: t.id === me?.teamId }, t.name)),
+  );
+  editPicker.setFixedColor(teams.length ? (teams.find((t) => t.id === me?.teamId)?.color ?? null) : null);
   editPicker.value = { ...profile, color: me?.color ?? profile.color, icon: me?.icon ?? profile.icon };
   dialog.showModal();
 });
+
+// Al cambiar de equipo en el diálogo, los iconos ocupados se calculan con el color del nuevo equipo.
+teamSelect.addEventListener('change', () => {
+  const team = lastState?.teams?.find((t) => t.id === teamSelect.value);
+  if (team) editPicker.setFixedColor(team.color);
+});
+
 // 'submit' y no 'close': Chrome no dispara 'close' mientras la página no se pinta.
 $('#profile-form').addEventListener('submit', (e) => {
   e.preventDefault();
   dialog.close();
   if (e.submitter?.value !== 'save') return;
   const value = editPicker.value;
-  Object.assign(profile, value);
+  const teamId = $('#team-field').hidden ? (me?.teamId ?? null) : teamSelect.value || null;
+  Object.assign(profile, value, { teamId });
   saveProfile();
-  connection?.send({ t: MSG.PROFILE, name: value.name, color: value.color, icon: value.icon });
+  connection?.send({ t: MSG.PROFILE, name: value.name, color: value.color, icon: value.icon, teamId });
 });
+
+// ---------- Elegir equipo ----------
+
+function showTeamPicker(teams) {
+  fill(
+    $('#team-list'),
+    teams.map((t) => {
+      const color = getColor(t.color);
+      return h(
+        'button',
+        {
+          type: 'button',
+          class: 'team-button',
+          style: { background: color.bg, color: color.fg },
+          onclick: () => {
+            profile.teamId = t.id;
+            teamRequested = true; // hasta que conteste, no volver a enseñar la lista
+            saveProfile();
+            connection?.send({ t: MSG.PROFILE, name: profile.name, color: t.color, icon: profile.icon, teamId: t.id });
+            show('screen-game');
+          },
+        },
+        t.name,
+      );
+    }),
+  );
+  show('screen-team');
+}
 
 // ---------- Utilidades ----------
 

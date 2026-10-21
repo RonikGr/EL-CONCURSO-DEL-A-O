@@ -16,6 +16,7 @@ export default defineConfig(({ mode }) => ({
       input: {
         player: resolve(root, 'index.html'),
         host: resolve(root, 'host.html'),
+        control: resolve(root, 'control.html'),
       },
     },
   },

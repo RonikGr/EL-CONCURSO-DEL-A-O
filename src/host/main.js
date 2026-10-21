@@ -1,14 +1,17 @@
-// Pantalla del presentador (la que se ve en la tele).
+// Pantalla del portátil conectado a la tele: el espectáculo. También se puede manejar con teclado y ratón,
+// aunque lo normal es hacerlo desde el mando del presentador (control.html).
 import './host.css';
 import QRCode from 'qrcode';
-import { $, clear, h } from '../shared/dom.js';
+import { $, clear, fill, h } from '../shared/dom.js';
 import { getColor, getIcon } from '../shared/appearance.js';
 import { generateRoomCode } from '../shared/roomCode.js';
-import { MAX_PLAYERS, MIN_PLAYERS } from '../core/players.js';
 import { LOCK, PHASE } from '../core/game.js';
+import { SCREEN } from '../core/runner.js';
+import { parseShowWorkbook } from '../core/show.js';
 import { HostRoom } from './room.js';
 import { clearSavedRoom, loadSavedRoom } from './persistence.js';
 import { createStage } from './stage.js';
+import { coverScreen, finalScreen, introScreen, scoreboardScreen, setupScreen } from './screens.js';
 import { openSettingsDialog } from './settingsDialog.js';
 import { createDebugPanel } from './debugPanel.js';
 
@@ -19,22 +22,33 @@ const LOCAL_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
 const app = $('#app');
 let room = null;
 let stage = null;
+let qrs = null; // {join, joinMini, control}
+let lastScreenSignature = null;
 const debug = createDebugPanel();
 const cards = new Map(); // playerId → elementos de su tarjeta
 
+/** Ejecuta una orden y avisa si no se pudo. */
+function run(action, args) {
+  const res = room?.run(action, args);
+  if (res && !res.ok) toast(res.error);
+  return res;
+}
+
 const actions = {
-  open: () => room?.openTurn(),
-  correct: () => room?.markCorrect(),
-  wrong: () => room?.markWrong(),
-  next: () => room?.nextQuestion(),
-  restart: () => room?.restartQuestion(),
+  open: () => run('open'),
+  correct: () => run('correct'),
+  wrong: () => run('wrong'),
+  nextItem: () => run('nextItem'),
+  restart: () => run('restart'),
+  showQuestion: () => run('showQuestion'),
+  showAnswer: () => run('showAnswer'),
 };
 
 function boot() {
   const saved = loadSavedRoom();
   if (saved && readTabMark() === saved.code) return startRoom(saved);
   if (saved && saved.players.length) return showRecover(saved);
-  startRoom({ code: generateRoomCode() });
+  startRoom(null);
 }
 
 function showRecover(saved) {
@@ -44,7 +58,7 @@ function showRecover(saved) {
     h(
       'main',
       { class: 'recover' },
-      h('h1', {}, 'Concurso del año'),
+      h('h1', {}, saved.show?.title ?? 'Concurso del año'),
       h(
         'p',
         { class: 'lead' },
@@ -66,66 +80,66 @@ function newRoom() {
   room?.destroy();
   room = null;
   clearSavedRoom();
-  startRoom({ code: generateRoomCode() });
+  startRoom(null);
 }
 
-function startRoom({ code, players = [], settings = {}, qid = 1 }) {
+function startRoom(saved) {
+  const code = saved?.code ?? generateRoomCode();
   writeTabMark(code);
-  room = new HostRoom({ code, savedPlayers: players, settings, qid });
+  room = new HostRoom({ code, saved });
+  qrs = makeQrs();
   renderShell();
   room.addEventListener('change', render);
   room.start();
   render();
 }
 
+function makeQrs() {
+  const joinUrl = playerUrl(room.code);
+  const qr = (url, label) => {
+    const el = h('div', { class: 'qr', role: 'img', 'aria-label': label });
+    QRCode.toString(url, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' })
+      .then((svg) => (el.innerHTML = svg))
+      .catch(() => el.append('No se pudo generar el QR'));
+    return el;
+  };
+  return {
+    joinUrlText: joinUrl.host + joinUrl.pathname.replace(/\/$/, ''),
+    join: qr(joinUrl.href, `QR para unirse a la sala ${room.code}`),
+    joinMini: qr(joinUrl.href, `QR para unirse a la sala ${room.code}`),
+    control: qr(room.controlUrl(location.href).href, 'QR del mando del presentador'),
+  };
+}
+
 // ---------- Estructura fija ----------
 
 function renderShell() {
   cards.clear();
+  lastScreenSignature = null;
   stage = createStage(actions);
-  const joinUrl = playerUrl(room.code);
-  const shownUrl = joinUrl.host + joinUrl.pathname.replace(/\/$/, '');
-
-  const qr = h('div', { class: 'qr', role: 'img', 'aria-label': `QR para unirse a la sala ${room.code}` });
-  QRCode.toString(joinUrl.href, { type: 'svg', margin: 1, errorCorrectionLevel: 'M' })
-    .then((svg) => (qr.innerHTML = svg))
-    .catch(() => qr.append('No se pudo generar el QR'));
 
   clear(app).append(
     h(
       'div',
       { class: 'host-shell' },
-      h('header', { class: 'topbar' }, h('h1', {}, 'Concurso del año'), h('span', { class: 'net-pill', id: 'net-pill' })),
-      h('div', { class: 'banners', id: 'banners' }),
       h(
-        'main',
-        { class: 'board' },
-        stage.root,
-        h(
-          'aside',
-          { class: 'join-panel', 'aria-label': 'Cómo unirse' },
-          h('p', { class: 'join-label' }, 'Únete con el móvil'),
-          qr,
-          h('p', { class: 'join-url' }, shownUrl),
-          h('p', { class: 'join-code', 'aria-label': `Código ${room.code.split('').join(' ')}` }, room.code),
-        ),
-        h(
-          'section',
-          { class: 'players-panel', 'aria-label': 'Jugadores' },
-          h(
-            'div',
-            { class: 'players-head' },
-            h('h2', {}, 'Jugadores ', h('span', { class: 'players-count', id: 'players-count' })),
-            h('p', { class: 'ready-hint', id: 'ready-hint' }),
-          ),
-          h('div', { class: 'empty', id: 'empty' }, 'Todavía no hay nadie. ¡Escanead el QR!'),
-          h('ul', { class: 'player-grid', id: 'player-grid' }),
-        ),
+        'header',
+        { class: 'topbar' },
+        h('h1', { id: 'show-title' }),
+        h('div', { class: 'join-chip', id: 'join-chip' }, qrs.joinMini, h('span', {}, h('small', {}, 'Únete · '), h('strong', { id: 'chip-code' }, room.code))),
+        h('span', { class: 'net-pill', id: 'net-pill' }),
+      ),
+      h('div', { class: 'banners', id: 'banners' }),
+      h('main', { class: 'screen-area', id: 'screen' }),
+      h(
+        'section',
+        { class: 'players-panel', id: 'players-panel', 'aria-label': 'Jugadores' },
+        h('ul', { class: 'player-grid', id: 'player-grid' }),
       ),
       h(
         'footer',
         { class: 'toolbar' },
-        h('span', { class: 'hint' }, 'Teclas: Espacio abrir / siguiente · A acierto · F fallo · R reiniciar · D depuración'),
+        h('span', { class: 'hint' }, 'Espacio · ← → · P pregunta · V respuesta · A acierto · F fallo · R reiniciar · M marcador · D depuración'),
         h('button', { class: 'btn', onclick: () => debug.toggle(room) }, 'Depuración'),
         h('button', { class: 'btn', onclick: () => openSettingsDialog(room) }, 'Ajustes'),
         h('button', { class: 'btn', onclick: toggleFullscreen }, 'Pantalla completa'),
@@ -135,6 +149,8 @@ function renderShell() {
     ),
     stage.overlay,
     debug.root,
+    h('div', { class: 'approve-overlay', id: 'approve', hidden: true }),
+    h('div', { class: 'host-toast', id: 'toast', role: 'status', hidden: true }),
   );
 }
 
@@ -142,9 +158,13 @@ function renderShell() {
 
 function render() {
   if (!room) return;
-  renderNetwork();
-  stage.render(room);
-  renderPlayers();
+  const view = room.view();
+  $('#show-title').textContent = view.title;
+  $('#join-chip').hidden = view.screen === SCREEN.SETUP;
+  renderNetwork(view);
+  renderScreen(view);
+  renderPlayers(view);
+  renderApproval(view);
   debug.render(room);
 }
 
@@ -180,25 +200,65 @@ function renderNetwork() {
   $('#banners').replaceChildren(...banners);
 }
 
-function renderPlayers() {
-  const players = room.players();
-  const connected = players.filter((p) => p.connected).length;
-  $('#players-count').textContent = `${connected} conectados · ${players.length}/${MAX_PLAYERS}`;
-  $('#empty').hidden = players.length > 0;
+/**
+ * Repinta la pantalla solo si cambió algo visible (no con cada latido): así las animaciones de entrada
+ * no se repiten y no se pierde el foco.
+ */
+function renderScreen(view) {
+  const visible = { ...view, players: view.players.map(({ rtt, ...p }) => p), settings: null };
+  const signature = JSON.stringify(visible);
+  if (signature === lastScreenSignature) return;
+  lastScreenSignature = signature;
 
-  const hint = $('#ready-hint');
-  const missing = MIN_PLAYERS - connected;
-  hint.hidden = missing <= 0;
-  hint.textContent = missing > 0 ? `Falta${missing > 1 ? 'n' : ''} ${missing} para empezar (mínimo ${MIN_PLAYERS})` : '';
+  const screen = $('#screen');
+  screen.dataset.screen = view.peekScoreboard ? 'scoreboard' : view.screen;
+  if (view.peekScoreboard) return fill(screen, scoreboardScreen(view));
+
+  switch (view.screen) {
+    case SCREEN.SETUP:
+      return fill(
+        screen,
+        setupScreen(view, {
+          joinQr: qrs.join,
+          controlQr: qrs.control,
+          joinUrlText: qrs.joinUrlText,
+          onFile: importFile,
+          onStart: () => run('next'),
+          onLockTeams: (locked) => run('lockTeams', { locked }),
+          onMoveTeam: (playerId, teamId) => run('moveTeam', { playerId, teamId }),
+        }),
+      );
+    case SCREEN.COVER:
+      return fill(screen, coverScreen(view));
+    case SCREEN.INTRO:
+      return fill(screen, introScreen(view));
+    case SCREEN.PLAY:
+      if (view.game) {
+        stage.render(view);
+        if (stage.root.parentNode !== screen) fill(screen, stage.root);
+        return;
+      }
+      return fill(screen, introScreen(view));
+    case SCREEN.SCOREBOARD:
+      return fill(screen, scoreboardScreen(view, { title: `Marcador tras «${view.section?.name ?? ''}»` }));
+    case SCREEN.FINAL:
+      return fill(screen, finalScreen(view));
+  }
+}
+
+function renderPlayers(view) {
+  const panel = $('#players-panel');
+  panel.hidden = !(view.screen === SCREEN.PLAY && view.game && !view.peekScoreboard);
+  if (panel.hidden) return;
 
   // Puesto de cada uno en la ronda actual (mientras el turno está abierto o se ve el resultado).
-  const view = room.gameView();
-  const places = new Map(view.phase === PHASE.OPEN || view.phase === PHASE.RESULT ? view.ranking.map((r) => [r.playerId, r.place]) : []);
+  const game = view.game;
+  const places = new Map(game.phase === PHASE.OPEN || game.phase === PHASE.RESULT ? game.ranking.map((r) => [r.playerId, r.place]) : []);
 
   // Tarjetas con clave: no se recrean en cada latido, así no se pierde el foco ni el hover.
   const grid = $('#player-grid');
   const seen = new Set();
-  for (const p of players) {
+  for (const p of view.players) {
     seen.add(p.id);
     let card = cards.get(p.id);
     if (!card) {
@@ -222,9 +282,9 @@ function createCard(playerId) {
   const meta = h('span', {});
   const place = h('span', { class: 'pc-place' });
   const score = h('span', { class: 'score', 'aria-live': 'polite' });
-  const minus = h('button', { class: 'score-btn', onclick: () => room.adjustScore(playerId, -1) }, '−');
-  const plus = h('button', { class: 'score-btn', onclick: () => room.adjustScore(playerId, +1) }, '+');
-  const unlock = h('button', { class: 'pc-unlock', onclick: () => room.unlockPlayer(playerId) }, 'Desbloquear');
+  const minus = h('button', { class: 'score-btn', onclick: () => run('adjustScore', { playerId, delta: -1 }) }, '−');
+  const plus = h('button', { class: 'score-btn', onclick: () => run('adjustScore', { playerId, delta: +1 }) }, '+');
+  const unlock = h('button', { class: 'pc-unlock', onclick: () => run('unlock', { playerId }) }, 'Desbloquear');
   const remove = h('button', { class: 'pc-remove', onclick: () => confirmRemove(playerId) }, '✕');
   // Rejilla: avatar | nombre (todo el ancho que necesite) | puntos
   //          avatar | estado · Desbloquear · ✕             | − +
@@ -264,26 +324,103 @@ function updateCard(card, p, place) {
   card.remove.title = `Quitar a ${p.name}`;
 }
 
+/** Un móvil pide ser el mando: se confirma aquí (Enter) o se rechaza (Esc). */
+function renderApproval(view) {
+  const box = $('#approve');
+  const pending = view.pendingControls[0];
+  box.hidden = !pending;
+  if (!pending) return;
+  fill(
+    box,
+    h(
+      'div',
+      { class: 'approve-card', role: 'alertdialog', 'aria-label': 'Nuevo mando' },
+      h('h2', {}, '¿Permitir este mando?'),
+      h('p', {}, `«${pending.deviceName}» quiere ser el mando del presentador. Solo acéptalo si es tu móvil.`),
+      h(
+        'div',
+        { class: 'stage-actions' },
+        h('button', { class: 'btn primary huge', onclick: () => run('approveControl', { controlId: pending.id }) }, 'Permitir ', h('kbd', {}, 'Enter')),
+        h('button', { class: 'btn huge', onclick: () => run('denyControl', { controlId: pending.id }) }, 'Rechazar ', h('kbd', {}, 'Esc')),
+      ),
+    ),
+  );
+}
+
+// ---------- Importar el concurso ----------
+
+async function importFile(file) {
+  if (!room) return;
+  try {
+    const { default: readXlsxFile } = await import('read-excel-file/browser');
+    const sheets = await readXlsxFile(file);
+    const { show, errors, warnings } = parseShowWorkbook(sheets);
+    const report = { fileName: file.name, errors, warnings };
+    if (errors.length) return room.reportImportFailure(report);
+    const res = room.loadShow(show, report);
+    if (res !== true) toast(res);
+  } catch (e) {
+    console.error(e);
+    room.reportImportFailure({ fileName: file.name, errors: [{ sheet: 'Archivo', row: null, message: 'No se pudo leer: ¿es un .xlsx?' }], warnings: [] });
+  }
+}
+
+addEventListener('dragover', (e) => {
+  if (room?.runner.screen === SCREEN.SETUP && e.dataTransfer?.types.includes('Files')) e.preventDefault();
+});
+addEventListener('drop', (e) => {
+  if (room?.runner.screen !== SCREEN.SETUP) return;
+  const file = e.dataTransfer?.files?.[0];
+  if (!file) return;
+  e.preventDefault();
+  importFile(file);
+});
+
 // ---------- Teclado ----------
 
 document.addEventListener('keydown', (e) => {
   if (!room || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
   if (document.querySelector('dialog[open]') || e.target.closest?.('input, textarea, select')) return;
-  const phase = room.game.phase;
+
+  const pending = room.view().pendingControls[0];
+  if (pending && (e.key === 'Enter' || e.key === 'Escape')) {
+    e.preventDefault();
+    run(e.key === 'Enter' ? 'approveControl' : 'denyControl', { controlId: pending.id });
+    return;
+  }
+
+  const screen = room.runner.screen;
+  const phase = room.inBuzzerPlay ? room.game.phase : null;
   switch (e.code) {
     case 'Space':
       e.preventDefault(); // que no "pulse" el botón con foco
       if (phase === PHASE.IDLE) actions.open();
-      else if (phase === PHASE.RESULT || phase === PHASE.CLOSED) actions.next();
+      else if (phase === PHASE.RESULT || phase === PHASE.CLOSED) actions.nextItem();
+      else if (phase == null && screen !== SCREEN.FINAL) run('next');
+      break;
+    case 'ArrowRight':
+      run('next');
+      break;
+    case 'ArrowLeft':
+      run('prev');
+      break;
+    case 'KeyP':
+      actions.showQuestion();
+      break;
+    case 'KeyV':
+      actions.showAnswer();
       break;
     case 'KeyR':
-      actions.restart();
+      if (phase) actions.restart();
       break;
     case 'KeyA':
       if (phase === PHASE.RESULT) actions.correct();
       break;
     case 'KeyF':
       if (phase === PHASE.RESULT) actions.wrong();
+      break;
+    case 'KeyM':
+      run('scoreboard');
       break;
     case 'KeyD':
       debug.toggle(room);
@@ -295,20 +432,30 @@ document.addEventListener('keydown', (e) => {
 
 function confirmRemove(playerId) {
   const p = room.roster.get(playerId);
-  if (p && confirm(`¿Quitar a ${p.name} de la sala? Perderá sus puntos.`)) room.removePlayer(playerId);
+  if (p && confirm(`¿Quitar a ${p.name} de la sala? Perderá sus puntos.`)) run('removePlayer', { playerId });
 }
 
 function confirmResetScores() {
-  if (confirm('¿Poner todos los marcadores a 0?')) room.resetScores();
+  if (confirm('¿Poner todos los marcadores a 0?')) run('resetScores');
 }
 
 function confirmNewRoom() {
-  if (confirm('¿Cerrar esta sala y crear otra? Los jugadores tendrán que volver a entrar.')) newRoom();
+  if (confirm('¿Cerrar esta sala y crear otra? Los jugadores tendrán que volver a entrar y el mando, emparejarse de nuevo.')) newRoom();
 }
 
 function toggleFullscreen() {
   if (document.fullscreenElement) document.exitFullscreen();
   else document.documentElement.requestFullscreen?.().catch(() => {});
+}
+
+let toastTimer = null;
+function toast(text) {
+  const el = $('#toast');
+  if (!el || !text) return;
+  el.textContent = text;
+  el.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (el.hidden = true), 4000);
 }
 
 // ---------- Utilidades ----------

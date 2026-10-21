@@ -1,5 +1,8 @@
 // Lista de jugadores de la sala. Lógica pura: la usa el presentador y la prueban los tests.
-import { COLORS, ICONS, appearanceKey, isKnownColor, isKnownIcon } from '../shared/appearance.js';
+//
+// Sin equipos: cada jugador elige color + icono y la pareja es única en la sala.
+// Con equipos: el color es el del equipo y el icono es único dentro del equipo (la pareja sigue siendo única).
+import { COLORS, ICONS, NO_TEAM_COLOR, appearanceKey, isKnownColor, isKnownIcon } from '../shared/appearance.js';
 
 export const MAX_PLAYERS = 20;
 export const MIN_PLAYERS = 2;
@@ -45,10 +48,16 @@ export function pickFreeAppearance(color, icon, takenKeys) {
 }
 
 export class Roster {
-  /** @param {Array} saved lista de `toJSON()` (p. ej. tras recargar el presentador) */
-  constructor(saved = []) {
+  /**
+   * @param {Array} saved lista de `toJSON()` (p. ej. tras recargar el presentador)
+   * @param {object} options.teams [{id, name, color}] — vacío = sin equipos
+   */
+  constructor(saved = [], { teams = [], teamsLocked = false, teamBonus = {} } = {}) {
     this.players = new Map();
     this.nextSeq = 1;
+    this.teams = [];
+    this.teamsLocked = teamsLocked;
+    this.teamBonus = new Map(Object.entries(teamBonus)); // teamId → puntos dados al equipo entero
     for (const p of saved) {
       if (!p?.id) continue;
       this.players.set(p.id, {
@@ -56,12 +65,14 @@ export class Roster {
         name: sanitizeName(p.name),
         color: p.color,
         icon: p.icon,
+        teamId: p.teamId ?? null,
         score: Number.isFinite(p.score) ? p.score : 0,
         joinSeq: p.joinSeq ?? this.nextSeq,
         connected: false,
       });
       this.nextSeq = Math.max(this.nextSeq, (p.joinSeq ?? 0) + 1);
     }
+    this.setTeams(teams);
   }
 
   get size() {
@@ -74,6 +85,10 @@ export class Roster {
     return n;
   }
 
+  get hasTeams() {
+    return this.teams.length > 0;
+  }
+
   get(id) {
     return this.players.get(id);
   }
@@ -83,6 +98,24 @@ export class Roster {
     return [...this.players.values()].sort((a, b) => a.joinSeq - b.joinSeq);
   }
 
+  team(teamId) {
+    return this.teams.find((t) => t.id === teamId) ?? null;
+  }
+
+  /**
+   * Cambia los equipos (al cargar un concurso). Quien estuviera en un equipo que ya no existe queda sin equipo;
+   * a todos se les recalcula color e icono.
+   */
+  setTeams(teams) {
+    this.teams = teams.map((t) => ({ id: t.id, name: t.name, color: isKnownColor(t.color) ? t.color : COLORS[0].id }));
+    if (!this.hasTeams) this.teamsLocked = false;
+    for (const id of [...this.teamBonus.keys()]) if (!this.team(id)) this.teamBonus.delete(id);
+    for (const p of this.list()) {
+      if (p.teamId && !this.team(p.teamId)) p.teamId = null;
+      Object.assign(p, this.#resolveProfile(p.id, p).profile);
+    }
+  }
+
   takenAppearances(exceptId = null) {
     return this.list()
       .filter((p) => p.id !== exceptId)
@@ -90,14 +123,15 @@ export class Roster {
   }
 
   /**
-   * Alta o reconexión. Si `playerId` ya existe, conserva los puntos.
+   * Alta o reconexión. Si `playerId` ya existe, conserva los puntos (y el equipo si están cerrados).
    * @returns {{ok: true, player, isNew, renamed, appearanceChanged} | {ok: false, reason: 'full'}}
    */
-  join({ playerId, name, color, icon }) {
+  join({ playerId, name, color, icon, teamId = null }) {
     const existing = this.players.get(playerId);
     if (!existing && this.players.size >= MAX_PLAYERS) return { ok: false, reason: 'full' };
 
-    const resolved = this.#resolveProfile(playerId, { name, color, icon });
+    const wanted = { name, color, icon, teamId: this.#allowedTeam(existing, teamId) };
+    const resolved = this.#resolveProfile(playerId, wanted);
     let player = existing;
     if (player) {
       Object.assign(player, resolved.profile, { connected: true });
@@ -108,13 +142,25 @@ export class Roster {
     return { ok: true, player, isNew: !existing, renamed: resolved.renamed, appearanceChanged: resolved.appearanceChanged };
   }
 
-  /** Cambio de nombre/color/icono desde el móvil. */
+  /** Cambio de nombre/icono/color/equipo desde el móvil. */
   updateProfile(playerId, wanted) {
     const player = this.players.get(playerId);
     if (!player) return null;
-    const resolved = this.#resolveProfile(playerId, wanted);
+    const resolved = this.#resolveProfile(playerId, { ...wanted, teamId: this.#allowedTeam(player, wanted.teamId) });
     Object.assign(player, resolved.profile);
     return { player, renamed: resolved.renamed, appearanceChanged: resolved.appearanceChanged };
+  }
+
+  /** El presentador mueve a alguien de equipo (también con los equipos cerrados). */
+  moveToTeam(playerId, teamId) {
+    const player = this.players.get(playerId);
+    if (!player || !this.team(teamId)) return null;
+    Object.assign(player, this.#resolveProfile(playerId, { ...player, teamId }).profile);
+    return player;
+  }
+
+  lockTeams(locked = true) {
+    this.teamsLocked = this.hasTeams && locked;
   }
 
   setConnected(playerId, connected) {
@@ -130,8 +176,28 @@ export class Roster {
     return p.score;
   }
 
+  /** Puntos para el equipo entero (no se reparten entre sus miembros). */
+  adjustTeamBonus(teamId, delta) {
+    if (!this.team(teamId)) return null;
+    const value = (this.teamBonus.get(teamId) ?? 0) + delta;
+    this.teamBonus.set(teamId, value);
+    return value;
+  }
+
   resetScores() {
     for (const p of this.players.values()) p.score = 0;
+    this.teamBonus.clear();
+  }
+
+  /** [{team, score, members}] ordenados de más a menos puntos. Puntos = suma de miembros + bonus de equipo. */
+  teamStandings() {
+    return this.teams
+      .map((team) => {
+        const members = this.list().filter((p) => p.teamId === team.id);
+        const score = members.reduce((sum, p) => sum + p.score, 0) + (this.teamBonus.get(team.id) ?? 0);
+        return { team, score, members };
+      })
+      .sort((a, b) => b.score - a.score);
   }
 
   remove(playerId) {
@@ -139,25 +205,40 @@ export class Roster {
   }
 
   toJSON() {
-    return this.list().map(({ id, name, color, icon, score, joinSeq }) => ({ id, name, color, icon, score, joinSeq }));
+    return this.list().map(({ id, name, color, icon, teamId, score, joinSeq }) => ({ id, name, color, icon, teamId, score, joinSeq }));
   }
 
-  #resolveProfile(selfId, { name, color, icon }) {
+  /** Con equipos cerrados, quien ya tiene equipo no puede cambiarlo él mismo. */
+  #allowedTeam(player, requested) {
+    if (this.teamsLocked && player?.teamId) return player.teamId;
+    return requested ?? player?.teamId ?? null;
+  }
+
+  #resolveProfile(selfId, { name, color, icon, teamId }) {
     const others = this.list().filter((p) => p.id !== selfId);
     const wantedName = sanitizeName(name);
     const finalName = uniqueName(
       wantedName,
       others.map((p) => p.name),
     );
+
+    let finalTeamId = null;
+    let wantedColor = color;
+    if (this.hasTeams) {
+      const team = this.team(teamId);
+      finalTeamId = team?.id ?? null;
+      wantedColor = team?.color ?? NO_TEAM_COLOR; // el color lo pone el equipo
+    }
     const appearance = pickFreeAppearance(
-      color,
+      wantedColor,
       icon,
       others.map((p) => appearanceKey(p.color, p.icon)),
     );
     return {
-      profile: { name: finalName, ...appearance },
+      profile: { name: finalName, ...appearance, teamId: finalTeamId },
       renamed: finalName !== wantedName,
-      appearanceChanged: appearance.color !== color || appearance.icon !== icon,
+      // Con equipos, que el color cambie al del equipo es lo esperado: solo cuenta el icono.
+      appearanceChanged: appearance.icon !== icon || (!this.hasTeams && appearance.color !== color),
     };
   }
 }

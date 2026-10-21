@@ -9,6 +9,8 @@ servidor de enlace público (`0.peerjs.com`). **El presentador es la autoridad**
 - `npm run dev` — servidor Vite con HTTPS autofirmado, accesible desde la LAN (`--host`).
 - `npm test` — tests (Vitest) de la lógica pura en `src/core` y `src/shared`.
 - `npm run build` — genera `dist/`. El despliegue lo hace `.github/workflows/deploy.yml` al hacer push a `main`.
+- `npm run plantilla` — regenera `public/plantilla-concurso.xlsx` (script `scripts/make-template.mjs`, ExcelJS solo en desarrollo).
+  Un test comprueba que la plantilla se lee sin errores ni avisos: si se cambian columnas, cambiar a la vez `src/core/show.js`.
 
 En este Windows, Node y Git se instalaron con winget; si una terminal antigua no los encuentra, refrescar `PATH`.
 Ojo con PowerShell 5.1: `Get-Content`/`Set-Content` sin `-Encoding` rompen los acentos (leen ANSI, escriben BOM). Editar con las herramientas de archivo.
@@ -18,35 +20,52 @@ Ojo con PowerShell 5.1: `Get-Content`/`Set-Content` sin `-Encoding` rompen los a
 
 - **Vite + Vitest**, sin frameworks. JS plano con módulos ES. Dependencias con versión exacta (`.npmrc` → `save-exact`), lockfile versionado, `npm ci` en CI.
 - `base: './'` → funciona bajo cualquier nombre de repositorio en Pages.
-- Páginas: `index.html` = jugador (URL corta para teclear), `host.html` = presentador.
+- Páginas: `index.html` = jugador (URL corta para teclear), `host.html` = tele (autoridad), `control.html` = mando del presentador.
 - Idioma: identificadores en inglés; comentarios, documentación e interfaz en español.
 - Código de sala: 4 caracteres del alfabeto `ACDEFGHJKMNPRTUVWXY23479` (de cada pareja confusa queda como mucho uno: sin O/0/Q, I/1/L, S/5, B/8, 6, Z).
 - ID PeerJS del presentador: `concurso-del-ano-v1-<CÓDIGO>` (prefijo porque el servidor público es compartido). Los jugadores usan IDs aleatorios.
 - Jugadores: mínimo 2 para jugar, máximo 20. Identidad = `playerId` (UUID en localStorage del móvil), no el nombre.
   - Nombre repetido → el presentador lo renombra a "Ana (2)".
-  - Cada jugador elige **color + icono**; la **pareja** color+icono es única en la sala. Si choca, el presentador asigna otra libre y avisa.
-  - Los iconos son provisionales (emoji) hasta que el usuario pase su lista: se cambian en `src/shared/appearance.js`.
-- Puntos: el presentador decide. "Acierto" suma (configurable) y "Fallo" no toca puntos por defecto; además hay +/− manual.
+  - Sin equipos, cada jugador elige **color + icono** y la **pareja** es única en la sala. Con equipos, el color es el del
+    equipo y el icono es único dentro del equipo. Si choca, el presentador asigna otro libre y avisa.
+  - Iconos: solo animales (emoji), en `src/shared/appearance.js`; para añadir, al final (los ids se guardan).
+- Puntos: los de cada sección (columna Puntos de la hoja) y "Puntos por fallo" de Ajustes; además +/− manual por jugador
+  y por equipo. Comodines: 1 de cada (50 %, Doble, Público) por equipo, o por jugador si no hay equipos.
 - Pulsar antes de abrir el turno bloquea al jugador durante esa pregunta (opción activada por defecto).
 - Todos los jugadores estarán en la misma wifi (no se optimiza para datos móviles / TURN).
 - Sin vibración en iPhone (Safari no la soporta): aceptado.
 
 ## Arquitectura
 
-- `src/core/` — lógica pura, sin DOM ni red, con tests: roster de jugadores, máquina de estados de la pregunta, ranking, sincronización de reloj y plausibilidad de marcas.
-- `src/shared/` — protocolo, código de sala, configuración PeerJS, apariencias, almacenamiento seguro.
-- `src/host/` — red del presentador, persistencia, interfaz para la tele. Las pulsaciones entran por "fuentes" (`sources/`): hoy móviles; fase 2 de la hoja de ruta: mandos (Gamepad API) con offset 0.
-- `src/player/` — red del jugador con reconexión, interfaz del botón, wake lock y vibración.
+- `src/core/` — lógica pura, sin DOM ni red, con tests: roster (jugadores y equipos), concurso y lectura de la hoja
+  (`show.js`), recorrido de pantallas (`runner.js`), motor del pulsador (`game.js`), ranking, sincronización y plausibilidad.
+- `src/shared/` — protocolo, código de sala, configuración PeerJS, apariencias, almacenamiento seguro, formato de tiempos.
+- `src/host/` — tele: `room.js` (controlador: une todo, órdenes en `run(action, args)`), `screens.js` + `stage.js`
+  (pantallas), `main.js` (pintado, teclado, importar), persistencia (`concurso.host.v2`). Las conexiones entran por
+  `sources/peerSource.js` (jugadores y mandos); fase futura: mandos físicos (Gamepad API) con offset 0.
+- `src/player/` — móvil del jugador: reconexión, sincronización, botón, elegir equipo.
+- `src/control/` — mando del presentador: pestañas Juego / Jugadores / Secciones; manda órdenes `cmd` y pinta `controlState`.
 
-### Protocolo (JSON por DataConnection fiable, campo `t` = tipo)
+### Protocolo (JSON por DataConnection fiable, campo `t` = tipo; `PROTOCOL_VERSION` = 2)
 
-Jugador → presentador: `hello {v, playerId, name, color, icon}`, `profile {name, color, icon}`, `hbAck {h0}`,
-`buzz {seq, epoch, tLocal?, offset?, err?}` (sin offset → cuenta la llegada), `sync {id, t0}`, `syncReport {offset, err, rtt, samples}`.
+Jugador → tele: `hello {v, role:'player', playerId, name, color, icon, teamId}`, `profile {name, color, icon, teamId}`,
+`hbAck {h0}`, `buzz {seq, epoch, tLocal?, offset?, err?}` (sin offset → cuenta la llegada), `sync {id, t0}`,
+`syncReport {offset, err, rtt, samples}`.
 
-Presentador → jugador: `welcome {you, adjusted}`, `state {room, playerCount, minPlayers, taken, you, game, winner}`
-(foto completa y personalizada en cada cambio, para que reconectar sea trivial; `game` = `playerView()`),
+Tele → jugador: `welcome {you, adjusted}`, `state {room, title, playerCount, minPlayers, taken, teams, teamsLocked, you,
+screen, section, game, winner}` (foto completa y personalizada; `game` = `playerView()` solo en una pregunta de pulsador),
 `hb {h0}` cada 2 s, `buzzAck {seq, result}`, `syncReply {id, t0, t1, t2}`,
-`error {code, message}` (`room-full`, `version`, `removed`, `replaced`).
+`error {code, message}` (`room-full`, `version`, `removed`, `replaced`, `control-denied`).
+
+Mando ↔ tele: `hello {v, role:'control', controlId, token, deviceName}` → `controlStatus {status: pending|approved}`;
+luego `controlState {view}` (vista completa con respuestas, agrupada cada 150 ms) y `cmd {id, action, args}` →
+`cmdResult {id, ok, error}`. Las órdenes son las de `HostRoom.run()`: next, prev, nextItem, gotoSection, endSection,
+scoreboard, toSetup, showQuestion, showAnswer, open, correct, wrong, restart, unlock, lockTeams, moveTeam, adjustScore,
+adjustTeamBonus, resetScores, removePlayer, approveControl, denyControl, updateSettings.
+
+- Emparejar mando: la tele (preparación) enseña un QR a `control.html?sala=CÓDIGO#k=CLAVE` (la clave tras `#` no sale del
+  navegador); con la clave correcta, el portátil pide confirmación (Enter / Esc). Los mandos aprobados se recuerdan.
+  Sala nueva = clave nueva.
 
 - Mismo `playerId` desde otra conexión (otra pestaña): la vieja recibe `replaced` y deja de reconectar; si no, se echarían mutuamente.
 - `?perfil=X` en la página del jugador usa otra identidad (clave de localStorage distinta): para probar varios jugadores en un navegador.
@@ -59,7 +78,11 @@ tras "Fallo" sin nadie más, `closed`. "Fallo" bloquea al ganador y abre una ron
 de época vieja se descarta (`stale`, sin bloquear) salvo que caiga dentro del turno abierto ahora (`tPress ≥ tOpen`).
 El móvil envía también en "Espera": decide el presentador (antes de tiempo → bloqueo si la opción está activa).
 `tPress` lo calcula `peerSource.js` con `resolvePressTime()` (marca sincronizada, o llegada si el móvil aún no está sincronizado).
-Teclas de la tele: Espacio (abrir / siguiente), A (acierto), F (fallo), R (reiniciar pregunta), D (depuración).
+Teclas de la tele: Espacio (contextual: abrir turno / siguiente pregunta / avanzar), ← →, P (mostrar pregunta),
+V (mostrar respuesta), A (acierto), F (fallo), R (reiniciar pregunta), M (marcador), D (depuración).
+Las pulsaciones solo cuentan en una pregunta de pulsador (`HostRoom.inBuzzerPlay`); fuera, `buzzAck closed` sin bloquear.
+Cada pregunta del runner (`runner.playKey`) reinicia el motor (`game.next()`).
+La tele repinta la pantalla solo si cambia algo visible (firma JSON sin latencias): así las animaciones no se repiten.
 Los `<dialog>` se gestionan con el evento `submit` del formulario, no con `close`: Chrome no dispara `close`
 mientras la página no se pinta (ventana oculta o minimizada).
 
@@ -87,11 +110,42 @@ mientras la página no se pinta (ventana oculta o minimizada).
 - Modo depuración (D): por jugador RTT del latido, offset, error y muestras; por ronda pulsó / llegó / red / origen.
 - Límites y trampas: ver README, "Justicia en los tiempos".
 
+## Diseño del concurso (acordado; hecho hasta la fase 4)
+
+- **Tres papeles:** `host.html` = espectáculo en la tele (sigue siendo la autoridad: estado, puntos, conexiones,
+  música); `control.html` = mando del presentador en su móvil (ve preguntas y respuestas en privado, lo controla
+  todo); `index.html` = jugador. El mando se empareja con un QR con clave secreta que muestra la tele en
+  preparación + confirmación con tecla en el portátil; luego se recuerda. El teclado del portátil sigue de respaldo.
+- **El presentador también puede jugar** en las secciones que lo permitan (columna "El presentador juega").
+- **Pantallas de la tele:** Preparación → Portada → [Intro de sección → rondas → Marcador] × N → Final (podios).
+- **Equipos:** se eligen al entrar; antes de empezar, pantalla de comprobación y "Equipos cerrados" (solo el
+  presentador puede mover a alguien después). Puntos individuales visibles; equipo = suma de sus miembros + puntos
+  dados al equipo entero.
+- **Contenido:** hoja de cálculo `.xlsx` (plantilla con una pestaña por tipo de sección + Concurso, Equipos,
+  Ajustes, Instrucciones), importada en el portátil con validación por fila.
+- **Música:** Spotify Web Playback SDK (el usuario tiene Premium); en el Pulsador, la canción se pausa al pulsar.
+- **Secciones:**
+  - **Pulsador** (la actual) + la pregunta en grande en la tele cuando el presentador quiera.
+  - **Test** (4 respuestas): solo puntúa acertar; respuesta definitiva; comodines 50 %, Doble y Público.
+  - **Verdad o mentira**: V/F a la vez; variante "Dos verdades y una mentira" sobre un jugador (él no vota).
+  - **¿Quién es más probable que…?**: todos votan a un jugador; revelado con suspense; puntos a quien vota con la mayoría.
+  - **Estimación**: cada uno escribe un número; más cercano, o "sin pasarse" (El precio justo) según la pregunta.
+  - **Parar el contador**: objetivo en segundos; modo visible / a ciegas / desaparece a los N s, elegible por ronda.
+  - **Duelo de reflejos**: rojo → verde tras 2–6 s al azar; pulsar en rojo elimina de la ronda; todos o un duelo.
+  - **Libre** (p. ej. "Fit o Fat"): participantes y puntos; herramientas cronómetro (con "eliminado") y contador +1/−1.
+
 ## Fases
 
 1. Conexión, sala, QR, lista de jugadores, reconexión, persistencia. ✔
 2. Flujo del pulsador (orden por llegada). ✔
 3. Sincronización de tiempos y modo depuración. ✔
-4. Pulido visual, sonido, vibración, wake lock.
+4. Base del concurso: roles tele / mando / jugador, estructura por secciones y pantallas, equipos con
+   comprobación, importación de la hoja + plantilla, Pulsador como sección. ✔
+   (Los demás tipos ya se leen y validan desde la hoja; en el juego muestran su intro y se saltan hasta su fase.)
+5. Respuestas desde el móvil: Test (con comodines), Verdad o mentira, ¿Quién es más probable…?, Estimación.
+6. Secciones de tiempo: Parar el contador y Duelo de reflejos.
+7. Sección Libre (cronómetro y contador).
+8. Spotify.
+9. Espectáculo: transiciones, marcador animado, podios, sonidos, wake lock, tarjetas compactas para 20 jugadores.
 
-Hoja de ruta posterior: mandos físicos (Gamepad API) y archivo de preguntas.
+Hoja de ruta posterior: mandos físicos (Gamepad API), imagen pixelada, agitar el móvil, rosco, dibuja y adivina.

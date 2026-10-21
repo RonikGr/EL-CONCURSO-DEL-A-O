@@ -30,6 +30,12 @@
       <button id="connecting-cancel" class="btn" type="button">Cancelar</button>
     </section>
 
+    <section id="screen-team" class="screen team-pick" hidden>
+      <h1>Elige tu equipo</h1>
+      <p class="lead">Mira a quién tienes al lado 😉</p>
+      <div id="team-list" class="team-list"></div>
+    </section>
+
     <section id="screen-game" class="screen game" hidden>
       <header class="me">
         <div id="me-avatar" class="avatar emoji" aria-hidden="true"></div>
@@ -56,6 +62,11 @@
     <dialog id="profile-dialog" class="sheet">
       <form id="profile-form" method="dialog" novalidate>
         <h2>Tu perfil</h2>
+        <label id="team-field" class="field" hidden>
+          <span>Equipo</span>
+          <select id="team-select" class="team-select"></select>
+        </label>
+        <p id="team-locked" class="picker-hint" hidden>Los equipos están cerrados: solo el presentador puede cambiarte.</p>
         <div id="edit-picker"></div>
         <div class="sheet-actions">
           <button value="cancel" class="btn" type="submit">Cancelar</button>

@@ -2,7 +2,7 @@
 import { loadJSON, removeKey, saveJSON } from '../shared/storage.js';
 import { isValidRoomCode } from '../shared/roomCode.js';
 
-const KEY = 'concurso.host.v1';
+const KEY = 'concurso.host.v2';
 const MAX_AGE_MS = 12 * 60 * 60 * 1000;
 
 /** Sala guardada si existe y no ha caducado; si no, `null`. */
@@ -13,8 +13,9 @@ export function loadSavedRoom(nowMs = Date.now()) {
   return saved;
 }
 
-export function saveRoom({ code, players, settings, qid }) {
-  saveJSON(KEY, { code, players, settings, qid, savedAt: Date.now() });
+/** @param data {code, controlSecret, approvedControls, show, runner, players, teamsLocked, teamBonus, settings} */
+export function saveRoom(data) {
+  saveJSON(KEY, { ...data, savedAt: Date.now() });
 }
 
 export function clearSavedRoom() {

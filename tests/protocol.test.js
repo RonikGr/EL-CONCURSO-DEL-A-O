@@ -4,7 +4,7 @@ import { MSG, PROTOCOL_VERSION, parseHostMessage, parsePlayerMessage } from '../
 describe('protocolo', () => {
   it('acepta un hello válido y descarta campos desconocidos', () => {
     const msg = parsePlayerMessage({ t: MSG.HELLO, v: PROTOCOL_VERSION, playerId: 'abc', name: 'Ana', color: 'rojo', icon: 'zorro', extra: 1 });
-    expect(msg).toEqual({ t: 'hello', v: 1, playerId: 'abc', name: 'Ana', color: 'rojo', icon: 'zorro' });
+    expect(msg).toEqual({ t: 'hello', v: PROTOCOL_VERSION, role: 'player', playerId: 'abc', name: 'Ana', color: 'rojo', icon: 'zorro', teamId: null });
   });
 
   it('rechaza mensajes mal formados', () => {
@@ -47,6 +47,24 @@ describe('protocolo', () => {
     expect(parsePlayerMessage({ t: MSG.SYNC_REPORT, offset: 100, err: 4 })).toEqual({ t: 'syncReport', offset: 100, err: 4, rtt: 8, samples: 0 });
     expect(parseHostMessage({ t: MSG.SYNC_REPLY, id: 1, t0: 1, t1: 2, t2: 3 })).not.toBeNull();
     expect(parseHostMessage({ t: MSG.SYNC_REPLY, id: 1, t0: 1, t1: 2 })).toBeNull();
+  });
+
+  it('valida el saludo y las órdenes del mando', () => {
+    expect(parsePlayerMessage({ t: MSG.HELLO, v: 2, role: 'control', controlId: 'c1', token: 'k', deviceName: 'Móvil' })).toEqual({
+      t: 'hello',
+      v: 2,
+      role: 'control',
+      controlId: 'c1',
+      token: 'k',
+      deviceName: 'Móvil',
+    });
+    expect(parsePlayerMessage({ t: MSG.HELLO, v: 2, role: 'control' })).toBeNull();
+    expect(parsePlayerMessage({ t: MSG.CMD, id: 1, action: 'next' })).toEqual({ t: 'cmd', id: 1, action: 'next', args: {} });
+    expect(parsePlayerMessage({ t: MSG.CMD, id: 1, action: 'adjustScore', args: { playerId: 'p', delta: -1 } }).args).toEqual({ playerId: 'p', delta: -1 });
+    expect(parsePlayerMessage({ t: MSG.CMD, id: 1, action: 'x', args: { evil: { nested: 1 } } })).toBeNull();
+    expect(parsePlayerMessage({ t: MSG.CMD, id: 1, action: 'x', args: [1] })).toBeNull();
+    expect(parseHostMessage({ t: MSG.CONTROL_STATE, view: {} })).not.toBeNull();
+    expect(parseHostMessage({ t: MSG.CMD_RESULT, id: 1, ok: false, error: 'no' })).not.toBeNull();
   });
 
   it('valida mensajes del presentador', () => {

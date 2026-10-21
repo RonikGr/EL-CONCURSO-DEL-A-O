@@ -14,8 +14,8 @@ export const COLORS = [
   { id: 'gris', name: 'Gris', bg: '#616161', fg: '#ffffff' },
 ];
 
-// PROVISIONAL: lista de iconos a sustituir por la del usuario. Basta con cambiar este array
-// (ids únicos y estables: se guardan en el móvil y en la sala).
+// Solo animales. Más de 20 para que un equipo con todos los jugadores siga teniendo iconos libres.
+// Los ids son estables (se guardan en el móvil y en la sala): para añadir, añadir al final.
 export const ICONS = [
   { id: 'zorro', label: 'Zorro', glyph: '🦊' },
   { id: 'panda', label: 'Panda', glyph: '🐼' },
@@ -29,15 +29,38 @@ export const ICONS = [
   { id: 'buho', label: 'Búho', glyph: '🦉' },
   { id: 'ballena', label: 'Ballena', glyph: '🐳' },
   { id: 'dinosaurio', label: 'Dinosaurio', glyph: '🦖' },
-  { id: 'pizza', label: 'Pizza', glyph: '🍕' },
-  { id: 'cohete', label: 'Cohete', glyph: '🚀' },
-  { id: 'rayo', label: 'Rayo', glyph: '⚡' },
-  { id: 'guitarra', label: 'Guitarra', glyph: '🎸' },
-  { id: 'fantasma', label: 'Fantasma', glyph: '👻' },
-  { id: 'cactus', label: 'Cactus', glyph: '🌵' },
-  { id: 'donut', label: 'Donut', glyph: '🍩' },
-  { id: 'chistera', label: 'Chistera', glyph: '🎩' },
+  { id: 'perro', label: 'Perro', glyph: '🐶' },
+  { id: 'gato', label: 'Gato', glyph: '🐱' },
+  { id: 'raton', label: 'Ratón', glyph: '🐭' },
+  { id: 'conejo', label: 'Conejo', glyph: '🐰' },
+  { id: 'oso', label: 'Oso', glyph: '🐻' },
+  { id: 'koala', label: 'Koala', glyph: '🐨' },
+  { id: 'tigre', label: 'Tigre', glyph: '🐯' },
+  { id: 'vaca', label: 'Vaca', glyph: '🐮' },
+  { id: 'cerdo', label: 'Cerdo', glyph: '🐷' },
+  { id: 'mono', label: 'Mono', glyph: '🐵' },
+  { id: 'gallina', label: 'Gallina', glyph: '🐔' },
+  { id: 'pato', label: 'Pato', glyph: '🦆' },
+  { id: 'aguila', label: 'Águila', glyph: '🦅' },
+  { id: 'lobo', label: 'Lobo', glyph: '🐺' },
+  { id: 'cebra', label: 'Cebra', glyph: '🦓' },
+  { id: 'jirafa', label: 'Jirafa', glyph: '🦒' },
+  { id: 'elefante', label: 'Elefante', glyph: '🐘' },
+  { id: 'erizo', label: 'Erizo', glyph: '🦔' },
+  { id: 'cangrejo', label: 'Cangrejo', glyph: '🦀' },
+  { id: 'tiburon', label: 'Tiburón', glyph: '🦈' },
+  { id: 'delfin', label: 'Delfín', glyph: '🐬' },
+  { id: 'flamenco', label: 'Flamenco', glyph: '🦩' },
+  { id: 'caracol', label: 'Caracol', glyph: '🐌' },
+  { id: 'mariposa', label: 'Mariposa', glyph: '🦋' },
+  { id: 'mariquita', label: 'Mariquita', glyph: '🐞' },
+  { id: 'perezoso', label: 'Perezoso', glyph: '🦥' },
+  { id: 'nutria', label: 'Nutria', glyph: '🦦' },
+  { id: 'cocodrilo', label: 'Cocodrilo', glyph: '🐊' },
 ];
+
+/** Color de quien aún no ha elegido equipo (en modo equipos). */
+export const NO_TEAM_COLOR = 'gris';
 
 const colorById = new Map(COLORS.map((c) => [c.id, c]));
 const iconById = new Map(ICONS.map((i) => [i.id, i]));

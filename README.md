@@ -4,28 +4,40 @@ Pulsador de concurso con móviles, estilo Kahoot. La pantalla del presentador se
 conectado por HDMI); cada jugador usa su móvil como pulsador, sin instalar nada. Web 100 % estática
 (GitHub Pages) con WebRTC mediante [PeerJS](https://peerjs.com/).
 
-> Estado: **fase 3** — sala, QR, jugadores, reconexión, flujo completo del pulsador y relojes sincronizados:
-> gana quien pulsó antes, no quien tiene mejor conexión. Falta la fase 4 (pulido visual, sonido, wake lock).
+> Estado: **fase 4** — concurso por secciones con equipos, cargado desde una hoja de cálculo; la tele es el
+> espectáculo y el presentador lo maneja desde su móvil. De momento se juega la sección **Pulsador** (con relojes
+> sincronizados: gana quien pulsó antes). El resto de tipos ya se leen de la hoja y llegan en las fases 5–7.
+
+## Preparar el concurso
+
+1. Descarga la plantilla: en la tele, pantalla de preparación → **Descargar plantilla** (o
+   `public/plantilla-concurso.xlsx`). Ábrela con Excel o Google Sheets (para cargarla: Archivo → Descargar → .xlsx).
+2. Rellénala: pestaña **Concurso** (secciones en orden), **Equipos** (vacía = sin equipos), **Ajustes** y una
+   pestaña por tipo de sección. La pestaña **Instrucciones** lo explica, y trae un ejemplo de cada tipo.
+3. En la tele, **Cargar concurso** (o arrastra el archivo a la pantalla). Si algo está mal, dice la pestaña y la fila.
 
 ## Cómo se juega
 
 1. Abre `host.html` en el portátil conectado a la tele y pon la ventana a pantalla completa.
-2. Los jugadores escanean el QR y eligen nombre, color e icono (mínimo 2, máximo 20).
-3. Lee la pregunta en voz alta y pulsa **Espacio** («Abrir turno»). A los 300 ms la tele y los móviles pasan a
-   **¡Pulsad!** a la vez.
-4. La primera pulsación llena la tele con el color y el nombre del ganador, su tiempo y el orden de los siguientes
-   (con «casi empate» si la diferencia es menor de 30 ms).
-5. Decide:
-   - **A** — Acierto: suma los puntos al ganador.
-   - **F** — Fallo: bloquea a quien falló y reabre el turno para los demás (tienen que volver a pulsar).
-   - **Espacio** — Siguiente pregunta.
-   - **R** — Reiniciar la pregunta (también quita los bloqueos).
+2. **Tu móvil como mando:** escanea el QR «Mando del presentador» de la pantalla de preparación y confirma en el
+   portátil (Enter). Desde entonces tu móvil se reconecta solo. Ves cada pregunta con su respuesta antes de lanzarla.
+3. Los jugadores escanean el QR grande, eligen nombre e icono y, si hay equipos, su equipo (color del equipo).
+   Comprueba los equipos en la tele (se puede mover a alguien) y pulsa **Empezar concurso**: los equipos se cierran.
+4. Portada → presentación de cada sección → preguntas → marcador → … → final con podios.
+5. En el **Pulsador**: «Mostrar pregunta» (la pone en grande en la tele), «Abrir turno» → a los 300 ms tele y
+   móviles pasan a **¡Pulsad!** a la vez. La primera pulsación llena la tele con el ganador, su tiempo y el orden de
+   los siguientes (con «casi empate» si la diferencia es menor de 30 ms). Luego **Acierto** (suma los puntos de la
+   sección) o **Fallo: rebote al resto** (bloquea a quien falló y reabre el turno), «Mostrar respuesta» y
+   «Siguiente pregunta».
 6. Quien pulse antes de abrir el turno queda **bloqueado** en esa pregunta (se puede desactivar en **Ajustes** o
-   perdonar con «Desbloquear» en su tarjeta).
+   perdonar con «Desbloquear»).
 
-En **Ajustes** se cambian los puntos por acierto y por fallo (negativos para restar), el umbral de casi empate,
-la ventana de decisión y la apertura programada. Los botones +/− de cada tarjeta corrigen el marcador a mano.
-La tecla **D** (o el botón «Depuración») abre el panel con los relojes y los tiempos de cada pulsación.
+El mando tiene tres pestañas: **Juego** (lo que toca ahora), **Jugadores** (puntos ±, puntos de equipo, mover de
+equipo, quitar) y **Secciones** (saltar a cualquiera).
+
+Teclado del portátil (por si el mando falla): **Espacio** (abrir turno / siguiente), **← →**, **P** pregunta,
+**V** respuesta, **A** acierto, **F** fallo, **R** reiniciar, **M** marcador, **D** depuración. En **Ajustes** se
+cambian el umbral de casi empate, la ventana de decisión y la apertura programada.
 
 ## Justicia en los tiempos
 

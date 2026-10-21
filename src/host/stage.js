@@ -1,4 +1,4 @@
-// Zona central de la tele (estado de la pregunta) y pantalla completa del ganador.
+// Pantalla de juego del Pulsador en la tele: pregunta en grande, estado del turno y ganador a pantalla completa.
 import { fill, h } from '../shared/dom.js';
 import { getColor, getIcon } from '../shared/appearance.js';
 import { formatDeltaMs, formatSeconds, ordinal } from '../shared/format.js';
@@ -8,7 +8,7 @@ import { MIN_PLAYERS } from '../core/players.js';
 const kbd = (key) => h('kbd', {}, key);
 
 /**
- * @param actions {open, correct, wrong, next, restart}
+ * @param actions {open, correct, wrong, nextItem, restart, showQuestion, showAnswer}
  */
 export function createStage(actions) {
   const root = h('section', { class: 'stage', 'aria-live': 'polite' });
@@ -27,65 +27,81 @@ export function createStage(actions) {
     raf = requestAnimationFrame(() => tickTimer(tOpen));
   }
 
-  function render(room) {
-    const view = room.gameView();
-    const settings = room.settings;
-    stopTimer();
-    overlay.hidden = view.phase !== PHASE.RESULT;
+  function questionBlock(view, big) {
+    const item = view.item;
+    const progress = view.itemCount ? `Pregunta ${view.itemIndex + 1} de ${view.itemCount}` : `Pregunta ${view.itemIndex + 1}`;
+    const showText = item?.showOnTv && view.shown.question && item.question;
+    return [
+      h('p', { class: 'stage-q' }, `${view.section.name} · ${progress}`),
+      showText ? h('p', { class: `stage-question ${big ? 'big' : ''}` }, item.question) : null,
+      item?.song && !showText ? h('p', { class: 'stage-question song' }, '🎵 ¿Qué canción es?') : null,
+      view.shown.answer && item?.answer ? h('p', { class: 'stage-answer' }, item.answer) : null,
+    ];
+  }
 
-    const label = h('p', { class: 'stage-q' }, `Pregunta ${view.qid}`);
-    switch (view.phase) {
+  function render(view) {
+    const game = view.game;
+    stopTimer();
+    overlay.hidden = !game || game.phase !== PHASE.RESULT || view.peekScoreboard;
+    if (!game) return;
+
+    switch (game.phase) {
       case PHASE.IDLE:
         root.dataset.phase = 'idle';
         fill(
           root,
-          label,
-          h('p', { class: 'stage-title' }, 'Pregunta en el aire'),
+          questionBlock(view, true),
+          view.shown.question ? null : h('p', { class: 'stage-title' }, 'Pregunta en el aire'),
           h(
             'div',
             { class: 'stage-actions' },
-            h('button', { class: 'btn primary huge', disabled: !room.canPlay, onclick: actions.open }, 'Abrir turno ', kbd('Espacio')),
+            h('button', { class: 'btn primary huge', disabled: !view.canStart, onclick: actions.open }, 'Abrir turno ', kbd('Espacio')),
+            view.item?.showOnTv && !view.shown.question && view.item.question
+              ? h('button', { class: 'btn', onclick: actions.showQuestion }, 'Mostrar pregunta ', kbd('P'))
+              : null,
           ),
-          room.canPlay ? null : h('p', { class: 'stage-hint' }, `Hacen falta al menos ${MIN_PLAYERS} jugadores conectados.`),
+          view.canStart ? null : h('p', { class: 'stage-hint' }, `Hacen falta al menos ${MIN_PLAYERS} jugadores conectados.`),
         );
         break;
 
       case PHASE.OPEN: {
-        const started = performance.now() >= view.tOpen;
+        const started = performance.now() >= game.tOpen;
         root.dataset.phase = started ? 'open' : 'ready';
         timerEl = started ? h('p', { class: 'stage-timer' }) : null;
         fill(
           root,
-          label,
+          questionBlock(view, false),
           h('p', { class: 'stage-title' }, started ? '¡Pulsad!' : 'Preparados…'),
           timerEl,
           h(
             'div',
             { class: 'stage-actions' },
             h('button', { class: 'btn', onclick: actions.restart }, 'Reiniciar pregunta ', kbd('R')),
-            h('button', { class: 'btn', onclick: actions.next }, 'Saltar pregunta'),
+            h('button', { class: 'btn', onclick: actions.nextItem }, 'Saltar pregunta'),
           ),
         );
-        if (timerEl) tickTimer(view.tOpen);
+        if (timerEl) tickTimer(game.tOpen);
         break;
       }
 
       case PHASE.RESULT:
-        // La tele la ocupa el overlay; debajo se deja el último estado.
+        // La tele la ocupa el overlay; debajo se deja la pregunta.
         root.dataset.phase = 'result';
-        renderResult(view, settings);
+        fill(root, questionBlock(view, true));
+        renderResult(view);
         break;
 
       case PHASE.CLOSED:
         root.dataset.phase = 'closed';
         fill(
           root,
-          label,
+          questionBlock(view, false),
           h('p', { class: 'stage-title' }, 'Nadie más puede responder'),
           h(
             'div',
             { class: 'stage-actions' },
-            h('button', { class: 'btn primary huge', onclick: actions.next }, 'Siguiente pregunta ', kbd('Espacio')),
+            view.item?.answer && !view.shown.answer ? h('button', { class: 'btn', onclick: actions.showAnswer }, 'Mostrar respuesta ', kbd('V')) : null,
+            h('button', { class: 'btn primary huge', onclick: actions.nextItem }, 'Siguiente pregunta ', kbd('Espacio')),
             h('button', { class: 'btn', onclick: actions.restart }, 'Reiniciar ', kbd('R')),
           ),
         );
@@ -93,24 +109,28 @@ export function createStage(actions) {
     }
   }
 
-  function renderResult(view, settings) {
-    const winner = view.winner;
+  function renderResult(view) {
+    const game = view.game;
+    const winner = game.winner;
     if (!winner) return;
     const color = getColor(winner.color);
     overlay.style.setProperty('--win', color.bg);
     overlay.style.setProperty('--win-fg', color.fg);
 
-    const first = view.ranking[0];
-    const followers = view.ranking.slice(1);
-    const judgedCorrect = view.judged === 'correct';
+    const first = game.ranking[0];
+    const followers = game.ranking.slice(1);
+    const judgedCorrect = game.judged === 'correct';
+    const team = view.teams.find((t) => t.id === winner.teamId);
 
     fill(
       overlay,
-      h('p', { class: 'result-q' }, `Pregunta ${view.qid}`),
+      h('p', { class: 'result-q' }, `${view.section.name} · Pregunta ${view.itemIndex + 1}`),
       h('div', { class: 'result-avatar emoji', 'aria-hidden': 'true' }, getIcon(winner.icon).glyph),
       h('h2', { class: 'result-name' }, winner.name),
+      team ? h('p', { class: 'result-team' }, team.name) : null,
       h('p', { class: 'result-time' }, first ? formatSeconds(first.reactionMs) : ''),
-      judgedCorrect ? h('p', { class: 'result-verdict' }, `¡Correcto! +${settings.pointsForCorrect}`) : null,
+      judgedCorrect ? h('p', { class: 'result-verdict' }, `¡Correcto! +${view.pointsForCorrect}`) : null,
+      view.shown.answer && view.item?.answer ? h('p', { class: 'result-answer' }, view.item.answer) : null,
       followers.length
         ? h(
             'ol',
@@ -134,16 +154,17 @@ export function createStage(actions) {
         judgedCorrect
           ? null
           : [
-              h('button', { class: 'btn ok huge', onclick: actions.correct }, `Acierto +${settings.pointsForCorrect} `, kbd('A')),
+              h('button', { class: 'btn ok huge', onclick: actions.correct }, `Acierto +${view.pointsForCorrect} `, kbd('A')),
               h(
                 'button',
                 { class: 'btn bad huge', onclick: actions.wrong },
                 'Fallo: rebote al resto ',
-                settings.pointsForWrong ? `(${settings.pointsForWrong > 0 ? '+' : ''}${settings.pointsForWrong}) ` : '',
+                view.pointsForWrong ? `(${view.pointsForWrong > 0 ? '+' : ''}${view.pointsForWrong}) ` : '',
                 kbd('F'),
               ),
             ],
-        h('button', { class: `btn huge ${judgedCorrect ? 'primary' : ''}`, onclick: actions.next }, 'Siguiente pregunta ', kbd('Espacio')),
+        view.item?.answer && !view.shown.answer ? h('button', { class: 'btn', onclick: actions.showAnswer }, 'Mostrar respuesta ', kbd('V')) : null,
+        h('button', { class: `btn huge ${judgedCorrect ? 'primary' : ''}`, onclick: actions.nextItem }, 'Siguiente pregunta ', kbd('Espacio')),
         h('button', { class: 'btn', onclick: actions.restart }, 'Reiniciar ', kbd('R')),
       ),
     );
