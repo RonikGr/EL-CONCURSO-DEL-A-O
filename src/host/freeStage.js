@@ -3,6 +3,7 @@
 import { fill, h } from '../shared/dom.js';
 import { getColor, getIcon } from '../shared/appearance.js';
 import { FPHASE, TOOL } from '../core/free.js';
+import { kinetic, odometer } from './fx/motion.js';
 
 /** 83 456 ms → "1:23,4" */
 export function formatClock(ms) {
@@ -15,6 +16,7 @@ export function formatClock(ms) {
 export function createFreeStage() {
   const root = h('section', { class: 'free-stage' });
   let raf = 0;
+  const lastCounts = new Map(); // id → último valor pintado del contador, para que la cifra ruede
 
   function render(view) {
     cancelAnimationFrame(raf);
@@ -29,7 +31,7 @@ export function createFreeStage() {
       return fill(
         root,
         header,
-        h('h2', { class: 'free-title big' }, f.title),
+        kinetic('h2', 'free-title big display', f.title),
         f.description ? h('p', { class: 'free-desc' }, f.description) : null,
         f.participants.length
           ? h('ul', { class: 'free-chips' }, f.participants.map((p) => chip(p)))
@@ -43,7 +45,7 @@ export function createFreeStage() {
         root,
         header,
         h('h2', { class: 'free-title' }, f.title),
-        h('p', { class: 'free-winner' }, '🏆 ', f.winners.map((w) => w.name).join(' y ')),
+        kinetic('p', 'free-winner display', `🏆 ${f.winners.map((w) => w.name).join(' y ')}`),
         h('p', { class: 'result-verdict' }, `+${f.points} ${f.winners.length > 1 ? 'cada uno' : ''}`.trim()),
         f.tool === TOOL.NONE ? null : results(f),
       );
@@ -65,12 +67,13 @@ export function createFreeStage() {
             { class: p.out != null ? 'out' : '', style: { '--pc': getColor(p.color).bg, '--pc-fg': getColor(p.color).fg } },
             h('span', { class: 'free-name' }, p.icon ? h('span', { class: 'emoji' }, getIcon(p.icon).glyph) : null, ' ', p.name),
             f.tool === TOOL.COUNTER
-              ? h('span', { class: 'free-count' }, String(p.count))
+              ? h('span', { class: 'free-count' }, odometer(p.count, lastCounts.get(p.id) ?? p.count, { duration: 500 }))
               : h('span', { class: 'free-status' }, p.out != null ? `Cayó a los ${formatClock(p.out)}` : f.phase === FPHASE.STOPPED ? '¡Aguantó!' : 'Aguanta…'),
           ),
         ),
       ),
     );
+    for (const p of f.participants) lastCounts.set(p.id, p.count);
     const tick = () => {
       clock.textContent = formatClock((f.tStop ?? performance.now()) - f.tStart);
       if (f.phase === FPHASE.RUNNING) raf = requestAnimationFrame(tick);

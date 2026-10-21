@@ -17,6 +17,8 @@
     "plantilla": "node scripts/make-template.mjs"
   },
   "dependencies": {
+    "@fontsource-variable/outfit": "5.3.0",
+    "@fontsource/creepster": "5.3.0",
     "peerjs": "1.5.5",
     "qrcode": "1.5.4",
     "read-excel-file": "9.3.12"

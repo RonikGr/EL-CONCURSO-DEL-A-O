@@ -21,13 +21,17 @@ import { ERROR_CODE, MSG } from '../shared/protocol.js';
 import { FPHASE, FreeRound } from '../core/free.js';
 import { PeerSource } from './sources/peerSource.js';
 import { saveRoom } from './persistence.js';
+import { sectionEnv } from '../shared/environments.js';
 
-/** Ajustes de tiempos del pulsador (los puntos vienen del concurso). */
+/** Ajustes de tiempos del pulsador y del sonido de la tele (los puntos vienen del concurso). */
 export const DEFAULT_SETTINGS = {
   lockEarlyBuzz: true,
   scheduledOpenMs: 300,
   decisionWindowMs: 150,
   nearTieMs: 30,
+  musicOn: true,
+  sfxOn: true,
+  volume: 70,
 };
 
 const CONTROL_PUSH_MS = 150; // agrupar cambios antes de mandar el estado completo al mando
@@ -330,7 +334,13 @@ export class HostRoom extends EventTarget {
         playable: isPlayable(s),
         items: s.items.length,
       })),
-      section: v.section && { name: v.section.name, type: v.section.type, description: v.section.description, points: v.section.points },
+      section: v.section && {
+        name: v.section.name,
+        type: v.section.type,
+        description: v.section.description,
+        points: v.section.points,
+        env: sectionEnv(v.section, v.sectionIndex),
+      },
       sectionLabel: v.sectionLabel,
       playable: v.playable,
       item: v.item,
@@ -790,6 +800,7 @@ export class HostRoom extends EventTarget {
             points: r.section.points,
             index: r.sectionIndex,
             count: this.show.sections.length,
+            env: sectionEnv(r.section, r.sectionIndex), // entorno de Halloween: el fondo del móvil
             // En juego: qué pregunta / prueba / ronda va (0 = sin lista).
             itemIndex: r.screen === SCREEN.PLAY ? r.itemIndex : null,
             itemCount: r.itemCount,

@@ -1,7 +1,10 @@
-// Ajustes del pulsador (se guardan con la sala). Los puntos vienen de la hoja del concurso.
+// Ajustes del pulsador y del sonido (se guardan con la sala). Los puntos vienen de la hoja del concurso.
 import { h } from '../shared/dom.js';
 
 const FIELDS = [
+  { key: 'musicOn', type: 'checkbox', label: 'Música ambiental (cambia con cada sección)' },
+  { key: 'sfxOn', type: 'checkbox', label: 'Efectos de sonido' },
+  { key: 'volume', type: 'range', label: 'Volumen', min: 0, max: 100 },
   { key: 'lockEarlyBuzz', type: 'checkbox', label: 'Bloquear durante la pregunta a quien pulse antes de abrir el turno' },
   { key: 'nearTieMs', type: 'number', label: 'Umbral de casi empate (ms)', min: 0, max: 500 },
   {

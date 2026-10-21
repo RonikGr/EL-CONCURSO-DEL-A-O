@@ -39,10 +39,12 @@ Ojo con PowerShell 5.1: `Get-Content`/`Set-Content` sin `-Encoding` rompen los a
 
 - `src/core/` — lógica pura, sin DOM ni red, con tests: roster (jugadores y equipos), concurso y lectura de la hoja
   (`show.js`), recorrido de pantallas (`runner.js`), motor del pulsador (`game.js`), ranking, sincronización y plausibilidad.
-- `src/shared/` — protocolo, código de sala, configuración PeerJS, apariencias, almacenamiento seguro, formato de tiempos.
+- `src/shared/` — protocolo, código de sala, configuración PeerJS, apariencias, almacenamiento seguro, formato de tiempos,
+  entornos de Halloween (`environments.js`), pantalla encendida (`wakeLock.js`) y el estilo común de los móviles (`phone.css`).
 - `src/host/` — tele: `room.js` (controlador: une todo, órdenes en `run(action, args)`), `screens.js` + `stage.js`
   (pantallas), `main.js` (pintado, teclado, importar), persistencia (`concurso.host.v2`). Las conexiones entran por
   `sources/peerSource.js` (jugadores y mandos); fase futura: mandos físicos (Gamepad API) con offset 0.
+  `show.css` = capa visual del espectáculo sobre `host.css`. `fx/` = espectáculo (ver «Espectáculo (fase 9)»).
 - `src/player/` — móvil del jugador: reconexión, sincronización, botón, elegir equipo.
 - `src/control/` — mando del presentador: pestañas Juego / Jugadores / Secciones; manda órdenes `cmd` y pinta `controlState`.
 
@@ -150,7 +152,45 @@ mientras la página no se pinta (ventana oculta o minimizada).
 - Modo depuración (D): por jugador RTT del latido, offset, error y muestras; por ronda pulsó / llegó / red / origen.
 - Límites y trampas: ver README, "Justicia en los tiempos".
 
-## Diseño del concurso (acordado; hecho hasta la fase 7, salvo que el presentador juegue)
+### Espectáculo (fase 9): tema de Halloween
+
+- **Tema:** tokens en `base.css` (noche violeta, calabaza `--accent`, verde poción `--ok`), superficies de cristal
+  translúcido (`backdrop-filter`) para que se vea el fondo. Letras: Outfit (variable) y Creepster (`.display`, solo en
+  títulos grandes: a tamaño pequeño no se lee). Paquetes `@fontsource`, sin pedir nada a Google.
+- **Entornos** (`src/shared/environments.js`): 10 decorados (Noche de luna = preparación, portada y final; el resto se
+  reparten por sección en orden, o se eligen con la columna opcional «Entorno» de la pestaña Concurso → `section.env`).
+  `sectionEnv(section, index)` decide; la tele los pinta con WebGL y los móviles con `envGradient()` (el estado del
+  jugador y del mando lleva `section.env`).
+- **Fondo WebGL** (`fx/backdrop.js`): un shader de pantalla completa a 0,6 de resolución. Cielo, estrellas, luna,
+  nubes y niebla con fbm, siluetas por SDF (tumbas, árboles, castillo con ventanas, telaraña con araña, calabazas
+  con cara, cripta con velas, laboratorio con pociones, caldero con fuego, árbol solitario), partículas (luciérnagas,
+  brasas, burbujas, lluvia, chispas, polvo), murciélagos y relámpagos con rayo. Al cambiar de entorno los colores se
+  funden y las siluetas cambian a mitad de un oscurecimiento. Sin WebGL: degradado CSS. En desarrollo,
+  `window.__fx` da acceso al fondo y al sonido desde la consola.
+- **Sonido** (`fx/audio.js`): todo generado con Web Audio, sin archivos (ni descargas ni licencias). Música ambiental
+  por entorno (colchón que cambia de acorde i·VI·VII·v, caja de música improvisando en su escala, bajo y ambiente:
+  viento, lluvia, fuego, burbujas, búhos; tambores en el Aquelarre) y efectos (whoosh, gong, ¡pulsad!, pulsación,
+  acierto, fallo, tictac, campana, revelado, trueno, redoble, fanfarria). Con el turno abierto la música baja y suena un
+  latido. Ajustes `musicOn`, `sfxOn`, `volume` (en Ajustes de la tele y en el mando, pestaña Secciones). El
+  navegador no deja sonar nada hasta un toque: la tele muestra «🔊 Activar sonido» hasta la primera tecla o clic.
+- **Realizador** (`fx/director.js`): compara cada vista con la anterior y lanza entorno, música, efectos y confeti
+  (abrir turno, pulsar, acertar, fallar, respuestas que llegan, cerrar, revelar, eliminado, ganador de Libre).
+- **Movimiento** (`fx/motion.js`): entrada de pantalla con desenfoque al cambiar `screenKey`, títulos letra a letra
+  (`kinetic`), cifras de cuentakilómetros (`odometer`: puntos de las tarjetas, marcador, contadores de Libre),
+  reordenación FLIP y revelado con suspense (`suspense`: del último puesto al primero; el ganador tras una pausa, con
+  golpe y confeti) en Estimación, Votación, Contador y Reflejos. `prefers-reduced-motion` lo desactiva.
+- **Marcador:** recuerda los puntos de la última vez que se enseñó; empieza en ese orden, los puntos ruedan y luego las
+  filas se reordenan. **Final:** podio 3º → 2º → 1º con foco, redoble, fanfarria y confeti (`fx/confetti.js`).
+- En el marcador y el final la firma de repintado no incluye `connected` (que una desconexión no repita la animación);
+  un revelado ya animado (`roundId`) se repinta sin repetir el suspense.
+- **Tarjetas de la tele:** compactas con 9–14 jugadores y diminutas con 15–20 (`#player-grid[data-density]`); al sumar
+  puntos la tarjeta da un salto y sale «+N».
+- **Móviles:** fondo del entorno, pulsador como esfera de cristal del color del jugador, Wake Lock mientras la página
+  está a la vista (se vuelve a pedir al volver).
+- `h()` aplica las variables CSS de `style` con `setProperty` (antes `Object.assign` las ignoraba y opciones,
+  barras y fichas salían sin color).
+
+## Diseño del concurso (acordado; hecho hasta la fase 9, salvo que el presentador juegue)
 
 - **Tres papeles:** `host.html` = espectáculo en la tele (sigue siendo la autoridad: estado, puntos, conexiones,
   música); `control.html` = mando del presentador en su móvil (ve preguntas y respuestas en privado, lo controla
@@ -187,6 +227,7 @@ mientras la página no se pinta (ventana oculta o minimizada).
 6. Secciones de tiempo: Parar el contador y Duelo de reflejos. ✔
 7. Sección Libre (cronómetro y contador). ✔ Pendiente de esta fase: que el presentador juegue desde el mando.
 8. ~~Spotify~~ — descartado: la música la pone el presentador aparte.
-9. Espectáculo: transiciones, marcador animado, podios, sonidos, wake lock, tarjetas compactas para 20 jugadores.
+9. Espectáculo con tema de Halloween: entorno por sección (WebGL), música y efectos generados, transiciones, marcador
+   animado, revelados con suspense, podio con confeti, wake lock, tarjetas compactas para 20 jugadores. ✔
 
 Hoja de ruta posterior: mandos físicos (Gamepad API), imagen pixelada, agitar el móvil, rosco, dibuja y adivina.

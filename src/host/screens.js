@@ -3,6 +3,10 @@
 import { h } from '../shared/dom.js';
 import { getColor, getIcon } from '../shared/appearance.js';
 import { MAX_PLAYERS, MIN_PLAYERS } from '../core/players.js';
+import { getEnv, sectionEnv } from '../shared/environments.js';
+import { flipReorder, kinetic, later, odometer } from './fx/motion.js';
+import { celebrate } from './fx/confetti.js';
+import { sound } from './fx/audio.js';
 
 const kbd = (key) => h('kbd', {}, key);
 const avatar = (p, cls = 'avatar') =>
@@ -184,7 +188,7 @@ export function coverScreen(view) {
     'div',
     { class: 'cover anim-in' },
     h('p', { class: 'cover-kicker' }, '¡Bienvenidos a…'),
-    h('h1', { class: 'cover-title' }, view.title),
+    kinetic('h1', 'cover-title display', view.title),
     h('p', { class: 'cover-sub' }, `${view.sectionCount} ${view.sectionCount === 1 ? 'sección' : 'secciones'} · ${view.players.length} concursantes`),
   );
 }
@@ -194,8 +198,8 @@ export function introScreen(view) {
   return h(
     'div',
     { class: 'intro anim-in' },
-    h('p', { class: 'intro-kicker' }, `Sección ${view.sectionIndex + 1} de ${view.sectionCount}`),
-    h('h1', { class: 'intro-title' }, s.name),
+    h('p', { class: 'intro-kicker' }, `Sección ${view.sectionIndex + 1} de ${view.sectionCount} · ${getEnv(sectionEnv(s, view.sectionIndex)).name}`),
+    kinetic('h1', 'intro-title display', s.name),
     h('p', { class: 'intro-type' }, view.sectionLabel),
     s.description ? h('p', { class: 'intro-desc' }, s.description) : null,
     h('p', { class: 'intro-points' }, pointsText(s.points, s.points.length > 1)),
@@ -205,45 +209,76 @@ export function introScreen(view) {
 
 // ---------------------------------------------------------------------------------------- Marcador y final
 
+// Puntos de la última vez que se enseñó el marcador: el siguiente empieza ahí, en el orden de entonces, y luego
+// los puntos ruedan hasta los de ahora y las filas se reordenan. La primera vez, todos parten de 0.
+const shownScores = new Map(); // 't:id' / 'p:id' → puntos
+const ROLL_AT = 700; // ms: empiezan a rodar los puntos
+const REORDER_AT = 2000; // ms: se reordenan las filas
+
 export function scoreboardScreen(view, { title = 'Marcador' } = {}) {
-  const players = [...view.players].sort((a, b) => b.score - a.score);
-  const max = Math.max(1, ...view.standings.map((s) => s.score), ...players.map((p) => p.score));
-  return h(
-    'div',
-    { class: 'scoreboard anim-in' },
-    h('h1', { class: 'sb-title' }, title),
-    view.standings.length
-      ? h(
-          'ol',
-          { class: 'sb-teams' },
-          view.standings.map((s, i) =>
-            h(
-              'li',
-              { style: { '--tc': getColor(s.team.color).bg, '--tc-fg': getColor(s.team.color).fg, '--w': `${Math.max(4, (Math.max(0, s.score) / max) * 100)}%` } },
-              h('span', { class: 'sb-place' }, `${i + 1}º`),
-              h('span', { class: 'sb-team-name' }, s.team.name),
-              h('span', { class: 'sb-bar' }, h('span', { class: 'sb-fill' })),
-              h('span', { class: 'sb-score' }, String(s.score)),
-            ),
+  const max = Math.max(1, ...view.standings.map((s) => s.score), ...view.players.map((p) => p.score));
+  const width = (score) => `${Math.max(3, (Math.max(0, score) / max) * 100)}%`;
+
+  const teams = view.standings.map((s) => ({ key: `t:${s.team.id}`, s, score: s.score }));
+  const players = [...view.players].sort((a, b) => b.score - a.score).map((p) => ({ key: `p:${p.id}`, p, score: p.score }));
+  for (const list of [teams, players]) for (const r of list) r.old = shownScores.get(r.key) ?? 0;
+  const byOld = (list) => [...list].sort((a, b) => b.old - a.old || list.indexOf(a) - list.indexOf(b));
+
+  const teamList = teams.length
+    ? h(
+        'ol',
+        { class: 'sb-teams' },
+        byOld(teams).map((r) =>
+          h(
+            'li',
+            { 'data-key': r.key, style: { '--tc': getColor(r.s.team.color).bg, '--tc-fg': getColor(r.s.team.color).fg, '--w': width(r.old) } },
+            h('span', { class: 'sb-place' }),
+            h('span', { class: 'sb-team-name' }, r.s.team.name),
+            h('span', { class: 'sb-bar' }, h('span', { class: 'sb-fill' })),
+            h('span', { class: 'sb-score' }, odometer(r.score, r.old, { delay: ROLL_AT })),
           ),
-        )
-      : null,
-    h(
-      'ol',
-      { class: `sb-players ${view.standings.length ? 'compact' : ''}` },
-      players.map((p, i) =>
-        h(
-          'li',
-          { style: { '--pc': getColor(p.color).bg } },
-          h('span', { class: 'sb-place' }, `${i + 1}º`),
-          avatar(p, 'mini-avatar'),
-          h('span', { class: 'member-name' }, p.name),
-          h('span', { class: 'sb-score' }, String(p.score)),
         ),
+      )
+    : null;
+  const playerList = h(
+    'ol',
+    { class: `sb-players ${teams.length ? 'compact' : ''} ${players.length > 12 ? 'many' : ''}` },
+    byOld(players).map((r) =>
+      h(
+        'li',
+        { 'data-key': r.key, style: { '--pc': getColor(r.p.color).bg } },
+        h('span', { class: 'sb-place' }),
+        avatar(r.p, 'mini-avatar'),
+        h('span', { class: 'member-name' }, r.p.name),
+        h('span', { class: 'sb-score' }, odometer(r.score, r.old, { delay: ROLL_AT })),
       ),
     ),
   );
+  const root = h('div', { class: 'scoreboard anim-in' }, kinetic('h1', 'sb-title display', title), teamList, playerList);
+
+  const places = (list) => [...list.children].forEach((li, i) => (li.querySelector('.sb-place').textContent = `${i + 1}º`));
+  for (const list of [teamList, playerList]) if (list) places(list);
+  later(root, ROLL_AT, () =>
+    teamList?.querySelectorAll('li').forEach((li) => li.style.setProperty('--w', width(teams.find((r) => r.key === li.dataset.key).score))),
+  );
+  later(root, REORDER_AT, () => {
+    for (const [list, rows] of [
+      [teamList, teams],
+      [playerList, players],
+    ]) {
+      if (!list) continue;
+      const before = [...list.children].map((li) => li.dataset.key).join();
+      flipReorder(list, rows.map((r) => r.key));
+      places(list);
+      if (before !== rows.map((r) => r.key).join()) sound.play('pop');
+    }
+  });
+  for (const r of [...teams, ...players]) shownScores.set(r.key, r.score);
+  return root;
 }
+
+// Podio: aparece el 3º, luego el 2º y, tras un redoble, el 1º con confeti y fanfarria.
+const PODIUM_AT = { 3: 800, 2: 2300, 1: 4300 };
 
 export function finalScreen(view) {
   const podium = (entries) =>
@@ -256,7 +291,7 @@ export function finalScreen(view) {
         if (!e) return h('div', { class: 'podium-step empty' });
         return h(
           'div',
-          { class: `podium-step p${i + 1}`, style: { '--pc': getColor(e.color).bg, '--pc-fg': getColor(e.color).fg } },
+          { class: `podium-step p${i + 1}`, style: { '--pc': getColor(e.color).bg, '--pc-fg': getColor(e.color).fg, '--d': `${PODIUM_AT[i + 1]}ms` } },
           e.icon ? h('span', { class: 'podium-icon emoji' }, getIcon(e.icon).glyph) : null,
           h('span', { class: 'podium-name' }, e.name),
           h('span', { class: 'podium-score' }, `${e.score} pts`),
@@ -266,12 +301,21 @@ export function finalScreen(view) {
     );
   const teamEntries = view.standings.map((s) => ({ name: s.team.name, color: s.team.color, score: s.score }));
   const playerEntries = [...view.players].sort((a, b) => b.score - a.score);
-  return h(
+  const root = h(
     'div',
-    { class: 'final anim-in' },
-    h('h1', { class: 'final-title' }, '¡Enhorabuena!'),
-    teamEntries.length ? [h('h2', {}, 'Equipos'), podium(teamEntries)] : null,
-    h('h2', {}, teamEntries.length ? 'Concursantes' : 'Podio'),
-    podium(playerEntries),
+    { class: 'final' },
+    kinetic('h1', 'final-title display', '¡Enhorabuena!'),
+    h(
+      'div',
+      { class: `final-podiums ${teamEntries.length ? 'two' : ''}` },
+      teamEntries.length ? h('div', {}, h('h2', {}, 'Equipos'), podium(teamEntries)) : null,
+      h('div', {}, h('h2', {}, teamEntries.length ? 'Concursantes' : 'Podio'), podium(playerEntries)),
+    ),
   );
+  sound.play('pop', PODIUM_AT[3]);
+  sound.play('pop', PODIUM_AT[2]);
+  sound.play('roll', PODIUM_AT[1] - 900);
+  sound.play('fanfare', PODIUM_AT[1]);
+  later(root, PODIUM_AT[1], () => celebrate(4500));
+  return root;
 }

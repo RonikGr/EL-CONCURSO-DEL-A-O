@@ -1,5 +1,8 @@
 // Pantalla del jugador (móvil).
+import '@fontsource-variable/outfit';
+import '@fontsource/creepster/latin.css';
 import './player.css';
+import '../shared/phone.css';
 import { $, fill, h } from '../shared/dom.js';
 import { COLORS, ICONS, getColor, getIcon } from '../shared/appearance.js';
 import { isValidRoomCode, normalizeRoomCode } from '../shared/roomCode.js';
@@ -10,6 +13,8 @@ import { PlayerConnection } from './network.js';
 import { createProfilePicker } from './profilePicker.js';
 import { SyncClient } from './syncClient.js';
 import { createAnswerPad } from './answerPad.js';
+import { envGradient, HOME_ENV } from '../shared/environments.js';
+import { keepScreenAwake } from '../shared/wakeLock.js';
 
 // `?perfil=2` usa otra identidad: para probar varios jugadores en pestañas del mismo navegador.
 const profileSlot = new URLSearchParams(location.search).get('perfil');
@@ -224,6 +229,8 @@ function handleMessage(msg, tRecv) {
         .join(' · ');
       renderMe();
       renderSectionBar(msg);
+      // El fondo del móvil lleva los colores del entorno de la sección (el mismo que la tele).
+      document.body.style.setProperty('--env-bg', envGradient(msg.section?.env ?? HOME_ENV));
       if (standingsDialog.open) renderStandings();
       if (msg.answer) {
         $('#buzzer').hidden = true;
@@ -570,4 +577,5 @@ function writeSession(code) {
   }
 }
 
+keepScreenAwake();
 init();

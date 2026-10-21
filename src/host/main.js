@@ -1,6 +1,9 @@
 // Pantalla del portátil conectado a la tele: el espectáculo. También se puede manejar con teclado y ratón,
 // aunque lo normal es hacerlo desde el mando del presentador (control.html).
+import '@fontsource-variable/outfit';
+import '@fontsource/creepster/latin.css';
 import './host.css';
+import './show.css';
 import QRCode from 'qrcode';
 import { $, clear, fill, h } from '../shared/dom.js';
 import { getColor, getIcon } from '../shared/appearance.js';
@@ -17,6 +20,11 @@ import { APHASE } from '../core/answers.js';
 import { coverScreen, finalScreen, introScreen, scoreboardScreen, setupScreen } from './screens.js';
 import { openSettingsDialog } from './settingsDialog.js';
 import { createDebugPanel } from './debugPanel.js';
+import { Backdrop } from './fx/backdrop.js';
+import { sound } from './fx/audio.js';
+import { createDirector, envFor, screenKey } from './fx/director.js';
+import { enterScreen, odometer } from './fx/motion.js';
+import { envGradient, HOME_ENV } from '../shared/environments.js';
 
 // Marca de esta pestaña: si se recarga, se recupera la sala sin preguntar.
 const TAB_KEY = 'concurso.host.tab';
@@ -31,6 +39,21 @@ let qrs = null; // {join, joinMini, control}
 let lastScreenSignature = null;
 const debug = createDebugPanel();
 const cards = new Map(); // playerId → elementos de su tarjeta
+let lastScreenKey = null;
+
+// Fondo animado (WebGL) con el entorno de cada sección; sin WebGL, un degradado con los mismos colores.
+const backdropCanvas = h('canvas', { class: 'backdrop', 'aria-hidden': 'true' });
+document.body.prepend(backdropCanvas);
+const backdrop = new Backdrop(backdropCanvas);
+if (backdrop.ok) {
+  backdrop.setEnv(HOME_ENV, { instant: true });
+  backdrop.onLightning = () => sound.play('thunder', 250 + Math.random() * 900);
+} else {
+  backdropCanvas.remove();
+}
+const direct = createDirector({ backdrop: backdrop.ok ? backdrop : null });
+if (import.meta.env.DEV) window.__fx = { backdrop, sound }; // para probar entornos desde la consola
+sound.addEventListener('unlock', () => room && render());
 
 /** Ejecuta una orden y avisa si no se pudo. */
 function run(action, args) {
@@ -133,6 +156,7 @@ function renderShell() {
         'header',
         { class: 'topbar' },
         h('h1', { id: 'show-title' }),
+        h('button', { class: 'sound-chip', id: 'sound-chip', onclick: () => sound.unlock() }, '🔊 Activar sonido'),
         h('div', { class: 'join-chip', id: 'join-chip' }, qrs.joinMini, h('span', {}, h('small', {}, 'Únete · '), h('strong', { id: 'chip-code' }, room.code))),
         h('span', { class: 'net-pill', id: 'net-pill' }),
       ),
@@ -170,6 +194,11 @@ function render() {
   $('#join-chip').hidden = view.screen === SCREEN.SETUP;
   // Durante el espectáculo la tele no enseña controles (ver CSS .show-mode); en preparación, sí.
   document.body.classList.toggle('show-mode', view.screen !== SCREEN.SETUP);
+  // El navegador no deja sonar nada hasta que se toca la página: aviso hasta la primera tecla o clic.
+  $('#sound-chip').hidden = sound.unlocked || !(view.settings.musicOn || view.settings.sfxOn);
+  sound.configure({ musicOn: view.settings.musicOn, sfxOn: view.settings.sfxOn, volume: view.settings.volume });
+  if (!backdrop.ok) document.body.style.backgroundImage = envGradient(envFor(view));
+  direct(view);
   renderNetwork(view);
   renderScreen(view);
   renderPlayers(view);
@@ -217,7 +246,8 @@ function renderScreen(view) {
   const t = performance.now();
   const visible = {
     ...view,
-    players: view.players.map(({ rtt, ...p }) => p),
+    // En el marcador y el final no se ve quién está conectado: que una desconexión no repita sus animaciones.
+    players: view.players.map(({ rtt, connected, ...p }) => (view.screen === SCREEN.FINAL || view.screen === SCREEN.SCOREBOARD || view.peekScoreboard ? p : { ...p, connected })),
     settings: null,
     // La apertura programada no cambia ningún dato: hay que repintar igualmente cuando llega.
     started: [
@@ -236,8 +266,13 @@ function renderScreen(view) {
   stage.stop();
   answerStage.stop();
   freeStage.stop();
+  sound.cancel();
 
   const screen = $('#screen');
+  // Al cambiar de pantalla (no en cada cambio dentro de ella), entrada con transición.
+  const key = screenKey(view);
+  if (key !== lastScreenKey && lastScreenKey != null) enterScreen(screen);
+  lastScreenKey = key;
   screen.dataset.screen = view.peekScoreboard ? 'scoreboard' : view.screen;
   if (view.peekScoreboard) return fill(screen, scoreboardScreen(view));
 
@@ -299,6 +334,9 @@ function renderPlayers(view) {
 
   // Tarjetas con clave: no se recrean en cada latido, así no se pierde el foco ni el hover.
   const grid = $('#player-grid');
+  // Con muchos jugadores, tarjetas más pequeñas para que quepan los 20 sin tapar la pregunta.
+  const n = view.players.length;
+  grid.dataset.density = n > 14 ? 'tiny' : n > 8 ? 'compact' : 'normal';
   const seen = new Set();
   for (const p of view.players) {
     seen.add(p.id);
@@ -336,7 +374,7 @@ function createCard() {
     score,
     place,
   );
-  return { root, avatar, name, meta, place, score };
+  return { root, avatar, name, meta, place, score, lastScore: null };
 }
 
 const LOCK_TEXT = { [LOCK.EARLY]: 'Bloqueado · pulsó antes', [LOCK.WRONG]: 'Bloqueado · falló' };
@@ -357,7 +395,20 @@ function updateCard(card, p, place, hasAnswered = null) {
   card.root.classList.toggle('answered', hasAnswered === true);
   card.place.textContent = place ? `${place}º` : '';
   card.place.hidden = !place;
-  card.score.textContent = p.score;
+  // Los puntos ruedan como un cuentakilómetros; si suben, la tarjeta da un salto y sale el "+N".
+  if (card.lastScore !== p.score) {
+    const from = card.lastScore ?? p.score;
+    card.score.replaceChildren(odometer(p.score, from, { duration: 1100 }));
+    if (p.score > from) {
+      card.root.classList.remove('bump');
+      void card.root.offsetWidth; // reinicia la animación
+      card.root.classList.add('bump');
+      const gain = h('span', { class: 'pc-gain' }, `+${p.score - from}`);
+      card.root.append(gain);
+      setTimeout(() => gain.remove(), 1600);
+    }
+    card.lastScore = p.score;
+  }
 }
 
 /** Un móvil pide ser el mando: se confirma aquí (Enter) o se rechaza (Esc). */

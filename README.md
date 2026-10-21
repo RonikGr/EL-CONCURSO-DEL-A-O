@@ -4,8 +4,9 @@ Pulsador de concurso con móviles, estilo Kahoot. La pantalla del presentador se
 conectado por HDMI); cada jugador usa su móvil como pulsador, sin instalar nada. Web 100 % estática
 (GitHub Pages) con WebRTC mediante [PeerJS](https://peerjs.com/).
 
-> Estado: **fase 6** — concurso por secciones con equipos, cargado desde una hoja de cálculo; la tele es el
-> espectáculo y el presentador lo maneja desde su móvil. Se juegan **Pulsador**, **Test** (con comodines),
+> Estado: **fase 9** — concurso por secciones con equipos, cargado desde una hoja de cálculo; la tele es el
+> espectáculo (tema de Halloween, con un decorado animado, música y efectos distintos en cada sección) y el
+> presentador lo maneja desde su móvil. Se juegan **Pulsador**, **Test** (con comodines),
 > **Verdad o mentira**, **Dos verdades y una mentira**, **¿Quién es más probable…?**, **Estimación**,
 > **Parar el contador**, **Duelo de reflejos** y **Libre** (pruebas tipo «Fit o Fat» con cronómetro o contador).
 
@@ -16,6 +17,9 @@ conectado por HDMI); cada jugador usa su móvil como pulsador, sin instalar nada
 2. Rellénala: pestaña **Concurso** (secciones en orden), **Equipos** (vacía = sin equipos), **Ajustes** y una
    pestaña por tipo de sección. La pestaña **Instrucciones** lo explica, y trae un ejemplo de cada tipo.
 3. En la tele, **Cargar concurso** (o arrastra el archivo a la pantalla). Si algo está mal, dice la pestaña y la fila.
+4. Opcional: en la pestaña **Concurso**, la columna **Entorno** elige el decorado de cada sección (Cementerio, Bosque
+   encantado, Huerto de calabazas, Laboratorio, Mansión encantada, Telaraña, Aquelarre, Cripta helada, Tormenta o
+   Noche de luna). Si se deja vacía, cada sección tiene uno distinto.
 
 ## Cómo se juega
 
@@ -201,6 +205,21 @@ Cubren la lógica que no depende de la red (`src/core`, `src/shared`).
    queda en `https://TU_USUARIO.github.io/concurso/`:
    - Presentador: `https://TU_USUARIO.github.io/concurso/host.html`
    - Jugadores: escanean el QR o abren `https://TU_USUARIO.github.io/concurso/` y escriben el código.
+
+## Espectáculo: imagen y sonido
+
+- Cada sección tiene su **entorno de Halloween** animado en la tele (y sus colores de fondo en los móviles); entre
+  secciones el decorado se funde en otro.
+- **Sonido:** música ambiental distinta por entorno y efectos (abrir turno, pulsar, acierto, fallo, tictac, revelado,
+  trueno, fanfarria…). Todo se genera en el navegador: no hay archivos de audio ni licencias. El navegador no deja
+  sonar nada hasta que se toca la página: en la tele aparece **🔊 Activar sonido** hasta la primera tecla o clic en el
+  portátil. Música, efectos y volumen se cambian en **Ajustes** (tele) o en el mando, pestaña **Secciones**. Si pones
+  tu propia música, quita la música y deja los efectos.
+- **Revelados con suspense:** en Estimación, Votación, Contador y Reflejos los puestos aparecen del último al primero;
+  el ganador sale el último, con golpe y confeti. El marcador parte de cómo estaba la última vez, los puntos ruedan y
+  las filas se reordenan. Al final, podio 3º → 2º → 1º con fanfarria.
+- Los móviles mantienen la pantalla encendida mientras la página está abierta (si el navegador lo permite).
+- Si el sistema tiene activado «reducir movimiento», las animaciones se quitan.
 
 ## Cómo funciona
 

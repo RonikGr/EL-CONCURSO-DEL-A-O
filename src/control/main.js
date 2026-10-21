@@ -1,6 +1,9 @@
 // Mando del presentador (en su móvil): ve preguntas y respuestas en privado y controla el concurso.
 // Se conecta como un móvil más, con rol "control" y la clave secreta que enseña el QR de mando de la tele.
+import '@fontsource-variable/outfit';
+import '@fontsource/creepster/latin.css';
 import './control.css';
+import '../shared/phone.css';
 import { $, fill, h } from '../shared/dom.js';
 import { getColor, getIcon } from '../shared/appearance.js';
 import { formatDeltaMs, formatSeconds } from '../shared/format.js';
@@ -8,6 +11,8 @@ import { optionStyle } from '../shared/options.js';
 import { isValidRoomCode, normalizeRoomCode } from '../shared/roomCode.js';
 import { loadJSON, newId, saveJSON } from '../shared/storage.js';
 import { ERROR_CODE, MSG, PROTOCOL_VERSION, ROLE } from '../shared/protocol.js';
+import { envGradient, HOME_ENV } from '../shared/environments.js';
+import { keepScreenAwake } from '../shared/wakeLock.js';
 import { PlayerConnection as Connection } from '../player/network.js'; // la conexión con reconexión sirve igual
 
 const STORE_KEY = 'concurso.control.v1';
@@ -75,6 +80,7 @@ function handleMessage(msg) {
       status = 'ready';
       document.body.classList.remove('offline');
       view = msg.view;
+      document.body.style.setProperty('--env-bg', envGradient(view.section?.env ?? HOME_ENV));
       render();
       break;
     case MSG.CMD_RESULT:
@@ -747,8 +753,28 @@ function sectionsTab() {
         ),
       ),
     ),
+    soundCard(),
     view.screen !== 'setup' ? btn('Volver a preparación', () => confirm('¿Volver a la pantalla de preparación?') && cmd('toSetup')) : null,
   ];
+}
+
+/** Sonido de la tele: música y efectos (se pueden quitar si pones tu propia música) y volumen. */
+function soundCard() {
+  const st = view.settings;
+  const set = (patch) => cmd('updateSettings', patch);
+  const vol = (d) => set({ volume: Math.min(100, Math.max(0, st.volume + d)) });
+  return h(
+    'section',
+    { class: 'c-card' },
+    h('p', { class: 'c-kicker' }, 'Sonido de la tele'),
+    h(
+      'div',
+      { class: 'c-sound' },
+      btn(st.musicOn ? '🎵 Música: sí' : '🎵 Música: no', () => set({ musicOn: !st.musicOn }), st.musicOn ? 'on' : ''),
+      btn(st.sfxOn ? '🔊 Efectos: sí' : '🔇 Efectos: no', () => set({ sfxOn: !st.sfxOn }), st.sfxOn ? 'on' : ''),
+    ),
+    h('div', { class: 'c-sound' }, btn('−', () => vol(-10)), h('span', { class: 'c-volume' }, `Volumen ${st.volume} %`),btn('+', () => vol(10))),
+  );
 }
 
 // ------------------------------------------------------------------ Utilidades
@@ -771,4 +797,5 @@ function deviceName() {
   return 'Ordenador';
 }
 
+keepScreenAwake();
 init();

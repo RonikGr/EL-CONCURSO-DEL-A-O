@@ -27,10 +27,10 @@ function workbook(overrides = {}) {
       ['Las Lima', ''],
     ],
     Concurso: [
-      ['Orden', 'Sección', 'Tipo', 'Descripción', 'Puntos', 'El presentador juega', 'Música de entrada'],
-      [2, 'Cultura', 'Test', 'Preguntas de todo', 2, null, null],
-      [1, 'Rápido', 'Pulsador', '', null, 'no', `https://open.spotify.com/intl-es/track/${TRACK}?si=abc`],
-      [3, 'Tiempo', 'Parar el contador', '', '5, 3, 1', null, null],
+      ['Orden', 'Sección', 'Tipo', 'Descripción', 'Puntos', 'El presentador juega', 'Música de entrada', 'Entorno'],
+      [2, 'Cultura', 'Test', 'Preguntas de todo', 2, null, null, null],
+      [1, 'Rápido', 'Pulsador', '', null, 'no', `https://open.spotify.com/intl-es/track/${TRACK}?si=abc`, 'Cripta helada'],
+      [3, 'Tiempo', 'Parar el contador', '', '5, 3, 1', null, null, 'tormenta'],
     ],
     Pulsador: [
       ['Sección', 'Pregunta', 'Respuesta', 'Mostrar en tele', 'Canción', 'Desde segundo', 'Notas'],
@@ -120,6 +120,8 @@ describe('lectura del libro', () => {
     ]);
     const [rapido, cultura, tiempo] = show.sections;
     expect(rapido).toMatchObject({ presenterPlays: false, music: `spotify:track:${TRACK}` });
+    // Entorno por nombre o por id; vacío = automático
+    expect(show.sections.map((s) => s.env)).toEqual(['cripta', null, 'tormenta']);
     expect(rapido.items).toEqual([
       { question: '¿Capital de Francia?', answer: 'París', showOnTv: true, song: null, songStart: 0, notes: 'fácil' },
       { question: '', answer: '', showOnTv: false, song: `spotify:track:${TRACK}`, songStart: 1.5, notes: '' },
@@ -198,6 +200,22 @@ describe('lectura del libro', () => {
       [5, 'La música debe ser un enlace a una canción de Spotify (open.spotify.com/track/…).'],
       [6, 'Falta el nombre de la sección.'],
     ]);
+  });
+
+  it('un entorno desconocido solo avisa', () => {
+    const { show, errors, warnings } = parseShowWorkbook(
+      workbook({
+        Concurso: [
+          ['Sección', 'Tipo', 'Entorno'],
+          ['Rápido', 'Pulsador', 'Playa'],
+        ],
+        Test: null,
+        Contador: null,
+      }),
+    );
+    expect(errors).toEqual([]);
+    expect(show.sections[0].env).toBeNull();
+    expect(warnings).toContainEqual({ sheet: 'Concurso', row: 2, message: 'Entorno desconocido: "Playa". Se usará uno automático.' });
   });
 
   it('sin pestaña Concurso no hay concurso', () => {

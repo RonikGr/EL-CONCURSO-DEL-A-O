@@ -1,0 +1,164 @@
+/* Capa de Halloween de los móviles (jugador y mando): fondo con los colores del entorno de la sección
+   (--env-bg lo pone main.js), paneles de cristal y botones con brillo. */
+
+body.player,
+body.control {
+  background:
+    var(--env-bg, radial-gradient(120% 70% at 50% 110%, rgb(255 233 184 / 0.18), transparent 60%)),
+    linear-gradient(180deg, #1a1036, #05030c);
+  background-attachment: fixed;
+  background-color: var(--bg);
+}
+
+/* Paneles de cristal */
+.section-bar,
+.field input,
+.icon-choice,
+.ap-candidate,
+.ap-joker,
+.ap-number,
+.st-list li,
+.team-select,
+.toast,
+button.me-score,
+.c-card,
+.c-top,
+.c-tabs,
+.c-team,
+.c-standings li,
+.c-sections button,
+.c-toast {
+  backdrop-filter: blur(12px) saturate(1.3);
+  -webkit-backdrop-filter: blur(12px) saturate(1.3);
+}
+
+.c-card,
+.section-bar {
+  box-shadow:
+    inset 0 0 0 1px var(--border),
+    0 0.8rem 2rem -1.2rem rgb(0 0 0 / 0.8);
+}
+
+.sheet,
+.standings-sheet {
+  background: var(--surface-solid);
+  border: 1px solid var(--border);
+}
+
+/* ------------------------------------------------------------------ Jugador */
+.avatar {
+  box-shadow:
+    0 0 0 0.18rem rgb(255 255 255 / 0.14),
+    0 0 1.2rem color-mix(in srgb, var(--me) 55%, transparent);
+}
+
+.me-score span {
+  color: var(--accent);
+  text-shadow: 0 0 0.6em rgb(255 138 31 / 0.5);
+}
+
+.section-top {
+  color: var(--accent-2);
+  letter-spacing: 0.08em;
+}
+
+/* El pulsador: una esfera de cristal con el color del jugador que se enciende al abrir el turno. */
+.buzzer {
+  border-width: 0.3rem;
+  background:
+    radial-gradient(circle at 50% 40%, color-mix(in srgb, var(--me) 22%, transparent), transparent 70%),
+    var(--surface);
+  backdrop-filter: blur(10px);
+  box-shadow:
+    inset 0 0 3rem rgb(0 0 0 / 0.5),
+    0 1rem 2.5rem -1rem rgb(0 0 0 / 0.9);
+}
+
+.buzzer[data-state='go'] {
+  background:
+    radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--me) 60%, white), var(--me) 55%, color-mix(in srgb, var(--me) 60%, black));
+  box-shadow:
+    0 0 3rem color-mix(in srgb, var(--me) 70%, transparent),
+    inset 0 0.3rem 0 rgb(255 255 255 / 0.35);
+}
+
+.buzzer[data-state='go'] .buzzer-label {
+  font-family: var(--display);
+  font-weight: 400;
+  letter-spacing: 0.05em;
+}
+
+.buzzer[data-state='first'] {
+  background: radial-gradient(circle at 50% 35%, var(--accent-2), var(--accent) 60%, #b4500a);
+  box-shadow: 0 0 3.5rem rgb(255 138 31 / 0.75);
+}
+
+.buzzer[data-state='blocked'] {
+  background: radial-gradient(circle at 50% 40%, rgb(255 61 90 / 0.45), rgb(80 5 15 / 0.75));
+}
+
+/* Respuestas: fichas con brillo */
+.ap-option {
+  background-image: linear-gradient(180deg, rgb(255 255 255 / 0.2), transparent 50%);
+  box-shadow:
+    0 0.3rem 0 rgb(0 0 0 / 0.35),
+    inset 0 0 0 1px rgb(255 255 255 / 0.18);
+}
+
+.ap-option.chosen {
+  box-shadow:
+    0 0 0 0.25rem var(--text),
+    0 0 2rem rgb(255 255 255 / 0.35);
+}
+
+.ap-countdown {
+  box-shadow: 0 0 1.2rem rgb(255 138 31 / 0.45);
+}
+
+.ap-light.red {
+  background: radial-gradient(circle at 50% 45%, #ff2a3d, #8a0414 60%, #3a0108);
+  box-shadow: 0 0 2.5rem rgb(255 42 61 / 0.55);
+}
+
+.ap-light.green {
+  background: radial-gradient(circle at 50% 45%, #b6ff7a, #2fbf3a 55%, #0b4a12);
+  box-shadow: 0 0 3rem rgb(125 255 107 / 0.75);
+}
+
+.ap-points.plus {
+  text-shadow: 0 0 0.7em rgb(125 255 107 / 0.6);
+}
+
+/* ------------------------------------------------------------------ Mando */
+.c-top strong {
+  color: var(--accent-2);
+}
+
+.c-tabs button.active {
+  color: var(--accent);
+  text-shadow: 0 0 0.8em rgb(255 138 31 / 0.5);
+}
+
+.c-sound {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+.c-sound .btn {
+  flex: 1;
+}
+
+.c-sound .btn.on {
+  border-color: var(--accent);
+  color: var(--accent-2);
+}
+
+.c-volume {
+  flex: 1.4;
+  text-align: center;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}

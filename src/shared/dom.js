@@ -4,7 +4,7 @@ export function h(tag, attrs = {}, ...children) {
   for (const [key, value] of Object.entries(attrs ?? {})) {
     if (value == null || value === false) continue;
     if (key === 'class') el.className = value;
-    else if (key === 'style' && typeof value === 'object') Object.assign(el.style, value);
+    else if (key === 'style' && typeof value === 'object') setStyle(el, value);
     else if (key === 'dataset') Object.assign(el.dataset, value);
     else if (key.startsWith('on') && typeof value === 'function') el.addEventListener(key.slice(2), value);
     else if (value === true) el.setAttribute(key, '');
@@ -12,6 +12,15 @@ export function h(tag, attrs = {}, ...children) {
   }
   append(el, children);
   return el;
+}
+
+// Las variables CSS (--pc, --ob…) solo se pueden poner con setProperty: Object.assign(el.style) las ignora.
+function setStyle(el, styles) {
+  for (const [prop, value] of Object.entries(styles)) {
+    if (value == null) continue;
+    if (prop.startsWith('--')) el.style.setProperty(prop, value);
+    else el.style[prop] = value;
+  }
 }
 
 function append(el, children) {

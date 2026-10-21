@@ -3,6 +3,7 @@
 //
 // Las cabeceras se reconocen sin distinguir mayúsculas, tildes ni el orden de las columnas.
 import { COLORS } from '../shared/appearance.js';
+import { ENVIRONMENTS } from '../shared/environments.js';
 
 export const SECTION_TYPES = {
   pulsador: { label: 'Pulsador', sheet: 'Pulsador', ranked: false, presenterPlays: false, needsItems: false },
@@ -53,6 +54,13 @@ export function defaultShow() {
 
 // ---------------------------------------------------------------------------------------------
 // Utilidades de texto y valores
+
+/** Entorno por nombre ("Cripta helada") o id ("cripta"); null si no existe. */
+export function parseEnv(value) {
+  const key = norm(text(value));
+  if (!key) return null;
+  return ENVIRONMENTS.find((e) => norm(e.name) === key || e.id === key)?.id ?? null;
+}
 
 /** "Sección" → "seccion": minúsculas, sin tildes ni signos. */
 export function norm(value) {
@@ -163,6 +171,7 @@ const COLUMNS = {
     points: ['puntos'],
     presenterPlays: ['el presentador juega', 'presentador juega', 'presentador'],
     music: ['musica'],
+    env: ['entorno'],
   },
   pulsador: {
     section: ['seccion'],
@@ -320,6 +329,9 @@ export function parseShowWorkbook(sheets) {
       if (presenterPlays === undefined) err('Concurso', row, '"El presentador juega" debe ser sí o no.');
       const music = parseSpotifyTrack(values.music);
       if (!isEmpty(values.music) && !music) err('Concurso', row, 'La música debe ser un enlace a una canción de Spotify (open.spotify.com/track/…).');
+      // Entorno de Halloween (opcional): si no se pone o no existe, se reparte uno distinto por sección.
+      const env = parseEnv(values.env);
+      if (!isEmpty(values.env) && !env) warn('Concurso', row, `Entorno desconocido: "${text(values.env)}". Se usará uno automático.`);
       const order = parseNumber(values.order);
       sections.push({
         id: `s${sections.length + 1}`,
@@ -329,6 +341,7 @@ export function parseShowWorkbook(sheets) {
         points,
         presenterPlays: presenterPlays ?? info.presenterPlays,
         music,
+        env,
         items: [],
         _order: order ?? Infinity,
         _row: row,

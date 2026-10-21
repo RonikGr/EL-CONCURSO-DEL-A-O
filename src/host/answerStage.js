@@ -5,11 +5,22 @@ import { getColor, getIcon } from '../shared/appearance.js';
 import { ANSWER_PROMPT, optionStyle } from '../shared/options.js';
 import { ordinal } from '../shared/format.js';
 import { APHASE, isTiming } from '../core/answers.js';
+import { later, suspense } from './fx/motion.js';
+import { sound } from './fx/audio.js';
+import { burst } from './fx/confetti.js';
 
 export function createAnswerStage() {
   const root = h('section', { class: 'answer-stage' });
   let raf = 0;
   let countdownEl = null;
+  let lastSecond = null;
+  // Ronda cuyo revelado ya se animó: si se repinta (alguien se desconecta…), se enseña sin repetir el suspense.
+  let animatedReveal = null;
+  const shouldAnimate = (a) => {
+    if (animatedReveal === a.roundId) return false;
+    animatedReveal = a.roundId;
+    return true;
+  };
 
   function stopCountdown() {
     cancelAnimationFrame(raf);
@@ -19,7 +30,11 @@ export function createAnswerStage() {
   function tick(a) {
     if (!countdownEl) return;
     const left = Math.max(0, a.deadline - performance.now());
-    countdownEl.textContent = String(Math.ceil(left / 1000));
+    const second = Math.ceil(left / 1000);
+    countdownEl.textContent = String(second);
+    // Tictac en los últimos 5 segundos
+    if (second !== lastSecond && second > 0 && second <= 5 && lastSecond != null) sound.play('tick');
+    lastSecond = second;
     countdownEl.classList.toggle('hurry', left < 5000);
     raf = requestAnimationFrame(() => tick(a));
   }
@@ -44,7 +59,7 @@ export function createAnswerStage() {
     if (a.phase === APHASE.READY || !started) {
       body = h('p', { class: 'answer-prompt' }, a.phase === APHASE.READY ? `Preparad los móviles · ${ANSWER_PROMPT[a.kind]}` : 'Preparados…');
     } else if (a.phase === APHASE.REVEALED) {
-      body = revealed(a);
+      body = revealed(a, shouldAnimate(a));
     } else {
       body = choices(a);
       countdownEl = a.phase === APHASE.OPEN ? h('span', { class: 'countdown' }) : null;
@@ -57,6 +72,7 @@ export function createAnswerStage() {
     }
 
     fill(root, header, question, image, body, footer);
+    lastSecond = null;
     if (countdownEl) tick(a);
   }
 
@@ -90,7 +106,7 @@ export function createAnswerStage() {
       }
       if (a.phase === APHASE.REVEALED) {
         root.dataset.phase = 'revealed';
-        return fill(root, header, target, rankingList(a, (e) => secs(e.value, 2), (e) => `a ${secs(e.diff, 2)}`));
+        return fill(root, header, target, rankingList(a, (e) => secs(e.value, 2), (e) => `a ${secs(e.diff, 2)}`, shouldAnimate(a)));
       }
       root.dataset.phase = a.phase;
       const clock = h('p', { class: 'big-clock' });
@@ -122,7 +138,7 @@ export function createAnswerStage() {
     }
     if (a.phase === APHASE.REVEALED) {
       root.dataset.phase = 'revealed';
-      return fill(root, header, h('p', { class: 'answer-question' }, '¿Quién tiene mejores reflejos?'), rankingList(a, (e) => (e.early ? '¡En rojo!' : `${Math.round(e.value)} ms`), () => ''));
+      return fill(root, header, h('p', { class: 'answer-question' }, '¿Quién tiene mejores reflejos?'), rankingList(a, (e) => (e.early ? '¡En rojo!' : `${Math.round(e.value)} ms`), () => '', shouldAnimate(a)));
     }
     root.dataset.phase = a.phase;
     const green = a.tGreen != null && t >= a.tGreen;
@@ -137,10 +153,10 @@ export function createAnswerStage() {
 const secs = (n, decimals) => `${Number(n).toFixed(decimals).replace('.', ',')} s`;
 
 /** Clasificación de una sección de tiempo (Contador o Reflejos). */
-function rankingList(a, valueText, diffText) {
+function rankingList(a, valueText, diffText, animate) {
   const entries = a.results.entries;
   if (!entries.length) return h('p', { class: 'reveal-line' }, 'Nadie ha pulsado');
-  return h(
+  const list = h(
     'ol',
     { class: 'estimates' },
     entries.map((e) =>
@@ -156,6 +172,24 @@ function rankingList(a, valueText, diffText) {
       ),
     ),
   );
+  return dramatize(list, animate);
+}
+
+/**
+ * Revelado con suspense: las filas aparecen del último puesto al primero, cada una con su sonido; el ganador, tras
+ * una pausa, con golpe y confeti. Devuelve la lista (para usarlo dentro de h()).
+ */
+function dramatize(list, animate, { after = null } = {}) {
+  if (!animate) return list;
+  const times = suspense([...list.children]);
+  times.forEach((t, i) => sound.play(i === 0 ? 'hit' : 'pop', t));
+  const winnerAt = times[0] ?? 0;
+  if (after) {
+    after.classList.add('suspense');
+    after.style.setProperty('--d', `${winnerAt}ms`);
+  }
+  later(list, winnerAt, () => burst({ y: 0.35, count: 60 }));
+  return list;
 }
 
 // ---------------------------------------------------------------------------------------- Mientras se responde
@@ -191,10 +225,10 @@ function optionTile(kind, i, label, extra = {}) {
 
 // ---------------------------------------------------------------------------------------- Revelado
 
-function revealed(a) {
+function revealed(a, animate) {
   const res = a.results;
-  if (a.kind === 'votacion') return revealVote(a, res);
-  if (a.kind === 'estimacion') return revealEstimate(a, res);
+  if (a.kind === 'votacion') return revealVote(a, res, animate);
+  if (a.kind === 'estimacion') return revealEstimate(a, res, animate);
 
   const total = Math.max(1, ...a.counts);
   const winners = res.entries.filter((e) => e.correct);
@@ -236,57 +270,57 @@ function revealed(a) {
   );
 }
 
-function revealVote(a, res) {
+function revealVote(a, res, animate) {
   const rows = [...a.candidates].map((p) => ({ p, votes: a.counts[p.id] ?? 0 })).sort((x, y) => y.votes - x.votes);
   const max = Math.max(1, ...rows.map((r) => r.votes));
   const winnerIds = new Set(res.winners.map((w) => w.id));
+  // Las barras salen de menos a más votos y, al final, el nombre del más votado.
+  const winnerLine = res.winners.length
+    ? h('p', { class: 'vote-winner display' }, res.winners.map((w) => `${getIcon(w.icon).glyph} ${w.name}`).join(' · '))
+    : h('p', { class: 'reveal-line' }, 'Nadie ha votado');
+  const bars = h(
+    'ol',
+    { class: 'vote-bars' },
+    rows.map((r) =>
+      h(
+        'li',
+        { class: winnerIds.has(r.p.id) ? 'winner' : '', style: { '--pc': getColor(r.p.color).bg, '--w': `${(r.votes / max) * 100}%` } },
+        avatar(r.p),
+        h('span', { class: 'vb-name' }, r.p.name),
+        h('span', { class: 'vb-bar' }, h('span', {})),
+        h('span', { class: 'vb-votes' }, `${r.votes} ${r.votes === 1 ? 'voto' : 'votos'}`),
+      ),
+    ),
+  );
+  dramatize(bars, animate, { after: res.winners.length ? winnerLine : null });
   return h(
     'div',
     { class: 'reveal' },
-    res.winners.length
-      ? h('p', { class: 'vote-winner' }, res.winners.map((w) => `${getIcon(w.icon).glyph} ${w.name}`).join(' · '))
-      : h('p', { class: 'reveal-line' }, 'Nadie ha votado'),
-    h(
-      'ol',
-      { class: 'vote-bars' },
-      rows.map((r) =>
-        h(
-          'li',
-          { class: winnerIds.has(r.p.id) ? 'winner' : '', style: { '--pc': getColor(r.p.color).bg, '--w': `${(r.votes / max) * 100}%` } },
-          avatar(r.p),
-          h('span', { class: 'vb-name' }, r.p.name),
-          h('span', { class: 'vb-bar' }, h('span', {})),
-          h('span', { class: 'vb-votes' }, `${r.votes} ${r.votes === 1 ? 'voto' : 'votos'}`),
-        ),
-      ),
-    ),
+    winnerLine,
+    bars,
     res.winners.length ? h('p', { class: 'reveal-line' }, `Suman ${a.points[0]} quienes votaron con la mayoría`) : null,
   );
 }
 
-function revealEstimate(a, res) {
+function revealEstimate(a, res, animate) {
   const fmt = (n) => `${n.toLocaleString('es-ES')}${a.unit ? ` ${a.unit}` : ''}`;
-  return h(
-    'div',
-    { class: 'reveal' },
-    h('p', { class: 'estimate-answer' }, fmt(a.correct)),
-    h(
-      'ol',
-      { class: 'estimates' },
-      res.entries.map((e) =>
-        h(
-          'li',
-          { class: e.over ? 'over' : e.place === 1 ? 'first' : '', style: { '--pc': getColor(e.player.color).bg } },
-          h('span', { class: 'f-place' }, e.place ? ordinal(e.place) : '—'),
-          avatar(e.player),
-          h('span', { class: 'es-name' }, e.player.name),
-          h('span', { class: 'es-value' }, fmt(e.value)),
-          h('span', { class: 'es-diff' }, e.over ? 'se pasó' : `a ${e.diff.toLocaleString('es-ES')}`),
-          h('strong', { class: 'es-points' }, e.points ? `+${e.points}` : ''),
-        ),
+  const list = h(
+    'ol',
+    { class: 'estimates' },
+    res.entries.map((e) =>
+      h(
+        'li',
+        { class: e.over ? 'over' : e.place === 1 ? 'first' : '', style: { '--pc': getColor(e.player.color).bg } },
+        h('span', { class: 'f-place' }, e.place ? ordinal(e.place) : '—'),
+        avatar(e.player),
+        h('span', { class: 'es-name' }, e.player.name),
+        h('span', { class: 'es-value' }, fmt(e.value)),
+        h('span', { class: 'es-diff' }, e.over ? 'se pasó' : `a ${e.diff.toLocaleString('es-ES')}`),
+        h('strong', { class: 'es-points' }, e.points ? `+${e.points}` : ''),
       ),
     ),
   );
+  return h('div', { class: 'reveal' }, h('p', { class: 'estimate-answer' }, fmt(a.correct)), dramatize(list, animate));
 }
 
 const avatar = (p) =>

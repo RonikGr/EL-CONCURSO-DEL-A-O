@@ -5,6 +5,7 @@ import { getColor, getIcon } from '../shared/appearance.js';
 import { formatDeltaMs, formatSeconds, ordinal } from '../shared/format.js';
 import { PHASE } from '../core/game.js';
 import { MIN_PLAYERS } from '../core/players.js';
+import { kinetic } from './fx/motion.js';
 
 export function createStage() {
   const root = h('section', { class: 'stage', 'aria-live': 'polite' });
@@ -47,7 +48,7 @@ export function createStage() {
         fill(
           root,
           questionBlock(view, true),
-          view.shown.question ? null : h('p', { class: 'stage-title' }, 'Pregunta en el aire'),
+          view.shown.question ? null : h('p', { class: 'stage-title display' }, 'Pregunta en el aire'),
           view.canStart ? null : h('p', { class: 'stage-hint' }, `Hacen falta al menos ${MIN_PLAYERS} jugadores conectados.`),
         );
         break;
@@ -60,7 +61,7 @@ export function createStage() {
           root,
           questionBlock(view, false),
           game.rebound ? h('p', { class: 'stage-rebound' }, '¡Rebote! Pueden pulsar los demás') : null,
-          h('p', { class: 'stage-title' }, started ? '¡Pulsad!' : 'Preparados…'),
+          h('p', { class: 'stage-title display' }, started ? '¡Pulsad!' : 'Preparados…'),
           timerEl,
         );
         if (timerEl) tickTimer(game.tOpen);
@@ -98,7 +99,7 @@ export function createStage() {
       overlay,
       h('p', { class: 'result-q' }, `${view.section.name} · Pregunta ${view.itemIndex + 1}`),
       h('div', { class: 'result-avatar emoji', 'aria-hidden': 'true' }, getIcon(winner.icon).glyph),
-      h('h2', { class: 'result-name' }, winner.name),
+      kinetic('h2', 'result-name', winner.name, { step: 45 }),
       team ? h('p', { class: 'result-team' }, team.name) : null,
       h('p', { class: 'result-time' }, first ? formatSeconds(first.reactionMs) : ''),
       judgedCorrect ? h('p', { class: 'result-verdict' }, `¡Correcto! +${view.pointsForCorrect}`) : null,

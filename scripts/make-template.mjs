@@ -4,6 +4,7 @@ import ExcelJS from 'exceljs';
 import { mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { COLORS } from '../src/shared/appearance.js';
+import { ENVIRONMENTS } from '../src/shared/environments.js';
 
 const OUT = resolve(import.meta.dirname, '../public/plantilla-concurso.xlsx');
 const ROWS = 200; // filas con desplegables
@@ -37,6 +38,12 @@ const SHEETS = [
       { title: 'Descripción', width: 50, note: 'Se muestra en la tele al presentar la sección.' },
       { title: 'Puntos', width: 10, note: 'Un número (por acierto) o una lista por puestos, como 3,2,1.' },
       { title: 'El presentador juega', width: 12, list: yesNo, note: 'Vacío = lo normal del tipo (sí en Votación, Contador, Reflejos y Libre).' },
+      {
+        title: 'Entorno',
+        width: 22,
+        list: ENVIRONMENTS.map((e) => e.name),
+        note: 'Decorado de Halloween de la tele en esta sección. Vacío = uno distinto en cada sección.',
+      },
     ],
     rows: [
       [1, 'Calentamiento', 'Pulsador', 'El primero que pulse, responde.', 1, 'No'],
@@ -47,7 +54,7 @@ const SHEETS = [
       [6, 'Reloj interno', 'Parar el contador', 'Para el reloj lo más cerca posible del objetivo.', '3,2,1', null],
       [7, 'Reflejos', 'Duelo de reflejos', 'Cuando se ponga en verde… ¡pulsa!', '3,2,1', null],
       [8, 'Dos verdades y una mentira', 'Dos verdades y una mentira', '¿Cuál es la mentira?', 1, null],
-      [9, 'Fit o Fat', 'Libre', 'Pruebas físicas.', 3, 'Sí'],
+      [9, 'Fit o Fat', 'Libre', 'Pruebas físicas.', 3, 'Sí', 'Noche de luna'],
     ],
   },
   {
