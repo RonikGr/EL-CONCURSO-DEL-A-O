@@ -11,6 +11,8 @@ import { parseShowWorkbook } from '../core/show.js';
 import { HostRoom } from './room.js';
 import { clearSavedRoom, loadSavedRoom } from './persistence.js';
 import { createStage } from './stage.js';
+import { createAnswerStage } from './answerStage.js';
+import { APHASE } from '../core/answers.js';
 import { coverScreen, finalScreen, introScreen, scoreboardScreen, setupScreen } from './screens.js';
 import { openSettingsDialog } from './settingsDialog.js';
 import { createDebugPanel } from './debugPanel.js';
@@ -22,6 +24,7 @@ const LOCAL_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
 const app = $('#app');
 let room = null;
 let stage = null;
+let answerStage = null;
 let qrs = null; // {join, joinMini, control}
 let lastScreenSignature = null;
 const debug = createDebugPanel();
@@ -117,6 +120,7 @@ function renderShell() {
   cards.clear();
   lastScreenSignature = null;
   stage = createStage();
+  answerStage = createAnswerStage();
 
   clear(app).append(
     h(
@@ -207,7 +211,14 @@ function renderNetwork() {
  * no se repiten y no se pierde el foco.
  */
 function renderScreen(view) {
-  const visible = { ...view, players: view.players.map(({ rtt, ...p }) => p), settings: null };
+  const t = performance.now();
+  const visible = {
+    ...view,
+    players: view.players.map(({ rtt, ...p }) => p),
+    settings: null,
+    // La apertura programada no cambia ningún dato: hay que repintar igualmente cuando llega.
+    started: [view.game && t >= view.game.tOpen, view.answer && view.answer.tOpen != null && t >= view.answer.tOpen],
+  };
   const signature = JSON.stringify(visible);
   if (signature === lastScreenSignature) return;
   lastScreenSignature = signature;
@@ -235,6 +246,11 @@ function renderScreen(view) {
     case SCREEN.INTRO:
       return fill(screen, introScreen(view));
     case SCREEN.PLAY:
+      if (view.answer) {
+        answerStage.render(view);
+        if (answerStage.root.parentNode !== screen) fill(screen, answerStage.root);
+        return;
+      }
       if (view.game) {
         stage.render(view);
         if (stage.root.parentNode !== screen) fill(screen, stage.root);
@@ -250,12 +266,17 @@ function renderScreen(view) {
 
 function renderPlayers(view) {
   const panel = $('#players-panel');
-  panel.hidden = !(view.screen === SCREEN.PLAY && view.game && !view.peekScoreboard);
+  panel.hidden = !(view.screen === SCREEN.PLAY && (view.game || view.answer) && !view.peekScoreboard);
   if (panel.hidden) return;
 
   // Puesto de cada uno en la ronda actual (mientras el turno está abierto o se ve el resultado).
   const game = view.game;
-  const places = new Map(game.phase === PHASE.OPEN || game.phase === PHASE.RESULT ? game.ranking.map((r) => [r.playerId, r.place]) : []);
+  const places = new Map(game && (game.phase === PHASE.OPEN || game.phase === PHASE.RESULT) ? game.ranking.map((r) => [r.playerId, r.place]) : []);
+  // En las secciones de respuestas: quién ha respondido ya (sin decir qué).
+  const answer = view.answer;
+  const answering = answer && (answer.phase === APHASE.OPEN || answer.phase === APHASE.CLOSED);
+  const answered = new Set(answering ? answer.answeredIds : []);
+  const eligible = new Set(answering ? answer.eligibleIds : []);
 
   // Tarjetas con clave: no se recrean en cada latido, así no se pierde el foco ni el hover.
   const grid = $('#player-grid');
@@ -267,7 +288,7 @@ function renderPlayers(view) {
       card = createCard();
       cards.set(p.id, card);
     }
-    updateCard(card, p, places.get(p.id));
+    updateCard(card, p, places.get(p.id), answering && eligible.has(p.id) ? answered.has(p.id) : null);
     grid.append(card.root); // append mueve el nodo: mantiene el orden de llegada
   }
   for (const [id, card] of cards) {
@@ -301,7 +322,8 @@ function createCard() {
 
 const LOCK_TEXT = { [LOCK.EARLY]: 'Bloqueado · pulsó antes', [LOCK.WRONG]: 'Bloqueado · falló' };
 
-function updateCard(card, p, place) {
+/** @param hasAnswered true/false en una pregunta de respuestas abierta; null si no aplica */
+function updateCard(card, p, place, hasAnswered = null) {
   const color = getColor(p.color);
   card.root.style.setProperty('--pc', color.bg);
   card.root.style.setProperty('--pc-fg', color.fg);
@@ -311,7 +333,9 @@ function updateCard(card, p, place) {
   card.name.textContent = p.name;
   let status = p.connected ? `Conectado${p.rtt != null ? ` · ${Math.round(p.rtt)} ms` : ''}` : 'Desconectado';
   if (p.lock) status = LOCK_TEXT[p.lock] + (p.connected ? '' : ' · desconectado');
+  if (hasAnswered != null) status = hasAnswered ? '✓ Ha respondido' : 'Pensando…';
   card.meta.textContent = status;
+  card.root.classList.toggle('answered', hasAnswered === true);
   card.place.textContent = place ? `${place}º` : '';
   card.place.hidden = !place;
   card.score.textContent = p.score;
@@ -384,10 +408,14 @@ document.addEventListener('keydown', (e) => {
 
   const screen = room.runner.screen;
   const phase = room.inBuzzerPlay ? room.game.phase : null;
+  const answerPhase = room.inAnswerPlay ? room.answerRound.phase : null;
   switch (e.code) {
     case 'Space':
       e.preventDefault(); // que no "pulse" el botón con foco
-      if (phase === PHASE.IDLE) actions.open();
+      if (answerPhase) {
+        const next = { ready: 'openAnswers', open: 'closeAnswers', closed: 'reveal', revealed: 'nextItem' }[answerPhase];
+        run(next);
+      } else if (phase === PHASE.IDLE) actions.open();
       else if (phase === PHASE.RESULT || phase === PHASE.CLOSED) actions.nextItem();
       else if (phase == null && screen !== SCREEN.FINAL) run('next');
       break;
@@ -404,7 +432,7 @@ document.addEventListener('keydown', (e) => {
       actions.showAnswer();
       break;
     case 'KeyR':
-      if (phase) actions.restart();
+      if (phase || answerPhase) actions.restart();
       break;
     case 'KeyA':
       if (phase === PHASE.RESULT) actions.correct();

@@ -9,6 +9,7 @@ import { formatDeltaSeconds, formatSeconds } from '../shared/format.js';
 import { PlayerConnection } from './network.js';
 import { createProfilePicker } from './profilePicker.js';
 import { SyncClient } from './syncClient.js';
+import { createAnswerPad } from './answerPad.js';
 
 // `?perfil=2` usa otra identidad: para probar varios jugadores en pestañas del mismo navegador.
 const profileSlot = new URLSearchParams(location.search).get('perfil');
@@ -27,12 +28,40 @@ let buzzSeq = 0;
 let goTimer = null;
 let lastShownStatus = null;
 let teamRequested = false; // se ha elegido equipo y se espera la confirmación del presentador
+const lastResultRound = new Set(); // rondas cuyo resultado ya hizo vibrar el móvil
 
 const sync = new SyncClient({ send: (msg) => connection?.send(msg) ?? false });
 // Al volver a primer plano el reloj puede haberse parado (iOS lo hace con la pantalla bloqueada): resincronizar.
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'visible' && connection?.connected) sync.burst();
 });
+
+// Secciones de respuestas: el botón grande se cambia por las opciones.
+const ackKinds = new Map(); // seq → 'answer' | 'joker'
+const pad = createAnswerPad({
+  onAnswer: (roundId, value) => {
+    const now = performance.now();
+    const clock = sync.estimate();
+    const seq = ++buzzSeq;
+    ackKinds.set(seq, 'answer');
+    connection?.send({ t: MSG.ANSWER, seq, roundId, value, tLocal: now, offset: clock?.offset, err: clock?.err });
+    vibrate(30);
+  },
+  onJoker: (roundId, kind) => {
+    const seq = ++buzzSeq;
+    ackKinds.set(seq, 'joker');
+    connection?.send({ t: MSG.JOKER, seq, roundId, kind });
+  },
+  toLocal: (tHost) => (tHost == null ? null : sync.toLocal(tHost)),
+});
+$('#screen-game').append(pad.root);
+
+const ANSWER_REJECTED = {
+  late: 'Se acabó el tiempo: tu respuesta llegó tarde.',
+  closed: 'La pregunta ya está cerrada.',
+  'not-eligible': 'Esta pregunta no es para ti.',
+  invalid: 'Respuesta no válida.',
+};
 
 const joinPicker = createProfilePicker(profile);
 const editPicker = createProfilePicker(profile);
@@ -192,10 +221,34 @@ function handleMessage(msg, tRecv) {
         .filter(Boolean)
         .join(' · ');
       renderMe();
-      renderBuzzer();
+      if (msg.answer) {
+        $('#buzzer').hidden = true;
+        pad.show();
+        if (msg.answer.result?.points && !lastResultRound.has(msg.answer.roundId)) {
+          lastResultRound.add(msg.answer.roundId);
+          vibrate([80, 60, 80]);
+        }
+        pad.render(msg.answer, { stateReceivedAt });
+      } else {
+        pad.hide();
+        $('#buzzer').hidden = false;
+        renderBuzzer();
+      }
       // Con equipos, quien aún no tiene uno tiene que elegirlo antes de nada.
       if (msg.teams?.length && !me.teamId && !teamRequested) showTeamPicker(msg.teams);
       else if ($('#screen-game').hidden) show('screen-game');
+      break;
+    }
+    case MSG.ANSWER_ACK: {
+      const kind = ackKinds.get(msg.seq);
+      ackKinds.delete(msg.seq);
+      if (msg.result === 'ok') break;
+      if (kind === 'answer') {
+        pad.rejectPending();
+        toast(ANSWER_REJECTED[msg.result] ?? 'No se ha podido enviar la respuesta.');
+      } else if (msg.message) {
+        toast(msg.message);
+      }
       break;
     }
     case MSG.ERROR:

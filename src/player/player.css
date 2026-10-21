@@ -167,9 +167,10 @@ body.player {
 }
 
 /* --- Juego --- */
+/* Columna flexible: el botón (o las respuestas) ocupa lo que dejen la cabecera y el aviso de conexión. */
 .game {
-  display: grid;
-  grid-template-rows: auto auto 1fr;
+  display: flex;
+  flex-direction: column;
   gap: 0.75rem;
   height: 100dvh;
   user-select: none;
@@ -243,8 +244,8 @@ body.player {
 }
 
 .buzzer {
+  flex: 1;
   width: 100%;
-  height: 100%;
   min-height: 0;
   border: 0.5rem solid var(--me);
   border-radius: 2rem;
@@ -322,6 +323,256 @@ body.player {
   font-size: clamp(2rem, 10vw, 4.5rem);
   padding: 0 0.5rem;
   overflow-wrap: anywhere;
+}
+
+/* --- Secciones de respuestas --- */
+.answer-pad {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  text-align: center;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.ap-label {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.ap-big {
+  margin: 1.5rem 0 0;
+  font-size: clamp(2rem, 10vw, 3.2rem);
+  font-weight: 900;
+  line-height: 1.1;
+}
+
+.ap-sub {
+  margin: 0;
+  font-size: 1.2rem;
+  color: var(--muted);
+}
+
+.ap-points {
+  margin: 0.5rem auto 0;
+  padding: 0.2em 0.9em;
+  border-radius: 999px;
+  background: var(--surface-2);
+  font-size: 2rem;
+  font-weight: 900;
+}
+
+.ap-points.plus {
+  background: var(--ok);
+  color: #06210f;
+}
+
+.ap-top {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  text-align: left;
+}
+
+.ap-countdown {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 3.2rem;
+  height: 3.2rem;
+  border-radius: 50%;
+  border: 0.3rem solid var(--accent);
+  font-size: 1.4rem;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.ap-countdown.hurry {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.ap-question {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.ap-options {
+  flex: 1;
+  display: grid;
+  gap: 0.6rem;
+  grid-auto-rows: minmax(4.5rem, 1fr);
+}
+
+.ap-options.n4 {
+  grid-template-columns: 1fr 1fr;
+}
+
+.ap-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 0.6rem;
+  border: 0;
+  border-radius: 1rem;
+  background: var(--ob);
+  color: var(--of);
+  font-weight: 800;
+  font-size: 1.1rem;
+  box-shadow: 0 0.3rem 0 rgb(0 0 0 / 0.35);
+}
+
+.ap-option:active:not(:disabled) {
+  transform: translateY(0.2rem);
+  box-shadow: none;
+}
+
+.ap-shape {
+  font-size: 1.8rem;
+}
+
+.ap-option-label {
+  overflow-wrap: anywhere;
+}
+
+.ap-option:disabled {
+  opacity: 0.35;
+}
+
+.ap-option.chosen {
+  opacity: 1;
+  outline: 0.3rem solid var(--text);
+}
+
+.ap-option.removed {
+  opacity: 0.12;
+}
+
+.ap-audience {
+  font-size: 1.3rem;
+  font-weight: 900;
+  padding: 0 0.5em;
+  border-radius: 999px;
+  background: rgb(0 0 0 / 0.3);
+}
+
+.ap-candidates {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.ap-candidate {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  border-radius: 0.9rem;
+  border: 3px solid var(--pc);
+  background: var(--surface);
+  font-weight: 800;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.ap-candidate:disabled {
+  opacity: 0.4;
+}
+
+.ap-candidate.chosen {
+  opacity: 1;
+  background: var(--pc);
+  color: var(--pc-fg);
+}
+
+.ap-avatar {
+  flex: none;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 1.3rem;
+  background: var(--pc);
+}
+
+.ap-estimate {
+  display: grid;
+  gap: 0.8rem;
+  margin-top: 1rem;
+}
+
+.ap-number {
+  width: 100%;
+  padding: 0.8rem;
+  border-radius: 0.9rem;
+  border: 3px solid var(--border);
+  background: var(--surface);
+  font-size: 2.2rem;
+  font-weight: 900;
+  text-align: center;
+  color: var(--text);
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.ap-number.invalid {
+  border-color: var(--danger);
+}
+
+.ap-sent {
+  margin: 0;
+  color: var(--ok);
+  font-weight: 800;
+  font-size: 1.2rem;
+}
+
+.ap-jokers {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+}
+
+.ap-joker {
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.5rem;
+  border-radius: 0.8rem;
+  border: 2px solid var(--accent);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.ap-joker strong {
+  font-size: 1.2rem;
+}
+
+.ap-joker small {
+  color: var(--muted);
+}
+
+.ap-joker.active {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+
+.ap-joker.active small {
+  color: var(--accent-fg);
+}
+
+.ap-joker:disabled:not(.active) {
+  opacity: 0.35;
+  border-color: var(--border);
 }
 
 /* --- Elegir equipo --- */

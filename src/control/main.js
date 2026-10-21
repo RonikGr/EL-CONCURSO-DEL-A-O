@@ -4,6 +4,7 @@ import './control.css';
 import { $, fill, h } from '../shared/dom.js';
 import { getColor, getIcon } from '../shared/appearance.js';
 import { formatDeltaMs, formatSeconds } from '../shared/format.js';
+import { optionStyle } from '../shared/options.js';
 import { isValidRoomCode, normalizeRoomCode } from '../shared/roomCode.js';
 import { loadJSON, newId, saveJSON } from '../shared/storage.js';
 import { ERROR_CODE, MSG, PROTOCOL_VERSION, ROLE } from '../shared/protocol.js';
@@ -185,6 +186,7 @@ function gameTab() {
     case 'intro':
       return [sectionCard(), bigNext(view.playable ? 'Empezar sección →' : 'Saltar esta sección →'), navRow()];
     case 'play':
+      if (view.answer) return answerPanel();
       return view.section?.type === 'pulsador' ? buzzerPanel() : [sectionCard(), bigNext('Siguiente →'), navRow()];
     case 'scoreboard':
       return [standingsCard('Marcador'), bigNext('Siguiente sección →'), navRow()];
@@ -321,6 +323,112 @@ function buzzerPanel() {
     h('div', { class: 'c-row secondary' }, btn('Saltar pregunta', () => cmd('nextItem')), btn('Terminar sección', () => cmd('endSection'))),
     navRow(),
   ];
+}
+
+/** Secciones de respuestas: Test, Verdad o mentira, Dos verdades, Votación y Estimación. */
+function answerPanel() {
+  const a = view.answer;
+  const progress = view.itemCount ? `Pregunta ${view.itemIndex + 1} de ${view.itemCount}` : '';
+  const fmt = (n) => `${Number(n).toLocaleString('es-ES')}${a.unit ? ` ${a.unit}` : ''}`;
+
+  let solution = null;
+  if (a.options && a.correct != null) {
+    const s = optionStyle(a.kind, a.correct);
+    solution = h('p', { class: 'c-answer' }, h('small', {}, a.kind === 'dosVerdades' ? 'La mentira' : 'Correcta'), `${s.shape} ${a.options[a.correct]}`);
+  } else if (a.kind === 'estimacion') {
+    solution = h('p', { class: 'c-answer' }, h('small', {}, a.noOver ? 'Respuesta (gana el más cercano sin pasarse)' : 'Respuesta (gana el más cercano)'), fmt(a.correct));
+  }
+  const subjectWarning =
+    a.kind === 'dosVerdades' && a.subject && !a.subject.id
+      ? h('p', { class: 'warn' }, `No hay ningún jugador llamado «${a.subject.name}»: votarán todos y nadie suma por engañar.`)
+      : null;
+
+  const question = h(
+    'section',
+    { class: 'c-card' },
+    h('p', { class: 'c-kicker' }, [view.section.name, progress, a.label].filter(Boolean).join(' · ')),
+    h('p', { class: 'c-question' }, a.text),
+    a.options ? h('ol', { class: 'c-options' }, a.options.map((o, i) => h('li', {}, `${optionStyle(a.kind, i).shape} ${o}`))) : null,
+    solution,
+    subjectWarning,
+  );
+
+  const answered = new Set(a.answeredIds);
+  const progressCard =
+    a.phase === 'open' || a.phase === 'closed'
+      ? h(
+          'section',
+          { class: 'c-card' },
+          h('p', { class: 'c-kicker' }, `${a.answeredIds.length} de ${a.eligibleIds.length} han respondido`),
+          h(
+            'p',
+            { class: 'small' },
+            a.eligibleIds.map((id) => {
+              const p = view.players.find((x) => x.id === id);
+              return h('span', { class: answered.has(id) ? 'c-done' : 'c-waiting' }, `${answered.has(id) ? '✓' : '…'} ${p?.name ?? '¿?'}  `);
+            }),
+          ),
+          liveCounts(a),
+        )
+      : null;
+
+  let actions;
+  switch (a.phase) {
+    case 'ready':
+      actions = [h('button', { class: 'btn primary big', disabled: !view.canStart, onclick: () => cmd('openAnswers') }, 'Abrir respuestas')];
+      break;
+    case 'open':
+      actions = [h('p', { class: 'c-live' }, '¡Respondiendo!'), btn('Cerrar ya', () => cmd('closeAnswers'))];
+      break;
+    case 'closed':
+      actions = [h('button', { class: 'btn primary big', onclick: () => cmd('reveal') }, 'Revelar')];
+      break;
+    case 'revealed':
+      actions = [revealSummary(a), h('button', { class: 'btn primary big', onclick: () => cmd('nextItem') }, 'Siguiente pregunta →')];
+      break;
+  }
+
+  return [
+    question,
+    progressCard,
+    h('section', { class: 'c-turn' }, actions),
+    h(
+      'div',
+      { class: 'c-row secondary' },
+      btn('Reiniciar pregunta', () => (a.phase !== 'revealed' || confirm('¿Reiniciar? Se quitan los puntos de esta pregunta.')) && cmd('restart')),
+      btn('Terminar sección', () => cmd('endSection')),
+    ),
+    navRow(),
+  ];
+}
+
+/** Recuento en directo (solo lo ve el presentador). */
+function liveCounts(a) {
+  if (!a.counts) return null;
+  if (a.kind === 'votacion') {
+    const rows = a.candidates.map((p) => [p.name, a.counts[p.id] ?? 0]).sort((x, y) => y[1] - x[1]);
+    return h('p', { class: 'small muted' }, rows.map(([n, c]) => `${n}: ${c}`).join(' · '));
+  }
+  if (a.kind === 'estimacion') {
+    return a.answers?.length ? h('p', { class: 'small muted' }, a.answers.map((x) => `${x.player.name}: ${Number(x.value).toLocaleString('es-ES')}`).join(' · ')) : null;
+  }
+  return h('p', { class: 'small muted' }, a.counts.map((c, i) => `${optionStyle(a.kind, i).shape} ${c}`).join('   '));
+}
+
+function revealSummary(a) {
+  const scorers = a.results.entries.filter((e) => e.points > 0);
+  const extra = [];
+  if (a.kind === 'votacion') extra.push(a.results.winners.length ? `Más votado: ${a.results.winners.map((w) => w.name).join(' y ')}` : 'Nadie ha votado');
+  if (a.kind === 'dosVerdades' && a.subject?.id) extra.push(`${a.subject.name} ha engañado a ${a.results.fooled ?? 0} (+${a.results.fooled ?? 0})`);
+  return h(
+    'div',
+    { class: 'c-card' },
+    h('p', { class: 'c-kicker' }, 'Resultado'),
+    extra.map((t) => h('p', {}, t)),
+    scorers.length
+      ? h('ol', { class: 'c-followers plain' }, scorers.map((e) => h('li', {}, `${e.player.name} +${e.points}${e.doubled ? ' (×2)' : ''}`)))
+      : h('p', { class: 'muted' }, 'Nadie suma en esta pregunta.'),
+  );
 }
 
 function resultCard(game) {

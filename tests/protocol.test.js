@@ -41,6 +41,15 @@ describe('protocolo', () => {
     expect(parseHostMessage({ t: MSG.BUZZ_ACK, seq: 1 })).toBeNull();
   });
 
+  it('valida respuestas y comodines', () => {
+    expect(parsePlayerMessage({ t: MSG.ANSWER, seq: 1, roundId: 'r', value: 2, tLocal: 5 })).toMatchObject({ value: 2, tLocal: 5, offset: undefined });
+    expect(parsePlayerMessage({ t: MSG.ANSWER, seq: 1, roundId: 'r', value: 'ana' }).value).toBe('ana');
+    expect(parsePlayerMessage({ t: MSG.ANSWER, seq: 1, roundId: 'r', value: { x: 1 } })).toBeNull();
+    expect(parsePlayerMessage({ t: MSG.ANSWER, seq: 1, value: 1 })).toBeNull();
+    expect(parsePlayerMessage({ t: MSG.JOKER, seq: 1, roundId: 'r', kind: 'fifty' })).toEqual({ t: 'joker', seq: 1, roundId: 'r', kind: 'fifty' });
+    expect(parseHostMessage({ t: MSG.ANSWER_ACK, seq: 1, result: 'ok' })).not.toBeNull();
+  });
+
   it('valida la sincronización', () => {
     expect(parsePlayerMessage({ t: MSG.SYNC, id: 3, t0: 12.5 })).toEqual({ t: 'sync', id: 3, t0: 12.5 });
     expect(parsePlayerMessage({ t: MSG.SYNC, id: 3 })).toBeNull();

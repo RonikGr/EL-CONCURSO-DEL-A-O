@@ -12,12 +12,15 @@ export const MSG = {
   BUZZ: 'buzz',
   SYNC: 'sync',
   SYNC_REPORT: 'syncReport',
+  ANSWER: 'answer', // respuesta en secciones de respuestas
+  JOKER: 'joker', // usar un comodín
   CMD: 'cmd', // solo el mando
   // portátil → móvil
   WELCOME: 'welcome',
   STATE: 'state',
   HB: 'hb',
   BUZZ_ACK: 'buzzAck',
+  ANSWER_ACK: 'answerAck', // también para comodines: {seq, result, message?}
   SYNC_REPLY: 'syncReply',
   ERROR: 'error',
   CONTROL_STATUS: 'controlStatus', // pending | approved
@@ -96,6 +99,22 @@ export function parsePlayerMessage(msg) {
         offset: isNum(msg.offset) ? msg.offset : undefined,
         err: isNum(msg.err) ? msg.err : undefined,
       };
+    case MSG.ANSWER: {
+      if (!isNum(msg.seq) || !isStr(msg.roundId, 80)) return null;
+      const value = isNum(msg.value) ? msg.value : isStr(msg.value, 64) ? msg.value : null;
+      if (value == null) return null;
+      return {
+        t: msg.t,
+        seq: msg.seq,
+        roundId: msg.roundId,
+        value,
+        tLocal: isNum(msg.tLocal) ? msg.tLocal : undefined,
+        offset: isNum(msg.offset) ? msg.offset : undefined,
+        err: isNum(msg.err) ? msg.err : undefined,
+      };
+    }
+    case MSG.JOKER:
+      return isNum(msg.seq) && isStr(msg.roundId, 80) && isStr(msg.kind, 20) ? { t: msg.t, seq: msg.seq, roundId: msg.roundId, kind: msg.kind } : null;
     case MSG.SYNC:
       return isNum(msg.id) && isNum(msg.t0) ? { t: msg.t, id: msg.id, t0: msg.t0 } : null;
     case MSG.SYNC_REPORT:
@@ -123,6 +142,7 @@ export function parseHostMessage(msg) {
     case MSG.ERROR:
       return typeof msg.code === 'string' ? msg : null;
     case MSG.BUZZ_ACK:
+    case MSG.ANSWER_ACK:
       return isNum(msg.seq) && typeof msg.result === 'string' ? msg : null;
     case MSG.SYNC_REPLY:
       return isNum(msg.id) && isNum(msg.t0) && isNum(msg.t1) && isNum(msg.t2) ? msg : null;

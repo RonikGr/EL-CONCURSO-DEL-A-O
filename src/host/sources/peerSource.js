@@ -26,6 +26,8 @@ export class PeerSource {
    * @param handlers.onHello(playerId, msg) → {ok: true} | {ok: false, error: {code, message}}
    * @param handlers.onProfile(playerId, msg)
    * @param handlers.onBuzz(playerId, {seq, epoch, tPress, tArrival, meta}) — tiempos en el reloj del presentador
+   * @param handlers.onAnswer(playerId, {seq, roundId, value, tPress, tArrival})
+   * @param handlers.onJoker(playerId, {seq, roundId, kind})
    * @param handlers.onSyncReport(playerId, {offset, err, rtt, samples})
    * @param handlers.onLeave(playerId)
    * @param handlers.onRtt(playerId, ms)
@@ -132,6 +134,15 @@ export class PeerSource {
         });
         break;
       }
+      case MSG.ANSWER: {
+        // Mismo cálculo que la pulsación: vale si se respondió (reloj sincronizado) antes del final.
+        const press = resolvePressTime({ tLocal: msg.tLocal, offset: msg.offset, err: msg.err, tArrival, rtt: entry.rtt.median() });
+        this.handlers.onAnswer?.(entry.id, { seq: msg.seq, roundId: msg.roundId, value: msg.value, tPress: press.tPress, tArrival });
+        break;
+      }
+      case MSG.JOKER:
+        this.handlers.onJoker?.(entry.id, msg);
+        break;
       case MSG.SYNC_REPORT:
         this.handlers.onSyncReport?.(entry.id, msg);
         break;

@@ -49,19 +49,21 @@ Ojo con PowerShell 5.1: `Get-Content`/`Set-Content` sin `-Encoding` rompen los a
 ### Protocolo (JSON por DataConnection fiable, campo `t` = tipo; `PROTOCOL_VERSION` = 2)
 
 Jugador → tele: `hello {v, role:'player', playerId, name, color, icon, teamId}`, `profile {name, color, icon, teamId}`,
-`hbAck {h0}`, `buzz {seq, epoch, tLocal?, offset?, err?}` (sin offset → cuenta la llegada), `sync {id, t0}`,
-`syncReport {offset, err, rtt, samples}`.
+`hbAck {h0}`, `buzz {seq, epoch, tLocal?, offset?, err?}` (sin offset → cuenta la llegada),
+`answer {seq, roundId, value, tLocal?, offset?, err?}` (value = índice de opción, playerId votado o número),
+`joker {seq, roundId, kind}`, `sync {id, t0}`, `syncReport {offset, err, rtt, samples}`.
 
 Tele → jugador: `welcome {you, adjusted}`, `state {room, title, playerCount, minPlayers, taken, teams, teamsLocked, you,
-screen, section, game, winner}` (foto completa y personalizada; `game` = `playerView()` solo en una pregunta de pulsador),
-`hb {h0}` cada 2 s, `buzzAck {seq, result}`, `syncReply {id, t0, t1, t2}`,
+screen, section, game, winner, answer}` (foto completa y personalizada; `game` = `playerView()` solo en una pregunta de
+pulsador; `answer` solo en una pregunta de respuestas), `hb {h0}` cada 2 s, `buzzAck {seq, result}`,
+`answerAck {seq, result, message?}` (respuestas y comodines), `syncReply {id, t0, t1, t2}`,
 `error {code, message}` (`room-full`, `version`, `removed`, `replaced`, `control-denied`).
 
 Mando ↔ tele: `hello {v, role:'control', controlId, token, deviceName}` → `controlStatus {status: pending|approved}`;
 luego `controlState {view}` (vista completa con respuestas, agrupada cada 150 ms) y `cmd {id, action, args}` →
 `cmdResult {id, ok, error}`. Las órdenes son las de `HostRoom.run()`: next, prev, nextItem, gotoSection, endSection,
-scoreboard, toSetup, showQuestion, showAnswer, open, correct, wrong, restart, unlock, lockTeams, moveTeam, adjustScore,
-adjustTeamBonus, resetScores, removePlayer, approveControl, denyControl, updateSettings.
+scoreboard, toSetup, showQuestion, showAnswer, open, correct, wrong, restart, unlock, openAnswers, closeAnswers, reveal,
+lockTeams, moveTeam, adjustScore, adjustTeamBonus, resetScores, removePlayer, approveControl, denyControl, updateSettings.
 
 - Emparejar mando: la tele (preparación) enseña un QR a `control.html?sala=CÓDIGO#k=CLAVE` (la clave tras `#` no sale del
   navegador); con la clave correcta, el portátil pide confirmación (Enter / Esc). Los mandos aprobados se recuerdan.
@@ -78,7 +80,22 @@ tras "Fallo" sin nadie más, `closed`. "Fallo" bloquea al ganador y abre una ron
 de época vieja se descarta (`stale`, sin bloquear) salvo que caiga dentro del turno abierto ahora (`tPress ≥ tOpen`).
 El móvil envía también en "Espera": decide el presentador (antes de tiempo → bloqueo si la opción está activa).
 `tPress` lo calcula `peerSource.js` con `resolvePressTime()` (marca sincronizada, o llegada si el móvil aún no está sincronizado).
-Teclas de la tele: Espacio (contextual: abrir turno / siguiente pregunta / avanzar), ← →, P (mostrar pregunta),
+### Secciones de respuestas (`src/core/answers.js`)
+
+Test, Verdad o mentira, Dos verdades y una mentira, Votación y Estimación comparten `AnswerRound`:
+`ready` → `open` (apertura programada; plazo = `tOpen + segundos`) → `closed` (al acabar el tiempo + 500 ms de gracia, o
+en cuanto responden todos los conectados) → `revealed` (`scoreRound()` y se suman los puntos). Primera respuesta definitiva;
+vale si `tPress` (sincronizado, `resolvePressTime`) ≤ plazo. Cada pregunta tiene `roundId` (`playKey#n`): respuestas de otra
+ronda → `closed`. Puntos: acierto = `points[0]` (×2 con Doble); Votación: quien vota a un más votado (empates incluidos;
+nadie se vota a sí mismo); Estimación: por cercanía, puestos densos con `points[puesto-1]`, "sin pasarse" excluye a quien
+se pasa; Dos verdades: el protagonista (jugador cuyo nombre coincide con "Sobre quién") no vota y suma 1 por engañado.
+Comodines (solo Test, antes de responder): `JokerBank` por dueño (equipo, o jugador sin equipos), 50 % quita
+floor(n/2) incorrectas, Doble, Público (ve el recuento en directo). Preguntas reveladas se guardan en `itemResults`
+(persistido): al volver a ellas se ven reveladas; R las reinicia quitando sus puntos y devolviendo comodines. Salir de una
+pregunta sin revelar devuelve sus comodines.
+
+Teclas de la tele: Espacio (contextual: abrir turno / siguiente pregunta / avanzar; en respuestas: abrir → cerrar →
+revelar → siguiente), ← →, P (mostrar pregunta),
 V (mostrar respuesta), A (acierto), F (fallo), R (reiniciar pregunta), M (marcador), D (depuración).
 Las pulsaciones solo cuentan en una pregunta de pulsador (`HostRoom.inBuzzerPlay`); fuera, `buzzAck closed` sin bloquear.
 Cada pregunta del runner (`runner.playKey`) reinicia el motor (`game.next()`).
@@ -110,7 +127,7 @@ mientras la página no se pinta (ventana oculta o minimizada).
 - Modo depuración (D): por jugador RTT del latido, offset, error y muestras; por ronda pulsó / llegó / red / origen.
 - Límites y trampas: ver README, "Justicia en los tiempos".
 
-## Diseño del concurso (acordado; hecho hasta la fase 4)
+## Diseño del concurso (acordado; hecho hasta la fase 5)
 
 - **Tres papeles:** `host.html` = espectáculo en la tele (sigue siendo la autoridad: estado, puntos, conexiones,
   música); `control.html` = mando del presentador en su móvil (ve preguntas y respuestas en privado, lo controla
@@ -142,7 +159,7 @@ mientras la página no se pinta (ventana oculta o minimizada).
 4. Base del concurso: roles tele / mando / jugador, estructura por secciones y pantallas, equipos con
    comprobación, importación de la hoja + plantilla, Pulsador como sección. ✔
    (Los demás tipos ya se leen y validan desde la hoja; en el juego muestran su intro y se saltan hasta su fase.)
-5. Respuestas desde el móvil: Test (con comodines), Verdad o mentira, ¿Quién es más probable…?, Estimación.
+5. Respuestas desde el móvil: Test (con comodines), Verdad o mentira, Dos verdades, ¿Quién es más probable…?, Estimación. ✔
 6. Secciones de tiempo: Parar el contador y Duelo de reflejos.
 7. Sección Libre (cronómetro y contador).
 8. Spotify.

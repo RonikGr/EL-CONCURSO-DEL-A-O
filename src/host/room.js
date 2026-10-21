@@ -4,7 +4,8 @@
 import { MAX_PLAYERS, MIN_PLAYERS, Roster } from '../core/players.js';
 import { LOCK, PHASE, QuestionEngine, playerView } from '../core/game.js';
 import { SCREEN, ShowRunner, isPlayable } from '../core/runner.js';
-import { SECTION_TYPES, defaultShow } from '../core/show.js';
+import { DEFAULT_SETTINGS as SHOW_DEFAULTS, SECTION_TYPES, defaultShow } from '../core/show.js';
+import { ANSWER_RESULT, ANSWER_TYPES, APHASE, AnswerRound, JokerBank, buildQuestion, isChoice } from '../core/answers.js';
 import { ERROR_CODE, MSG } from '../shared/protocol.js';
 import { PeerSource } from './sources/peerSource.js';
 import { saveRoom } from './persistence.js';
@@ -18,13 +19,16 @@ export const DEFAULT_SETTINGS = {
 };
 
 const CONTROL_PUSH_MS = 150; // agrupar cambios antes de mandar el estado completo al mando
+const ANSWER_GRACE_MS = 500; // tras el final, se espera un poco a respuestas dadas a tiempo que aún viajan
 const now = () => performance.now();
 
 export class HostRoom extends EventTarget {
   #windowTimer = null;
   #openTimer = null;
+  #answerTimer = null;
   #controlPush = null;
   #playKey = null;
+  #roundSeq = 0;
 
   constructor({ code, saved = null }) {
     super();
@@ -43,7 +47,11 @@ export class HostRoom extends EventTarget {
     this.runner = new ShowRunner(this.show, saved?.runner);
     this.settings = { ...DEFAULT_SETTINGS, lockEarlyBuzz: this.show.settings?.lockEarlyBuzz ?? true, ...saved?.settings };
     this.game = new QuestionEngine(this.settings);
+    this.jokers = new JokerBank(this.show.settings?.jokers ?? SHOW_DEFAULTS.jokers, saved?.jokersUsed ?? {});
+    this.itemResults = saved?.itemResults ?? {}; // playKey → resultado ya puntuado de una pregunta de respuestas
+    this.answerRound = null;
     this.#playKey = this.runner.playKey;
+    this.#syncAnswerRound();
     this.lastImport = null;
 
     this.network = { state: 'connecting', message: '' };
@@ -61,6 +69,8 @@ export class HostRoom extends EventTarget {
         onHello: (playerId, msg) => this.#onHello(playerId, msg),
         onProfile: (playerId, msg) => this.#onProfile(playerId, msg),
         onBuzz: (playerId, msg) => this.#onBuzz(playerId, msg),
+        onAnswer: (playerId, msg) => this.#onAnswer(playerId, msg),
+        onJoker: (playerId, msg) => this.#onJoker(playerId, msg),
         onSyncReport: (playerId, report) => {
           this.sync.set(playerId, report);
           this.#changed({ persist: false });
@@ -100,6 +110,14 @@ export class HostRoom extends EventTarget {
   get inBuzzerPlay() {
     return this.runner.screen === SCREEN.PLAY && this.runner.section?.type === 'pulsador' && !this.runner.peekScoreboard;
   }
+
+  /** ¿Se está jugando una pregunta de una sección de respuestas (Test, votación…)? */
+  get inAnswerPlay() {
+    return this.runner.screen === SCREEN.PLAY && ANSWER_TYPES.has(this.runner.section?.type) && !this.runner.peekScoreboard && !!this.answerRound;
+  }
+
+  /** Dueño de los comodines de un jugador: su equipo, o él mismo si no hay equipos (o aún no tiene). */
+  ownerOf = (playerId) => (this.roster.hasTeams ? (this.roster.get(playerId)?.teamId ?? playerId) : playerId);
 
   get pointsForCorrect() {
     return this.runner.section?.points?.[0] ?? this.show.settings?.defaultPoints ?? 1;
@@ -142,6 +160,47 @@ export class HostRoom extends EventTarget {
     };
   }
 
+  /** Pregunta de respuestas para la tele (sin la solución hasta revelarla). */
+  answerView({ forControl = false } = {}) {
+    const r = this.answerRound;
+    const q = r.question;
+    const revealed = r.phase === APHASE.REVEALED;
+    const pub = (id) => {
+      const p = this.roster.get(id);
+      return p ? publicPlayer(p) : { id, name: '¿?', color: 'gris', icon: 'zorro', score: 0, teamId: null };
+    };
+    const showCounts = revealed || forControl;
+    return {
+      kind: q.kind,
+      label: SECTION_TYPES[q.kind].label,
+      phase: r.phase,
+      text: q.text,
+      image: q.image,
+      unit: q.unit,
+      noOver: q.noOver,
+      options: q.options,
+      candidates: r.candidates.map(pub),
+      subject: q.subjectId ? pub(q.subjectId) : q.subjectName ? { name: q.subjectName } : null,
+      tOpen: r.tOpen,
+      deadline: r.deadline,
+      answeredIds: [...r.answers.keys()],
+      eligibleIds: [...r.eligible],
+      counts: showCounts ? r.counts() : null,
+      correct: revealed || forControl ? q.correct : null,
+      points: q.points,
+      results: revealed
+        ? {
+            points: r.results.points,
+            fooled: r.results.fooled ?? null,
+            winners: (r.results.winners ?? []).map(pub),
+            entries: r.results.entries.map((e) => ({ ...e, player: pub(e.playerId) })),
+          }
+        : null,
+      // Solo el mando ve qué ha respondido cada uno antes de revelar.
+      answers: forControl ? [...r.answers].map(([id, a]) => ({ player: pub(id), value: a.value })) : null,
+    };
+  }
+
   /** Todo lo que necesita pintar la tele. */
   view() {
     const r = this.runner;
@@ -160,6 +219,7 @@ export class HostRoom extends EventTarget {
       itemCount: r.itemCount,
       shown: r.shown,
       game: this.inBuzzerPlay ? this.gameView() : null,
+      answer: this.inAnswerPlay ? this.answerView() : null,
       pointsForCorrect: this.pointsForCorrect,
       pointsForWrong: this.pointsForWrong,
       players: this.players(),
@@ -216,6 +276,7 @@ export class HostRoom extends EventTarget {
         winner: pub(v.game.winner),
         ranking: v.game.ranking.map((r) => ({ place: r.place, deltaMs: r.deltaMs, reactionMs: r.reactionMs, nearTie: r.nearTie, player: pub(r.player) })),
       },
+      answer: this.inAnswerPlay ? this.answerView({ forControl: true }) : null,
       pointsForCorrect: v.pointsForCorrect,
       pointsForWrong: v.pointsForWrong,
       players: v.players.map((p) => ({ ...pub(p), score: p.score, connected: p.connected, rtt: p.rtt, lock: p.lock })),
@@ -285,9 +346,46 @@ export class HostRoom extends EventTarget {
       return true;
     },
     restart: () => {
+      if (this.inAnswerPlay) return this.#restartAnswerRound();
       if (!this.inBuzzerPlay) return false;
       this.#clearTimers();
       this.game.restart();
+      return true;
+    },
+
+    openAnswers: () => {
+      if (!this.inAnswerPlay) return false;
+      if (!this.canStart) return `Hacen falta al menos ${MIN_PLAYERS} jugadores conectados.`;
+      const eligibleIds = this.roster.list().filter((p) => p.connected).map((p) => p.id);
+      if (!this.answerRound.open({ now: now(), eligibleIds, scheduledOpenMs: this.settings.scheduledOpenMs })) return false;
+      if (!this.answerRound.eligible.size) return 'No hay nadie que pueda responder a esta pregunta.';
+      const r = this.answerRound;
+      clearTimeout(this.#answerTimer);
+      this.#answerTimer = setTimeout(() => this.#closeAnswers(r), r.deadline + ANSWER_GRACE_MS - now());
+      // Repintar la tele al empezar (para que salgan las opciones a la vez que en los móviles).
+      clearTimeout(this.#openTimer);
+      this.#openTimer = setTimeout(() => this.#changed({ persist: false }), Math.max(0, r.tOpen - now()));
+      return true;
+    },
+    closeAnswers: () => {
+      if (!this.inAnswerPlay || !this.answerRound.close()) return false;
+      clearTimeout(this.#answerTimer);
+      return true;
+    },
+    reveal: () => {
+      if (!this.inAnswerPlay) return false;
+      const r = this.answerRound;
+      if (!r.reveal({ ownerOf: this.ownerOf })) return false;
+      clearTimeout(this.#answerTimer);
+      for (const [id, pts] of Object.entries(r.results.points)) this.roster.adjustScore(id, pts);
+      this.itemResults[this.runner.playKey] = {
+        answers: [...r.answers],
+        candidates: r.candidates,
+        eligible: [...r.eligible],
+        results: r.results,
+        jokers: [...r.jokers].map(([owner, kinds]) => [owner, [...kinds]]),
+        removed: [...r.removed],
+      };
       return true;
     },
     unlock: ({ playerId }) => this.game.unlock(playerId),
@@ -301,7 +399,11 @@ export class HostRoom extends EventTarget {
     adjustScore: ({ playerId, delta }) => this.roster.adjustScore(playerId, Number(delta) || 0) != null,
     adjustTeamBonus: ({ teamId, delta }) => this.roster.adjustTeamBonus(teamId, Number(delta) || 0) != null,
     resetScores: () => {
+      // Partida nueva: marcadores, comodines y preguntas ya puntuadas.
       this.roster.resetScores();
+      this.jokers.reset();
+      this.itemResults = {};
+      this.#syncAnswerRound();
       return true;
     },
     removePlayer: ({ playerId }) => {
@@ -344,6 +446,8 @@ export class HostRoom extends EventTarget {
     this.roster.lockTeams(false);
     this.runner = new ShowRunner(show);
     this.settings.lockEarlyBuzz = show.settings.lockEarlyBuzz;
+    this.jokers = new JokerBank(show.settings.jokers, {});
+    this.itemResults = {};
     this.lastImport = { ...report, title: show.title, sections: show.sections.length, teams: show.teams.length };
     this.#afterChange();
     return true;
@@ -394,6 +498,86 @@ export class HostRoom extends EventTarget {
       this.#windowTimer = setTimeout(() => this.#closeWindow(), Math.max(0, res.windowEndsAt - now()));
     }
     if (res.result === 'ok' || res.locked) this.#afterChange({ persist: false });
+  }
+
+  #onAnswer(playerId, msg) {
+    const r = this.answerRound;
+    const ack = (result) => this.source.sendTo(playerId, { t: MSG.ANSWER_ACK, seq: msg.seq, result });
+    if (!this.inAnswerPlay || msg.roundId !== r.roundId) return ack(ANSWER_RESULT.CLOSED);
+    const result = r.answer(playerId, msg.value, { tPress: msg.tPress });
+    ack(result);
+    if (result !== ANSWER_RESULT.OK) return;
+    // En cuanto han respondido todos, se cierra (no hace falta esperar al reloj).
+    const connected = new Set(this.roster.list().filter((p) => p.connected).map((p) => p.id));
+    if (r.allAnswered(connected)) this.#closeAnswers(r);
+    else this.#afterChange({ persist: false });
+  }
+
+  #onJoker(playerId, msg) {
+    const r = this.answerRound;
+    const ack = (result, message) => this.source.sendTo(playerId, { t: MSG.ANSWER_ACK, seq: msg.seq, result, message });
+    if (!this.inAnswerPlay || msg.roundId !== r.roundId) return ack('closed', 'Ahora no se pueden usar comodines.');
+    const owner = this.ownerOf(playerId);
+    const blocker = r.jokerBlocker(owner, msg.kind, playerId);
+    if (blocker) return ack('denied', blocker);
+    if (!this.jokers.use(owner, msg.kind)) return ack('denied', this.roster.hasTeams ? 'A tu equipo no le quedan comodines de ese tipo.' : 'No te quedan comodines de ese tipo.');
+    r.activateJoker(owner, msg.kind);
+    ack('ok');
+    this.#afterChange(); // se guarda: el comodín ya está gastado
+  }
+
+  #closeAnswers(round) {
+    if (round !== this.answerRound || !round.close()) return;
+    clearTimeout(this.#answerTimer);
+    this.#afterChange({ persist: false });
+  }
+
+  /** Crea la ronda de la pregunta actual (o la recupera ya revelada si ya se puntuó). */
+  #syncAnswerRound() {
+    const key = this.runner.playKey;
+    const section = this.runner.section;
+    if (!key || !ANSWER_TYPES.has(section?.type) || !this.runner.item) {
+      this.answerRound = null;
+      return;
+    }
+    const question = buildQuestion(section, this.runner.item, { players: this.roster.list(), settings: this.show.settings });
+    const round = new AnswerRound(question, { roundId: `${key}#${++this.#roundSeq}` });
+    const stored = this.itemResults[key];
+    if (stored) {
+      round.answers = new Map(stored.answers);
+      round.candidates = stored.candidates;
+      round.eligible = new Set(stored.eligible);
+      round.jokers = new Map(stored.jokers.map(([owner, kinds]) => [owner, new Set(kinds)]));
+      round.removed = new Map(stored.removed);
+      round.results = stored.results;
+      round.phase = APHASE.REVEALED;
+    }
+    this.answerRound = round;
+  }
+
+  /** Al dejar una pregunta sin revelar, sus comodines no cuentan: se devuelven. */
+  #leaveAnswerRound() {
+    const r = this.answerRound;
+    clearTimeout(this.#answerTimer);
+    if (r && r.phase !== APHASE.REVEALED) {
+      for (const [owner, kinds] of r.jokers) for (const kind of kinds) this.jokers.refund(owner, kind);
+    }
+  }
+
+  /** "R" en una pregunta de respuestas: deshace sus puntos, devuelve los comodines y empieza de cero. */
+  #restartAnswerRound() {
+    const key = this.runner.playKey;
+    const stored = this.itemResults[key];
+    if (stored) {
+      for (const [id, pts] of Object.entries(stored.results.points)) this.roster.adjustScore(id, -pts);
+      for (const [owner, kinds] of stored.jokers) for (const kind of kinds) this.jokers.refund(owner, kind);
+      delete this.itemResults[key];
+    } else {
+      this.#leaveAnswerRound();
+    }
+    clearTimeout(this.#answerTimer);
+    this.#syncAnswerRound();
+    return true;
   }
 
   #closeWindow() {
@@ -468,6 +652,58 @@ export class HostRoom extends EventTarget {
       section: showSection ? { name: r.section.name, label: SECTION_TYPES[r.section.type].label } : null,
       game: play ? playerView(g, player.id, now()) : null,
       winner: winner ? publicPlayer(winner) : null,
+      answer: this.inAnswerPlay ? this.#answerViewFor(player) : null,
+    };
+  }
+
+  /** Lo que ve un jugador en su móvil en una pregunta de respuestas. */
+  #answerViewFor(player) {
+    const r = this.answerRound;
+    const q = r.question;
+    const t = now();
+    const own = r.answers.get(player.id);
+    const owner = this.ownerOf(player.id);
+    const active = r.activeJokers(player.id, this.ownerOf);
+    const revealed = r.phase === APHASE.REVEALED;
+    const opened = r.phase !== APHASE.READY;
+
+    let result = null;
+    if (revealed) {
+      const entry = r.results.entries.find((e) => e.playerId === player.id) ?? null;
+      const name = (id) => this.roster.get(id)?.name ?? '¿?';
+      result = {
+        points: r.results.points[player.id] ?? 0,
+        correct: entry ? !!entry.correct : null,
+        place: entry?.place ?? null,
+        diff: entry?.diff ?? null,
+        over: !!entry?.over,
+        correctLabel: isChoice(q.kind) ? q.options[q.correct] : q.kind === 'estimacion' ? `${q.correct}${q.unit ? ` ${q.unit}` : ''}` : null,
+        winners: (r.results.winners ?? []).map(name),
+        fooled: q.subjectId === player.id ? (r.results.fooled ?? 0) : null,
+      };
+    }
+
+    return {
+      kind: q.kind,
+      label: SECTION_TYPES[q.kind].label,
+      phase: r.phase,
+      roundId: r.roundId,
+      text: q.text,
+      unit: q.unit,
+      noOver: q.noOver,
+      options: q.options,
+      removed: r.removedFor(player.id, this.ownerOf),
+      candidates: r.candidates.filter((id) => id !== player.id).map((id) => publicPlayer(this.roster.get(id) ?? { id, name: '¿?' })),
+      tOpen: r.tOpen,
+      opensInMs: r.tOpen != null ? Math.max(0, r.tOpen - t) : null,
+      deadline: r.deadline,
+      remainingMs: r.deadline != null ? Math.max(0, r.deadline - t) : null,
+      canAnswer: opened && r.eligible.has(player.id),
+      isSubject: q.subjectId === player.id,
+      you: { answered: !!own, value: own?.value ?? null },
+      jokers: q.kind === 'test' ? { remaining: this.jokers.remaining(owner), active } : null,
+      audience: active.includes('audience') && r.phase === APHASE.OPEN ? r.counts() : null,
+      result,
     };
   }
 
@@ -481,7 +717,9 @@ export class HostRoom extends EventTarget {
     if (key !== this.#playKey) {
       this.#playKey = key;
       this.#clearTimers();
+      this.#leaveAnswerRound();
       this.game.next();
+      this.#syncAnswerRound();
     }
     const ranking = this.game.ranking();
     if (ranking.length) this.lastRound = { qid: this.runner.itemIndex + 1, tOpen: this.game.tOpen, decided: !!this.game.winnerId, ranking };
@@ -498,6 +736,7 @@ export class HostRoom extends EventTarget {
   #clearTimers() {
     clearTimeout(this.#windowTimer);
     clearTimeout(this.#openTimer);
+    clearTimeout(this.#answerTimer);
     this.#windowTimer = null;
     this.#openTimer = null;
   }
@@ -513,6 +752,8 @@ export class HostRoom extends EventTarget {
       teamsLocked: this.roster.teamsLocked,
       teamBonus: Object.fromEntries(this.roster.teamBonus),
       settings: this.settings,
+      jokersUsed: this.jokers.toJSON(),
+      itemResults: this.itemResults,
     });
   }
 

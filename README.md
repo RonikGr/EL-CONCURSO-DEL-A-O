@@ -4,9 +4,10 @@ Pulsador de concurso con móviles, estilo Kahoot. La pantalla del presentador se
 conectado por HDMI); cada jugador usa su móvil como pulsador, sin instalar nada. Web 100 % estática
 (GitHub Pages) con WebRTC mediante [PeerJS](https://peerjs.com/).
 
-> Estado: **fase 4** — concurso por secciones con equipos, cargado desde una hoja de cálculo; la tele es el
-> espectáculo y el presentador lo maneja desde su móvil. De momento se juega la sección **Pulsador** (con relojes
-> sincronizados: gana quien pulsó antes). El resto de tipos ya se leen de la hoja y llegan en las fases 5–7.
+> Estado: **fase 5** — concurso por secciones con equipos, cargado desde una hoja de cálculo; la tele es el
+> espectáculo y el presentador lo maneja desde su móvil. Se juegan **Pulsador**, **Test** (con comodines),
+> **Verdad o mentira**, **Dos verdades y una mentira**, **¿Quién es más probable…?** y **Estimación**.
+> Contador, Reflejos y Libre ya se leen de la hoja y llegan en las fases 6–7.
 
 ## Preparar el concurso
 
@@ -31,6 +32,18 @@ conectado por HDMI); cada jugador usa su móvil como pulsador, sin instalar nada
    «Siguiente pregunta».
 6. Quien pulse antes de abrir el turno queda **bloqueado** en esa pregunta (se puede desactivar en **Ajustes** o
    perdonar con «Desbloquear»).
+
+7. En las secciones de **respuestas** (Test, Verdad o mentira, Dos verdades, Votación, Estimación) todos responden a
+   la vez desde el móvil: «Abrir respuestas» → cuenta atrás (se cierra sola al acabar o cuando han respondido todos)
+   → «Revelar» (respuesta correcta, recuento, quién suma) → «Siguiente pregunta». La primera respuesta es la buena.
+   - **Comodines** (solo en Test, antes de responder): **50 %** quita la mitad de las incorrectas, **×2** dobla los
+     puntos si aciertas, **Público** enseña en directo qué responden los demás. Uno de cada para todo el concurso,
+     por equipo (o por jugador si no hay equipos).
+   - **Votación**: nadie puede votarse; suman quienes votan al más votado (con empate, a cualquiera de los empatados).
+   - **Estimación**: puntos por puestos según la columna Puntos (p. ej. 3,2,1); «Sin pasarse» deja fuera a quien se pasa.
+   - **Dos verdades y una mentira**: el protagonista (su nombre debe coincidir con el de su jugador) no vota y suma
+     1 punto por cada uno al que engaña.
+   - «Reiniciar pregunta» después de revelar quita los puntos que dio esa pregunta.
 
 El mando tiene tres pestañas: **Juego** (lo que toca ahora), **Jugadores** (puntos ±, puntos de equipo, mover de
 equipo, quitar) y **Secciones** (saltar a cualquiera).
