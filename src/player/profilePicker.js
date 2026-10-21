@@ -51,12 +51,18 @@ export function createProfilePicker(initial) {
   const hint = h('p', { class: 'picker-hint' });
   const colorField = h('fieldset', { class: 'field' }, h('legend', {}, 'Color'), h('div', { class: 'swatches' }, colorButtons));
 
+  const nameHint = h('p', { class: 'picker-hint', hidden: true }, 'El nombre ya no se puede cambiar: el concurso ha empezado.');
+  const nameField = h('label', { class: 'field' }, h('span', {}, 'Tu nombre'), nameInput, nameHint);
+  const iconField = h('fieldset', { class: 'field' }, h('legend', {}, 'Icono'), h('div', { class: 'icons' }, iconButtons));
+  let fixedColor = false;
+  let lookHidden = false;
+
   const root = h(
     'div',
     { class: 'picker' },
-    h('label', { class: 'field' }, h('span', {}, 'Tu nombre'), nameInput),
+    nameField,
     colorField,
-    h('fieldset', { class: 'field' }, h('legend', {}, 'Icono'), h('div', { class: 'icons' }, iconButtons)),
+    iconField,
     hint,
   );
 
@@ -93,12 +99,29 @@ export function createProfilePicker(initial) {
     },
     /** Con equipos el color lo pone el equipo: se oculta la elección de color. `null` la vuelve a mostrar. */
     setFixedColor(colorId) {
-      colorField.hidden = !!colorId;
+      fixedColor = !!colorId;
+      colorField.hidden = fixedColor || lookHidden;
       if (colorId) value.color = colorId;
       refresh();
     },
     focusName() {
       nameInput.focus();
+    },
+    /** Sin el nombre (pantalla de elegir icono y color tras entrar). */
+    showName(on) {
+      nameField.hidden = !on;
+    },
+    /** Sin icono ni color (al entrar se pide solo el nombre; quien tiene foto no los necesita). */
+    showLook(on) {
+      lookHidden = !on;
+      iconField.hidden = lookHidden;
+      colorField.hidden = lookHidden || fixedColor;
+      hint.hidden = lookHidden;
+    },
+    /** Con el concurso empezado, el nombre no se cambia. */
+    lockName(locked) {
+      nameInput.disabled = locked;
+      nameHint.hidden = !locked;
     },
   };
 }

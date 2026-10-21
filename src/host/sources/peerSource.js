@@ -147,6 +147,12 @@ export class PeerSource {
       case MSG.FREE_COUNT:
         this.handlers.onFreeCount?.(entry.id, msg);
         break;
+      case MSG.AWAY:
+        this.handlers.onAway?.(entry.id, msg);
+        break;
+      case MSG.TURN_ORDER:
+        this.handlers.onTurnOrder?.(entry.id, msg);
+        break;
       case MSG.SYNC_REPORT:
         this.handlers.onSyncReport?.(entry.id, msg);
         break;

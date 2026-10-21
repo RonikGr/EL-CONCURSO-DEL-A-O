@@ -30,7 +30,7 @@ Ojo con PowerShell 5.1: `Get-Content`/`Set-Content` sin `-Encoding` rompen los a
     equipo y el icono es único dentro del equipo. Si choca, el presentador asigna otro libre y avisa.
   - Iconos: solo animales (emoji), en `src/shared/appearance.js`; para añadir, al final (los ids se guardan).
 - Puntos: los de cada sección (columna Puntos de la hoja) y "Puntos por fallo" de Ajustes; además +/− manual por jugador
-  y por equipo. Comodines: 1 de cada (50 %, Doble, Público) por equipo, o por jugador si no hay equipos.
+  y por equipo. Comodines (Test = millonario): 1 de cada (50:50, Público, Llamada) por equipo, o por jugador si no hay equipos.
 - Pulsar antes de abrir el turno bloquea al jugador durante esa pregunta (opción activada por defecto).
 - Todos los jugadores estarán en la misma wifi (no se optimiza para datos móviles / TURN).
 - Sin vibración en iPhone (Safari no la soporta): aceptado.
@@ -53,8 +53,9 @@ Ojo con PowerShell 5.1: `Get-Content`/`Set-Content` sin `-Encoding` rompen los a
 Jugador → tele: `hello {v, role:'player', playerId, name, color, icon, teamId}`, `profile {name, color, icon, teamId}`,
 `hbAck {h0}`, `buzz {seq, epoch, tLocal?, offset?, err?}` (sin offset → cuenta la llegada),
 `answer {seq, roundId, value, tLocal?, offset?, err?}` (value = índice de opción, playerId votado o número),
-`joker {seq, roundId, kind}`, `freeCount {seq, roundId, delta}` (Libre con contador: +1/−1 desde el móvil; responde
-`answerAck`), `sync {id, t0}`, `syncReport {offset, err, rtt, samples}`.
+`joker {seq, roundId, kind, target?}` (millonario; target = a quién se llama), `freeCount {seq, roundId, delta}` (Libre con contador: +1/−1 desde el móvil elegido; responde
+`answerAck`), `turnOrder {order}` (portavoz: orden de su equipo en una sección por turnos), `away {state: out|back, ms?}`
+(antitrampas: salió de la app / volvió y cuánto estuvo fuera), `sync {id, t0}`, `syncReport {offset, err, rtt, samples}`.
 
 Tele → jugador: `welcome {you, adjusted}`, `state {room, title, playerCount, minPlayers, taken, teams, teamsLocked, you,
 screen, section, game, winner, answer, free, standings}` (`section` = nombre, tipo, descripción, puntos, nº de sección y de
@@ -62,13 +63,15 @@ pregunta, para la barra de sección del móvil; `standings` = equipos y jugadore
 sin salir del juego) (foto completa y personalizada; `game` = `playerView()` solo en una pregunta de
 pulsador; `answer` solo en una pregunta de respuestas), `hb {h0}` cada 2 s, `buzzAck {seq, result}`,
 `answerAck {seq, result, message?}` (respuestas y comodines), `syncReply {id, t0, t1, t2}`,
+`faces {images: {faceId: dataURL}}` (fotos de los jugadores reconocidos, también al mando; los jugadores llevan `face`),
 `error {code, message}` (`room-full`, `version`, `removed`, `replaced`, `control-denied`).
 
 Mando ↔ tele: `hello {v, role:'control', controlId, token, deviceName}` → `controlStatus {status: pending|approved}`;
 luego `controlState {view}` (vista completa con respuestas, agrupada cada 150 ms) y `cmd {id, action, args}` →
 `cmdResult {id, ok, error}`. Las órdenes son las de `HostRoom.run()`: next, prev, nextItem, gotoSection, endSection,
-scoreboard, toSetup, showQuestion, showAnswer, open, correct, wrong, restart, unlock, openAnswers, closeAnswers, reveal, setDuel,
-freeParticipants, freeStart, freeOut, freeRevive, freeCount, freeStop, freeAward,
+scoreboard, toSetup, showQuestion, showAnswer, open, correct, wrong, restart, unlock, forgive, openAnswers, closeAnswers, reveal, setDuel,
+setSpokesperson, setTurnOrder, mShow, mSeat, mMark, mUnmark, mReveal, mCallStart, mCallEnd, mAudienceCancel, mAudienceEnd,
+freeParticipants, freeCounter, freeStart, freeOut, freeRevive, freeCount, freeStop, freeAward,
 lockTeams, moveTeam, adjustScore, adjustTeamBonus, resetScores, removePlayer, approveControl, denyControl, updateSettings.
 
 - Emparejar mando: la tele (preparación) enseña un QR a `control.html?sala=CÓDIGO#k=CLAVE` (la clave tras `#` no sale del
@@ -88,11 +91,11 @@ El móvil envía también en "Espera": decide el presentador (antes de tiempo �
 `tPress` lo calcula `peerSource.js` con `resolvePressTime()` (marca sincronizada, o llegada si el móvil aún no está sincronizado).
 ### Secciones de respuestas (`src/core/answers.js`)
 
-Test, Verdad o mentira, Dos verdades y una mentira, Votación y Estimación comparten `AnswerRound`:
+Verdad o mentira, Dos verdades y una mentira, Votación y Estimación comparten `AnswerRound` (el Test va aparte: millonario):
 `ready` → `open` (apertura programada; plazo = `tOpen + segundos`) → `closed` (al acabar el tiempo + 500 ms de gracia, o
 en cuanto responden todos los conectados) → `revealed` (`scoreRound()` y se suman los puntos). Primera respuesta definitiva;
 vale si `tPress` (sincronizado, `resolvePressTime`) ≤ plazo. Cada pregunta tiene `roundId` (`playKey#n`): respuestas de otra
-ronda → `closed`. Puntos: acierto = `points[0]` (×2 con Doble); Votación: quien vota a un más votado (empates incluidos;
+ronda → `closed`. Puntos: acierto = `points[0]`; Votación: quien vota a un más votado (empates incluidos;
 nadie se vota a sí mismo); Estimación: por cercanía, puestos densos con `points[puesto-1]`, "sin pasarse" excluye a quien
 se pasa; Dos verdades: el protagonista (jugador cuyo nombre coincide con "Sobre quién") no vota y suma 1 por engañado.
 En el móvil, opciones y votos se eligen con un toque y se confirman tocando otra vez la misma.
@@ -101,10 +104,15 @@ En el móvil, opciones y votos se eligen con un toque y se confirman tocando otr
 - **Contador**: `tOpen = ahora + 3 s` (cuenta atrás 3-2-1); valor = segundos desde `tOpen`; pulsar en la cuenta atrás → `early`
   sin registrar (se puede volver a pulsar); plazo = objetivo + max(5 s, objetivo); puntúa por cercanía al objetivo (como
   Estimación). Modos: visible, a ciegas, desaparece a los N s (tele y móvil); tras pulsar no se enseña el tiempo hasta revelar.
-- **Reflejos**: cada fila de la hoja (N rondas) se convierte en N preguntas. Rojo en `tOpen`, verde en `tGreen` = `tOpen`
-  + 2–6 s al azar (lo elige el portátil); el móvil cambia a verde con su reloj sincronizado. Pulsar en rojo → eliminado de
-  la ronda (cuenta como respondido). Valor = ms de reacción; plazo = verde + 3 s; puntos por puestos. Duelo: el presentador
-  fija a los dos con `setDuel` (se mantiene entre rondas).
+- **Reflejos**: cada fila de la hoja (N rondas) se convierte en N preguntas. Rojo en `tOpen`, señal buena en `tGreen` =
+  `tOpen` + 2–6 s al azar (4–8 s con despistes; lo elige el portátil); el móvil cambia con su reloj sincronizado. Pulsar
+  antes de la señal → eliminado de la ronda (cuenta como respondido). Valor = ms de reacción; plazo = señal + 3 s; puntos
+  por puestos. Duelo: el presentador fija a los dos con `setDuel` (se mantiene entre rondas).
+  **Despistes** (`reflexVariant`, `reflexPlan` en core/answers.js): ronda 1 clásica (verde); las pares, «pulsa solo con
+  el AZUL/MORADO» con colores trampa antes (casi siempre el verde); las impares, una araña que se asoma y vuelve, y al irse
+  se pulsa. El plan (`answerRound.reflex = {variant, cues: [{t, show}], target, rule}`) va a tele y móviles; la lógica
+  no cambia (todo lo anterior a `tGreen` es pulsar antes). Sin sonido en la señal buena de las rondas con despistes.
+  La tele cambia la luz con un `setTimeout` por cambio (no rAF: el navegador lo frena si no se ve la ventana).
 
 **Sección Libre** (`src/core/free.js`, `FreeRound`): `setup` (el presentador marca participantes: jugadores o equipos
 según la columna Participan) → `running` (cronómetro: "eliminado" guarda el tiempo y al caer el último se para solo;
@@ -112,13 +120,49 @@ contador: ±1 por participante) → `stopped` → `awarded` (el mando propone ga
 y marcar varios; cada ganador recibe los puntos de la fila; con equipos van al bonus del equipo). Sin herramienta se elige
 ganador directamente. Las pruebas puntuadas se guardan en `itemResults` (`{free, byTeams}`) y R las reinicia quitando
 los puntos. El móvil del jugador informa ("¡Te toca!", "¡Eliminado!", "¡Has ganado!") y, con la herramienta contador,
-cuenta: `FreeRound.countFrom()` deja llevar la cuenta a un solo móvil por participante (con equipos, el primero del
-equipo que suma; los demás ven quién la lleva). El mando sigue pudiendo corregir.
+cuenta: sin equipos, cada uno lo suyo; con equipos, solo el jugador que el presentador elige en el mando para cada equipo
+(`freeCounter` → `FreeRound.setCounter()`; `countFrom()` responde `not-counter` a los demás). El mando sigue pudiendo corregir.
 
-Comodines (solo Test, antes de responder): `JokerBank` por dueño (equipo, o jugador sin equipos), 50 % quita
-floor(n/2) incorrectas, Doble, Público (ve el recuento en directo). Preguntas reveladas se guardan en `itemResults`
-(persistido): al volver a ellas se ven reveladas; R las reinicia quitando sus puntos y devolviendo comodines. Salir de una
-pregunta sin revelar devuelve sus comodines.
+**Antitrampas** (para quien sale de la app a buscar la respuesta en Google): el móvil manda `away out` al ocultarse la
+página (`visibilitychange`) y `away back {ms}` al volver (si no hay conexión, en cuanto reconecta). La tele marca la
+tarjeta «👀 Fuera de la app» mientras tanto. Al volver, `AnswerRound.awayWhileOpen()` mide cuánto estuvo fuera con la
+pregunta abierta (desde `openedAt`, antes de la cuenta atrás) y sin responder; en el pulsador, desde que se abrió el
+turno. Con `AWAY_MIN_MS` (1,5 s) o más, según el ajuste `antiCheat`: 'void' (por defecto) anula su respuesta en esa
+pregunta (`disqualify`: no cuenta y no puede responder; en el pulsador, `LOCK.CHEAT`), 'warn' solo avisa, 'off' nada.
+Aviso grande en la tele (`cheatAlerts`) y en el mando, con «Perdonar» (`forgive`). Avisado en las reglas de la portada.
+
+**Por turnos** (columna «Por turnos» de la pestaña Concurso → `section.turns`; solo Test, Verdad o mentira, Estimación
+y Contador, y con equipos; `core/turns.js`): cada pregunta la responde uno de cada equipo. Cada equipo tiene un
+**portavoz** (`spokespeople`, lo elige el presentador con 📣 en la preparación o en el mando; si no, el primero que
+entró). En la presentación de la sección, el portavoz ordena a su equipo en su móvil (de la pregunta más fácil a la más
+difícil) → `turnOrder` → `turnOrders[sectionId][teamId]` (persistido; `normalizeOrder` añade a los que falten). La
+pregunta k le toca al k-ésimo (`answererFor`: vuelve a empezar y salta a los desconectados) y `openAnswers` solo deja
+responder a esos. Tele: estado de cada portavoz en la intro y «Responden: …» en la pregunta; móviles: «¡Te toca a ti!» /
+«Le toca a Ana: ¡sin soplar!».
+
+**Puntos tras el suspense:** al revelar, los puntos no se suman enseguida: `#holdPoints` los aplica cuando la tele ya
+enseña a los ganadores (`revealHoldMs(kind, filas)`, mismos tiempos que la animación: `DRUMROLL_MS`, `REVEAL_AT`,
+`listGap`, `WINNER_PAUSE_MS`). Mientras, el móvil dice «👀 Mira la tele» (sin `result`). Cualquier orden (`run`) los
+aplica antes; lo guardado ya los incluye por si la tele se recarga.
+
+Preguntas reveladas se guardan en `itemResults` (persistido): al volver a ellas se ven reveladas; R las reinicia
+quitando sus puntos.
+
+**Millonario** (secciones de Test, `core/millionaire.js` `MillionaireRound`; tele `millionaireStage.js`, móvil
+`player/millionairePad.js`, mando `millionairePanel`): una persona cada vez (el asiento), `seatFor()` alterna equipos
+(pregunta 1 → equipo 1, pregunta 2 → equipo 2…) y dentro de cada equipo sigue el orden de su portavoz (el Test siempre
+va por turnos si hay equipos; sin equipos, por orden de llegada; el mando puede cambiar el asiento con `mSeat`). Sin
+reloj, lo lleva el presentador: `ready` (pregunta, respuestas ocultas) → `mShow` (una a una o todas: `playing`; el
+concursante elige en su móvil con dos toques y puede cambiar) → `mMark` (la elegida u otra: amarilla, letras negras;
+`marked`) → `mReveal` (la buena en verde; la marcada sigue amarilla si no lo era; puntos tras 2,2 s). Comodines
+(`JOKERS`: fifty, audience, call; `JokerBank` por equipo, o por jugador sin equipos; solo con todas las respuestas a la
+vista): 50:50 quita dos incorrectas (también en la tele); Público: votan 15 s solo sus compañeros (sin equipos, todos los
+demás), el presentador puede anularlo si hablan (no se devuelve), al acabar se ven los porcentajes; Llamada: el
+concursante elige a un compañero, que sale de la sala y le llama; el presentador dice «ya» (`mCallStart`) y corren 30 s
+(reloj redondo en la tele). Durante la llamada el antitrampas no cuenta para ellos dos (`onCall`); el concursante que
+sale de la app fuera de eso queda `cheated` (no puntúa aunque acierte; el mando puede perdonar). Iconos de los
+comodines en `shared/jokerIcons.js` (dibujados, no las imágenes del programa). Espacio en la tele: enseñar → marcar →
+revelar → siguiente.
 
 Teclas de la tele: Espacio (contextual: abrir turno / siguiente pregunta / avanzar; en respuestas: abrir → cerrar →
 revelar → siguiente), ← →, P (mostrar pregunta),
@@ -126,7 +170,7 @@ V (mostrar respuesta), A (acierto), F (fallo), R (reiniciar pregunta), M (marcad
 Las pulsaciones solo cuentan en una pregunta de pulsador (`HostRoom.inBuzzerPlay`); fuera, `buzzAck closed` sin bloquear.
 Cada pregunta del runner (`runner.playKey`) reinicia el motor (`game.next()`).
 La tele repinta la pantalla solo si cambia algo visible (firma JSON sin latencias): así las animaciones no se repiten.
-Antes de cada repintado se llama a `stop()` de las tres pantallas de juego (`stage`, `answerStage`, `freeStage`): quita
+Antes de cada repintado se llama a `stop()` de las pantallas de juego (`stage`, `answerStage`, `freeStage`, `millionaireStage`): quita
 el ganador a pantalla completa, relojes y la luz de Reflejos de la pantalla anterior (si no, quedaban encima al saltar de sección).
 Los `<dialog>` se gestionan con el evento `submit` del formulario, no con `close`: Chrome no dispara `close`
 mientras la página no se pinta (ventana oculta o minimizada).
@@ -160,7 +204,8 @@ mientras la página no se pinta (ventana oculta o minimizada).
 - **Tema:** tokens en `base.css` (noche violeta, calabaza `--accent`, verde poción `--ok`), superficies de cristal
   translúcido (`backdrop-filter`) para que se vea el fondo. Letras: Outfit (variable) y Creepster (`.display`, solo en
   títulos grandes: a tamaño pequeño no se lee). Paquetes `@fontsource`, sin pedir nada a Google.
-- **Entornos** (`src/shared/environments.js`): 10 decorados (Noche de luna = preparación, portada y final; el resto se
+- **Entornos** (`src/shared/environments.js`): 11 decorados (Noche de luna = preparación, portada y final; Plató
+  millonario = secciones de Test, con fichas alargadas «A: B: C: D:» como en «¿Quién quiere ser millonario?»; el resto se
   reparten por sección en orden, o se eligen con la columna opcional «Entorno» de la pestaña Concurso → `section.env`).
   `sectionEnv(section, index)` decide; la tele los pinta con WebGL y los móviles con `envGradient()` (el estado del
   jugador y del mando lleva `section.env`).
@@ -170,15 +215,28 @@ mientras la página no se pinta (ventana oculta o minimizada).
   brasas, burbujas, lluvia, chispas, polvo), murciélagos y relámpagos con rayo. Al cambiar de entorno los colores se
   funden y las siluetas cambian a mitad de un oscurecimiento. Sin WebGL: degradado CSS. En desarrollo,
   `window.__fx` da acceso al fondo y al sonido desde la consola.
-- **Música:** 8 estilos según el momento (`fx/music.js`, sobre los instrumentos de `fx/synth.js`): lobby
+- **Música:** 10 estilos según el momento (además: call y audienceVote, la llamada y el público del millonario) (`fx/music.js`, sobre los instrumentos de `fx/synth.js`): lobby
   (preparación, swing), organ (portada e intros), explore (jugando: colchón y caja de música del entorno), tension
   (pregunta abierta: ostinato que sube y latido), suspense (esperando veredicto: timbales y acorde disonante), reveal
   (revelado: resolución en mayor), march (marcador) y waltz (final). El realizador elige el estilo (`musicScene`); la
   tonalidad, escala y ambiente (viento, lluvia, fuego, burbujas, búhos) son del entorno. Las melodías son motivos que se
   repiten y cambian cada 8 compases.
-- **Tus canciones** (`fx/tracks.js`): en preparación, panel «Música» para añadir .mp3 a cada momento (mismas claves que
-  los estilos). Se guardan en IndexedDB del portátil (no en el repositorio, que es público). Un momento con canciones
-  las alterna (al volver antes de 3 min, sigue donde iba); sin canciones, música generada.
+- **Tus canciones** (`fx/tracks.js`, ventana `musicDialog.js`): huecos con nombre y «dónde suena» para cada momento,
+  generales (mismas claves que los estilos) y por sección (`Nombre de la sección|momento`: presentación, jugando,
+  pregunta abierta, suspense, revelado, marcador). Se arrastra el .mp3 encima del hueco o «Examinar…». Manda el de la
+  sección, luego el general, luego la música generada (`setScene(scene, sección, nº de pregunta)`). Ordenadas por nombre.
+  **Escalera** (`LADDER_SCENES`): en una sección, «Jugando», «Pregunta abierta» y «Suspense» con varias canciones ponen la
+  1ª en la 1ª pregunta, la 2ª en la 2ª… (la última sigue). **Efectos con canción** (`EFFECT_SLOTS`, `SFX_SLOT`): respuesta
+  definitiva (al cerrar), acierto, fallo y cada comodín (la tele detecta su uso con `jokersUsed`) suenan una vez en vez
+  del efecto generado, con la música bajada mientras. Se guardan en IndexedDB del portátil
+  (no en el repositorio, que es público). Un hueco con varias las alterna (al volver antes de 3 min, sigue donde iba).
+- **Caras** (`faceStore.js`, ventana `facesDialog.js`, `core/faces.js`): fotos en IndexedDB del portátil (recortadas a
+  240 px); los nombres salen del archivo («Rodri, Rodrigo.jpg») y se editan. `HostRoom.setFaces()` reconoce a quien
+  tenga uno de esos nombres (`matchFace`, sin mayúsculas ni tildes) → `player.face`; manda `faces` con las fotos en uso
+  a móviles y mandos. `avatarOf(p)` (shared/appearance.js) pinta la cara o el icono en todas partes.
+- **Entrar en el móvil:** primero código y nombre; si hay foto con ese nombre, juega con su cara; si no, tras el equipo
+  elige icono y color (`screen-look`, una vez por móvil: `profile.lookChosen`). El ✏️ deja cambiar el nombre solo en
+  preparación (la tele lo ignora después) y tiene «Salir y entrar en otra sala».
 - **Efectos** (`fx/audio.js`, Web Audio): whoosh, gong, ¡pulsad!, pulsación, acierto, fallo, tictac, cuenta atrás,
   campana, redoble, revelado, trueno, fanfarria. Ajustes `musicOn`, `sfxOn`, `volume` (en Ajustes de la tele y en el mando, pestaña Secciones). El
   navegador no deja sonar nada hasta un toque: la tele muestra «🔊 Activar sonido» hasta la primera tecla o clic.
@@ -198,7 +256,8 @@ mientras la página no se pinta (ventana oculta o minimizada).
 - **Antes de cada pregunta:** explicación (`howTo`: tiempo, cómo se puntúa) y cuenta atrás 3-2-1 (`countdownSec`,
   ajustable; 0 = sin ella) en tele y móviles. El motor del pulsador la aplica en la primera apertura (el rebote tras un
   fallo abre enseguida) y `AnswerRound.open({countdownMs})` en Test, Verdad, Dos verdades, Votación y Estimación.
-- **Revelado con tensión** (`answerStage.js`): redoble de 2,4 s y «Y la respuesta correcta es…»; las barras crecen sin
+- **Revelado con tensión** (`answerStage.js`): transición de entrada (`revealSweep`: se oscurece y la cruza un destello),
+  redoble de 2,4 s y «Y la respuesta correcta es…»; las barras crecen sin
   decir cuál es la buena y a los 2,8 s (`REVEAL_AT`) se ilumina con golpe; luego los que suman. En las listas
   (Votación, Estimación, Contador, Reflejos) primero el redoble y luego las filas del último al primero.
 - **Contador** con milisegundos (`12,345 s`; la distancia al objetivo en ms por debajo de 1 s, `formatGap`).
@@ -226,7 +285,7 @@ mientras la página no se pinta (ventana oculta o minimizada).
   "Desde segundo" ya no están en la plantilla; si una hoja antigua las trae, se leen pero no se usan.
 - **Secciones:**
   - **Pulsador** (la actual) + la pregunta en grande en la tele cuando el presentador quiera.
-  - **Test** (4 respuestas): solo puntúa acertar; respuesta definitiva; comodines 50 %, Doble y Público.
+  - **Test** = «¿Quién quiere ser millonario?»: un concursante cada vez; comodines 50:50, Público y Llamada (por equipo).
   - **Verdad o mentira**: V/F a la vez; variante "Dos verdades y una mentira" sobre un jugador (él no vota).
   - **¿Quién es más probable que…?**: todos votan a un jugador; revelado con suspense; puntos a quien vota con la mayoría.
   - **Estimación**: cada uno escribe un número; más cercano, o "sin pasarse" (El precio justo) según la pregunta.

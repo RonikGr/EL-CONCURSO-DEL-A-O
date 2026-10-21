@@ -30,6 +30,13 @@
       <button id="connecting-cancel" class="btn" type="button">Cancelar</button>
     </section>
 
+    <section id="screen-look" class="screen join" hidden>
+      <h1>¿Cómo quieres salir?</h1>
+      <p class="lead">No tenemos foto con tu nombre: elige un icono y un color.</p>
+      <div id="look-picker"></div>
+      <button id="look-done" class="btn primary big" type="button">¡Listo!</button>
+    </section>
+
     <section id="screen-team" class="screen team-pick" hidden>
       <h1>Elige tu equipo</h1>
       <p class="lead">Mira a quién tienes al lado 😉</p>
@@ -58,6 +65,13 @@
         <span id="buzzer-label" class="buzzer-label">Espera</span>
         <span id="buzzer-sub" class="buzzer-sub"></span>
       </button>
+      <section id="turn-pad" class="free-pad turn-pad" hidden>
+        <p class="ap-label">📣 Eres el portavoz</p>
+        <p class="ap-sub">Ordena a tu equipo: arriba, quien responde la pregunta más fácil; abajo, la más difícil. Cada uno responde una.</p>
+        <ol id="turn-list" class="turn-list"></ol>
+        <p id="turn-status" class="ap-sub"></p>
+        <button id="turn-save" class="btn primary big" type="button">Guardar orden</button>
+      </section>
       <section id="free-pad" class="free-pad" hidden aria-live="polite">
         <p id="free-title" class="ap-label"></p>
         <p id="free-count" class="free-count">0</p>
@@ -96,6 +110,7 @@
           <button value="cancel" class="btn" type="submit">Cancelar</button>
           <button value="save" class="btn primary" type="submit">Guardar</button>
         </div>
+        <button id="switch-room" class="btn small danger switch-room" type="button">Salir y entrar en otra sala</button>
       </form>
     </dialog>
 

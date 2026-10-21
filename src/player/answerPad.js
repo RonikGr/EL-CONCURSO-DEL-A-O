@@ -1,24 +1,17 @@
-// Pantalla del móvil en las secciones de respuestas: opciones, votar a un jugador, escribir un número y comodines.
+// Pantalla del móvil en las secciones de respuestas: opciones, votar a un jugador y escribir un número.
 // También las de tiempo: el botón de STOP del Contador y la luz roja/verde de Reflejos.
 import { fill, h } from '../shared/dom.js';
-import { getColor, getIcon } from '../shared/appearance.js';
+import { avatarOf, getColor } from '../shared/appearance.js';
 import { ANSWER_PROMPT, optionStyle } from '../shared/options.js';
 import { parseNumber } from '../core/show.js';
 import { isTiming } from '../core/answers.js';
 import { formatGap } from '../shared/format.js';
 
-const JOKER_INFO = {
-  fifty: { label: '50 %', help: 'Quita la mitad de las respuestas incorrectas' },
-  double: { label: '×2', help: 'Si aciertas, puntos dobles' },
-  audience: { label: 'Público', help: 'Ves qué están respondiendo los demás' },
-};
-
 /**
  * @param onAnswer(roundId, value, tLocal?)  envía la respuesta (tLocal: instante del toque, en las de tiempo)
- * @param onJoker(kind)    usa un comodín
  * @param toLocal(tHost)   instante del presentador → reloj local (o null sin sincronizar)
  */
-export function createAnswerPad({ onAnswer, onJoker, toLocal }) {
+export function createAnswerPad({ onAnswer, toLocal }) {
   const root = h('section', { class: 'answer-pad', hidden: true });
   let signature = null;
   let pending = null; // respuesta enviada que el presentador aún no ha confirmado: {roundId, value}
@@ -44,17 +37,22 @@ export function createAnswerPad({ onAnswer, onJoker, toLocal }) {
     const green = tGreen != null && now >= tGreen;
     const left = a.phase === 'open' && !started ? local(a.tOpen, a.opensInMs) - now : 0;
     const count = left > 900 ? Math.ceil(left / 1000) : null; // cuenta atrás 3-2-1
-    const sig = JSON.stringify([a.roundId, a.phase, started, green, count, a.you, a.removed, a.jokers, a.audience, a.result, a.canAnswer, pending, selected]);
+    // Reflejos: qué se ve ahora (colores que engañan, la araña…) y cuándo cambia
+    const cues = (a.reflex?.cues ?? []).map((c) => ({ at: local(c.t, c.inMs), show: c.show }));
+    const show = a.phase === 'open' && started ? (cues.filter((c) => c.at <= now).at(-1)?.show ?? (green ? 'green' : 'red')) : null;
+    const nextCue = a.phase === 'open' ? cues.find((c) => c.at > now) : null;
+    const sig = JSON.stringify([a.roundId, a.phase, started, green, show, count, a.you, a.result, a.canAnswer, a.turnOf, a.myTurn, pending, selected]);
     clearTimeout(timer);
     const again = () => current && render(current, { stateReceivedAt: receivedAt });
     if (a.phase === 'open' && !started) timer = setTimeout(again, left > 1000 ? (left % 1000) + 5 : left);
+    else if (nextCue) timer = setTimeout(again, nextCue.at - now); // Reflejos: siguiente cambio de luz
     else if (a.phase === 'open' && tGreen != null && !green) timer = setTimeout(again, tGreen - now); // Reflejos: a verde
     if (sig === signature) return;
     signature = sig;
     cancelAnimationFrame(raf);
 
     if (isTiming(a.kind)) {
-      fill(root, h('p', { class: 'ap-label' }, a.label), timingBody(a, started, green));
+      fill(root, h('p', { class: 'ap-label' }, a.label), timingBody(a, started, show));
       return;
     }
 
@@ -63,13 +61,26 @@ export function createAnswerPad({ onAnswer, onJoker, toLocal }) {
     let body;
     if (a.phase === 'ready' || !started) {
       body = [
-        h('p', { class: `ap-big ${count ? 'ap-count' : ''}` }, a.phase === 'ready' ? 'Prepárate' : count ? String(count) : 'Preparados…'),
-        h('p', { class: 'ap-sub' }, ANSWER_PROMPT[a.kind]),
+        h(
+          'p',
+          { class: `ap-big ${count ? 'ap-count' : ''}` },
+          count ? String(count) : a.turnOf && !a.myTurn ? `Le toca a ${a.turnOf}` : a.myTurn ? '¡Te toca a ti!' : a.phase === 'ready' ? 'Prepárate' : 'Preparados…',
+        ),
+        h('p', { class: 'ap-sub' }, a.turnOf && !a.myTurn ? 'Esta pregunta no es tuya: ¡sin soplar! 🤐' : ANSWER_PROMPT[a.kind]),
       ];
     } else if (a.phase === 'revealed') {
       body = resultView(a);
+    } else if (a.you.cheated) {
+      body = [h('p', { class: 'ap-big' }, '🚨 Pillado'), h('p', { class: 'ap-sub' }, 'Saliste de la app con la pregunta abierta: en esta pregunta no cuentas.')];
     } else if (!a.canAnswer) {
-      body = [h('p', { class: 'ap-big' }, a.isSubject ? 'Es sobre ti 🤫' : 'Espera'), h('p', { class: 'ap-sub' }, a.isSubject ? 'Tú no votas: a ver a cuántos engañas.' : 'Esta pregunta empezó antes de que entraras.')];
+      body = [
+        h('p', { class: 'ap-big' }, a.isSubject ? 'Es sobre ti 🤫' : a.turnOf ? `Le toca a ${a.turnOf}` : 'Espera'),
+        h(
+          'p',
+          { class: 'ap-sub' },
+          a.isSubject ? 'Tú no votas: a ver a cuántos engañas.' : a.turnOf ? 'Esta pregunta no es tuya: ¡sin soplar! 🤐' : 'Esta pregunta empezó antes de que entraras.',
+        ),
+      ];
     } else if (a.phase === 'closed') {
       body = [h('p', { class: 'ap-big' }, '¡Tiempo!'), h('p', { class: 'ap-sub' }, answered ? `Tu respuesta: ${describe(a, chosen)}` : 'No te ha dado tiempo a responder')];
     } else {
@@ -81,7 +92,6 @@ export function createAnswerPad({ onAnswer, onJoker, toLocal }) {
           : selected
             ? h('p', { class: 'ap-confirm' }, 'Toca otra vez la misma para confirmar')
             : null,
-        a.jokers && !answered ? jokerBar(a) : null,
       ];
     }
     fill(root, h('p', { class: 'ap-label' }, a.label), body);
@@ -90,9 +100,9 @@ export function createAnswerPad({ onAnswer, onJoker, toLocal }) {
 
   // ------------------------------------------------------------------ Contador y Reflejos
 
-  function timingBody(a, started, green) {
+  function timingBody(a, started, show) {
     const pressed = a.you.answered || !!pending;
-    const prep = a.kind === 'contador' ? `🎯 ${secs(a.target, 2)} · ${MODE_TEXT[a.mode](a)}` : `Ronda ${a.round} de ${a.rounds} · Si pulsas en rojo, quedas fuera`;
+    const prep = a.kind === 'contador' ? `🎯 ${secs(a.target, 2)} · ${MODE_TEXT[a.mode](a)}` : `Ronda ${a.round} de ${a.rounds} · ${REFLEX_HINT[a.reflex?.variant ?? 'green']}`;
     if (a.phase === 'ready') return [h('p', { class: 'ap-big' }, 'Prepárate'), h('p', { class: 'ap-sub' }, prep)];
     if (a.phase === 'revealed') return resultView(a);
     if (!a.canAnswer) return [h('p', { class: 'ap-big' }, 'Espera'), h('p', { class: 'ap-sub' }, a.kind === 'reflejos' ? 'Esta ronda no es para ti: ¡mira la tele!' : 'Esta ronda empezó antes de que entraras.')];
@@ -122,12 +132,23 @@ export function createAnswerPad({ onAnswer, onJoker, toLocal }) {
       return [h('p', { class: 'ap-sub' }, `🎯 ${secs(a.target, 2)}`), clock, button];
     }
 
-    // Reflejos: el botón entero es la luz.
-    const light = !started ? 'wait' : a.you.early ? 'out' : green ? 'green' : 'red';
-    const label = { wait: 'Preparados…', red: 'Espera…', green: '¡YA!', out: '¡Demasiado pronto!' }[light];
+    // Reflejos: el botón entero es la luz (o la araña). Encima, la regla de esta ronda.
+    const target = a.reflex?.target ?? 'green';
+    const light = !started ? 'wait' : a.you.early ? 'out' : (show ?? 'red');
+    const label = !started
+      ? 'Preparados…'
+      : a.you.early
+        ? '¡Demasiado pronto!'
+        : light === target
+          ? '¡YA!'
+          : light === 'red'
+            ? 'Espera…'
+            : light === 'spider' || light === 'peek'
+              ? '🕷️'
+              : '';
     const button = h('button', { type: 'button', class: `ap-light ${light} ${pressed ? 'done' : ''}`, disabled: pressed }, pressed && !a.you.early ? '¡Pulsado!' : label);
     button.addEventListener('pointerdown', press);
-    return [button];
+    return [h('p', { class: 'ap-sub ap-rule' }, a.reflex?.rule ?? REFLEX_HINT[a.reflex?.variant ?? 'green']), button];
   }
 
   /** Pulsación en una sección de tiempo: cuenta el instante del toque (event.timeStamp), como en el pulsador. */
@@ -192,7 +213,7 @@ export function createAnswerPad({ onAnswer, onJoker, toLocal }) {
               style: { '--pc': getColor(p.color).bg, '--pc-fg': getColor(p.color).fg },
               onclick: () => select(p.id),
             },
-            h('span', { class: 'ap-avatar emoji' }, getIcon(p.icon).glyph),
+            h('span', { class: 'ap-avatar emoji' }, avatarOf(p)),
             h('span', {}, p.name),
           ),
         ),
@@ -212,49 +233,22 @@ export function createAnswerPad({ onAnswer, onJoker, toLocal }) {
       input.addEventListener('keydown', (e) => e.key === 'Enter' && submit());
       return h('div', { class: 'ap-estimate' }, input, h('button', { type: 'button', class: 'btn primary big', onclick: submit }, 'Enviar'));
     }
-    const total = a.audience ? Math.max(1, a.audience.reduce((s, n) => s + n, 0)) : 0;
     return h(
       'div',
       { class: `ap-options n${a.options.length}` },
       a.options.map((label, i) => {
         const s = optionStyle(a.kind, i);
-        const removed = a.removed.includes(i);
         return h(
           'button',
           {
             type: 'button',
-            class: `ap-option ${chosen === i ? 'chosen' : ''} ${selected?.value === i ? 'selected' : ''} ${removed ? 'removed' : ''}`,
-            disabled: answered || removed,
+            class: `ap-option ${chosen === i ? 'chosen' : ''} ${selected?.value === i ? 'selected' : ''}`,
+            disabled: answered,
             style: { '--ob': s.bg, '--of': s.fg },
             onclick: () => select(i),
           },
           h('span', { class: 'ap-shape' }, s.shape),
           h('span', { class: 'ap-option-label' }, label),
-          a.audience ? h('span', { class: 'ap-audience' }, `${Math.round((a.audience[i] / total) * 100)} %`) : null,
-        );
-      }),
-    );
-  }
-
-  function jokerBar(a) {
-    return h(
-      'div',
-      { class: 'ap-jokers' },
-      Object.entries(JOKER_INFO).map(([kind, info]) => {
-        const left = a.jokers.remaining[kind];
-        const active = a.jokers.active.includes(kind);
-        const unavailable = (kind === 'fifty' && a.options.length < 3) || (!active && left <= 0);
-        return h(
-          'button',
-          {
-            type: 'button',
-            class: `ap-joker ${active ? 'active' : ''}`,
-            disabled: active || unavailable,
-            title: info.help,
-            onclick: () => onJoker(a.roundId, kind),
-          },
-          h('strong', {}, info.label),
-          h('small', {}, active ? 'activo' : `quedan ${left}`),
         );
       }),
     );
@@ -276,6 +270,13 @@ export function createAnswerPad({ onAnswer, onJoker, toLocal }) {
   };
 }
 
+/** Reflejos antes de empezar: qué tipo de ronda viene. */
+const REFLEX_HINT = {
+  green: 'Pulsa cuando se ponga en VERDE; si pulsas antes, quedas fuera',
+  color: '¡Ojo! Hay que esperar a un color concreto… y el verde puede engañar',
+  spider: '¡Cuidado con la araña! Mientras esté, no se pulsa',
+};
+
 const secs = (n, decimals) => `${Number(n).toFixed(decimals).replace('.', ',')} s`;
 const MODE_TEXT = {
   visible: () => 'verás el reloj',
@@ -292,6 +293,8 @@ function describe(a, value) {
 
 function resultView(a) {
   const r = a.result;
+  // Mientras la tele hace el suspense, el portátil aún no manda el resultado
+  if (!r) return [h('p', { class: 'ap-big' }, '👀 Mira la tele'), h('p', { class: 'ap-sub' }, '¡Ahora viene el resultado!')];
   if (r.fooled != null) {
     return [h('p', { class: 'ap-big' }, `Has engañado a ${r.fooled}`), h('p', { class: `ap-points ${r.points ? 'plus' : ''}` }, r.points ? `+${r.points}` : 'Sin puntos')];
   }

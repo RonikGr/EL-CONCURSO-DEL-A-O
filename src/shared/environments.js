@@ -3,7 +3,7 @@
 //
 // Parámetros del shader:
 //   sil  — silueta: 0 nada, 1 tumbas, 2 árboles, 3 castillo, 4 telaraña, 5 calabazas, 6 colinas, 7 cripta,
-//          8 laboratorio (matraces), 9 caldero, 10 árbol solitario
+//          8 laboratorio (matraces), 9 caldero, 10 árbol solitario, 11 plató (focos y suelo de luz)
 //   part — partículas: 0 nada, 1 luciérnagas, 2 brasas, 3 burbujas, 4 lluvia, 5 chispas, 6 polvo/escarcha
 //   colores RGB 0..1: top/bot (cielo), fog (niebla), glow (luna, ventanas, resplandor del horizonte), part (partículas)
 
@@ -170,13 +170,33 @@ export const ENVIRONMENTS = [
     lightning: 1,
     horizon: 0.05,
   },
+  {
+    // Para las secciones de Test: un plató como el de «¿Quién quiere ser millonario?»
+    id: 'millonario',
+    name: 'Plató millonario',
+    top: rgb('#06063a'),
+    bot: rgb('#000008'),
+    fog: rgb('#2b3cff'),
+    glow: rgb('#8fd0ff'),
+    part: rgb('#ffd27a'),
+    fogAmt: 0.3,
+    moon: 0,
+    sil: 11,
+    particles: 0,
+    bats: 0,
+    lightning: 0,
+    horizon: 0.35,
+  },
 ];
 
 /** Entorno de preparación, portada y final. */
 export const HOME_ENV = 'luna';
 
+/** El Test se juega en el plató millonario (salvo que la hoja diga otro entorno). */
+export const TEST_ENV = 'millonario';
+
 /** Entornos que se reparten entre las secciones (en este orden). */
-const SECTION_ENVS = ENVIRONMENTS.filter((e) => e.id !== HOME_ENV);
+const SECTION_ENVS = ENVIRONMENTS.filter((e) => e.id !== HOME_ENV && e.id !== TEST_ENV);
 
 const byId = new Map(ENVIRONMENTS.map((e) => [e.id, e]));
 export const getEnv = (id) => byId.get(id) ?? byId.get(HOME_ENV);
@@ -184,6 +204,7 @@ export const getEnv = (id) => byId.get(id) ?? byId.get(HOME_ENV);
 /** Entorno de una sección: el elegido en la hoja o, si no, uno distinto por posición. */
 export function sectionEnv(section, index) {
   if (section?.env && byId.has(section.env)) return section.env;
+  if (section?.type === 'test') return TEST_ENV;
   return SECTION_ENVS[index % SECTION_ENVS.length].id;
 }
 

@@ -92,18 +92,30 @@ describe('sección Libre', () => {
 });
 
 describe('contador desde el móvil', () => {
-  it('un móvil por equipo lleva la cuenta: el primero que la pide', () => {
+  it('con equipos cuenta solo el jugador que elige el presentador', () => {
     const r = new FreeRound(item('counter', { teams: true }), { roundId: 'f9' });
     r.setParticipants(['rojos', 'azules']);
-    expect(r.countFrom('ana', 'rojos', 0)).toBe('ok'); // en preparación ya se puede pedir…
-    expect(r.countFrom('ana', 'rojos', 1)).toBe('closed'); // …pero no contar
+    r.setCounter('rojos', 'ana');
+    r.setCounter('azules', 'dani');
+    expect(r.countFrom('ana', 'rojos', 1)).toBe('closed'); // aún no ha empezado
     r.start(0);
     expect(r.countFrom('ana', 'rojos', 1)).toBe('ok');
     expect(r.countFrom('ana', 'rojos', 1)).toBe('ok');
-    expect(r.countFrom('bea', 'rojos', 1)).toBe('taken'); // misma familia, otro móvil
+    expect(r.countFrom('bea', 'rojos', 1)).toBe('not-counter'); // de los rojos, pero no es quien cuenta
     expect(r.countFrom('cris', 'verdes', 1)).toBe('closed'); // no participa
     expect(r.countFrom('dani', 'azules', -1)).toBe('ok'); // no baja de 0
+    r.setCounter('azules', null); // ahora cuenta el presentador
+    expect(r.countFrom('dani', 'azules', 1)).toBe('not-counter');
     expect(r.counts).toEqual({ rojos: 2, azules: 0 });
-    expect(FreeRound.fromJSON(r.item, JSON.parse(JSON.stringify(r))).counters).toEqual({ rojos: 'ana', azules: 'dani' });
+    expect(FreeRound.fromJSON(r.item, JSON.parse(JSON.stringify(r))).counters).toEqual({ rojos: 'ana' });
+  });
+
+  it('sin equipos, cada uno cuenta lo suyo', () => {
+    const r = new FreeRound(item('counter'), { roundId: 'f10' });
+    r.setParticipants(['ana', 'bea']);
+    r.start(0);
+    expect(r.countFrom('ana', 'ana', 1)).toBe('ok');
+    expect(r.countFrom('ana', 'bea', 1)).toBe('not-counter');
+    expect(r.setCounter('ana', 'bea')).toBe(false);
   });
 });

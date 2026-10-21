@@ -7,7 +7,8 @@
 // La primera respuesta es la definitiva. Una respuesta vale si se dio (reloj sincronizado) antes del final.
 import { norm } from './show.js';
 
-export const ANSWER_TYPES = new Set(['test', 'verdad', 'dosVerdades', 'votacion', 'estimacion', 'contador', 'reflejos']);
+// El Test no va aquí: se juega como el millonario (core/millionaire.js)
+export const ANSWER_TYPES = new Set(['verdad', 'dosVerdades', 'votacion', 'estimacion', 'contador', 'reflejos']);
 export const APHASE = { READY: 'ready', OPEN: 'open', CLOSED: 'closed', REVEALED: 'revealed' };
 export const ANSWER_RESULT = {
   OK: 'ok',
@@ -17,8 +18,13 @@ export const ANSWER_RESULT = {
   INVALID: 'invalid',
   LATE: 'late',
   EARLY: 'early', // Contador: aún no ha empezado (no cuenta). Reflejos: pulsó en rojo (eliminado de la ronda).
+  CHEAT: 'cheat', // salió de la app con la pregunta abierta: anulado en esta pregunta
 };
-export const JOKERS = ['fifty', 'double', 'audience'];
+
+/** Salir de la app menos de esto no cuenta (un vistazo a una notificación, un parpadeo de la pantalla…). */
+export const AWAY_MIN_MS = 1500;
+/** Comodines del millonario, uno de cada por equipo (o por jugador sin equipos). */
+export const JOKERS = ['fifty', 'audience', 'call'];
 
 const CHOICE_KINDS = new Set(['test', 'verdad', 'dosVerdades']);
 export const isChoice = (kind) => CHOICE_KINDS.has(kind);
@@ -103,9 +109,10 @@ export class AnswerRound {
     this.eligible = new Set();
     this.candidates = []; // votación: a quién se puede votar
     this.answers = new Map(); // playerId → {value, tPress, tArrival}
-    this.jokers = new Map(); // ownerId → Set(kind) comodines activos en esta pregunta
-    this.removed = new Map(); // ownerId → [índices de opciones quitadas por el 50 %]
     this.results = null;
+    this.openedAt = null; // cuándo se abrió (antes de la cuenta atrás): desde ahí, salir de la app es sospechoso
+    this.closedAt = null;
+    this.cheaters = new Set(); // salieron de la app con la pregunta abierta: su respuesta no cuenta
   }
 
   /**
@@ -116,6 +123,7 @@ export class AnswerRound {
   open({ now, eligibleIds, scheduledOpenMs = 300, greenDelayMs = GREEN_MIN_MS, countdownMs = 0 }) {
     if (this.phase !== APHASE.READY) return false;
     const kind = this.question.kind;
+    this.openedAt = now;
     this.eligible = new Set(eligibleIds.filter((id) => id !== this.question.subjectId));
     if (kind === 'votacion') this.candidates = [...eligibleIds];
     if (kind === 'contador') {
@@ -135,6 +143,7 @@ export class AnswerRound {
 
   answer(playerId, value, { tPress }) {
     if (this.phase !== APHASE.OPEN) return ANSWER_RESULT.CLOSED;
+    if (this.cheaters.has(playerId)) return ANSWER_RESULT.CHEAT;
     if (!this.eligible.has(playerId)) return ANSWER_RESULT.NOT_ELIGIBLE;
     if (this.answers.has(playerId)) return ANSWER_RESULT.DUPLICATE;
     if (tPress > this.deadline) return ANSWER_RESULT.LATE;
@@ -160,23 +169,50 @@ export class AnswerRound {
     return ANSWER_RESULT.OK;
   }
 
-  /** ¿Han respondido todos los que pueden y siguen conectados? */
+  /** ¿Han respondido todos los que pueden y siguen conectados? (los anulados ya no cuentan) */
   allAnswered(connectedIds) {
-    const pending = [...this.eligible].filter((id) => connectedIds.has(id) && !this.answers.has(id));
+    const pending = [...this.eligible].filter((id) => connectedIds.has(id) && !this.answers.has(id) && !this.cheaters.has(id));
     return this.eligible.size > 0 && pending.length === 0;
   }
 
-  close() {
+  close(now = null) {
     if (this.phase !== APHASE.OPEN) return false;
     this.phase = APHASE.CLOSED;
+    this.closedAt = now;
     return true;
   }
 
-  /** @param ownerOf playerId → dueño de sus comodines (su equipo, o él mismo si no hay equipos) */
-  reveal({ ownerOf = (id) => id } = {}) {
+  // ---------- Antitrampas
+
+  /**
+   * Cuánto tiempo (ms) estuvo fuera de la app un jugador mientras esta pregunta estaba abierta para él y sin responder.
+   * @param leftAt/backAt instantes del portátil en que salió y volvió
+   */
+  awayWhileOpen(playerId, leftAt, backAt) {
+    if (this.openedAt == null || !this.eligible.has(playerId)) return 0;
+    const answeredAt = this.answers.get(playerId)?.tPress ?? Infinity;
+    const end = Math.min(backAt, this.closedAt ?? Infinity, answeredAt);
+    return Math.max(0, end - Math.max(leftAt, this.openedAt));
+  }
+
+  /** Anula a un jugador en esta pregunta (salió de la app para buscar la respuesta): su respuesta no cuenta. */
+  disqualify(playerId) {
+    if (this.phase !== APHASE.OPEN && this.phase !== APHASE.CLOSED) return false;
+    if (!this.eligible.has(playerId) || this.cheaters.has(playerId)) return false;
+    this.cheaters.add(playerId);
+    this.answers.delete(playerId);
+    return true;
+  }
+
+  /** El presentador perdona: vuelve a poder responder (si aún está abierta). */
+  forgive(playerId) {
+    return this.phase !== APHASE.REVEALED && this.cheaters.delete(playerId);
+  }
+
+  reveal() {
     if (this.phase === APHASE.OPEN) this.close();
     if (this.phase !== APHASE.CLOSED) return false;
-    this.results = scoreRound(this.question, this.answers, { doubled: this.doubledPlayers(ownerOf), candidates: this.candidates });
+    this.results = scoreRound(this.question, this.answers, { candidates: this.candidates });
     this.phase = APHASE.REVEALED;
     return true;
   }
@@ -194,53 +230,6 @@ export class AnswerRound {
     return counts;
   }
 
-  // ---------- Comodines (solo en Test)
-
-  /** Jugadores que han respondido con el comodín Doble activo (por su equipo o por sí mismos). */
-  doubledPlayers(ownerOf = (id) => id) {
-    return new Set([...this.answers.keys()].filter((id) => this.jokers.get(ownerOf(id))?.has('double')));
-  }
-
-  /** Comodines activos para un jugador en esta pregunta. */
-  activeJokers(playerId, ownerOf = (id) => id) {
-    return [...(this.jokers.get(ownerOf(playerId)) ?? [])];
-  }
-
-  /** Opciones que el 50 % le ha quitado a este jugador. */
-  removedFor(playerId, ownerOf = (id) => id) {
-    return this.removed.get(ownerOf(playerId)) ?? [];
-  }
-
-  /**
-   * ¿Se puede usar ahora este comodín? (no comprueba cuántos le quedan: eso lo lleva JokerBank)
-   * @returns null si se puede, o el motivo si no
-   */
-  jokerBlocker(ownerId, kind, playerId) {
-    if (this.question.kind !== 'test') return 'Los comodines solo se usan en las preguntas de Test.';
-    if (this.phase !== APHASE.OPEN) return 'Ahora no se pueden usar comodines.';
-    if (!JOKERS.includes(kind)) return 'Comodín desconocido.';
-    if (this.jokers.get(ownerId)?.has(kind)) return 'Ya está activo en esta pregunta.';
-    if (this.answers.has(playerId)) return 'Ya has respondido.';
-    if (kind === 'fifty' && this.question.options.length < 3) return 'Con dos respuestas no hay 50 %.';
-    return null;
-  }
-
-  /** @param random () => [0,1) para elegir qué respuestas incorrectas quitar */
-  activateJoker(ownerId, kind, random = Math.random) {
-    if (!this.jokers.has(ownerId)) this.jokers.set(ownerId, new Set());
-    this.jokers.get(ownerId).add(kind);
-    if (kind === 'fifty') {
-      const wrong = this.question.options.map((_, i) => i).filter((i) => i !== this.question.correct);
-      const toRemove = Math.floor(this.question.options.length / 2);
-      const removed = [];
-      while (removed.length < toRemove) {
-        const pick = wrong.splice(Math.floor(random() * wrong.length), 1)[0];
-        removed.push(pick);
-      }
-      this.removed.set(ownerId, removed.sort((a, b) => a - b));
-    }
-  }
-
   #valid(playerId, value) {
     const q = this.question;
     if (isChoice(q.kind)) return Number.isInteger(value) && value >= 0 && value < q.options.length;
@@ -253,10 +242,9 @@ export class AnswerRound {
 /**
  * Puntos de una pregunta.
  * @param answers Map(playerId → {value})
- * @param doubled Set(playerId) con el comodín Doble
  * @returns {points: {playerId: puntos}, entries: [...], winners?: [candidatos]} — solo quien suma aparece en `points`
  */
-export function scoreRound(question, answers, { doubled = new Set(), candidates = [] } = {}) {
+export function scoreRound(question, answers, { candidates = [] } = {}) {
   const base = question.points?.[0] ?? 1;
   const points = {};
   const add = (id, n) => {
@@ -268,10 +256,10 @@ export function scoreRound(question, answers, { doubled = new Set(), candidates 
     let fooled = 0;
     for (const [id, { value }] of answers) {
       const correct = value === question.correct;
-      const pts = correct ? base * (doubled.has(id) ? 2 : 1) : 0;
+      const pts = correct ? base : 0;
       add(id, pts);
       if (!correct) fooled++;
-      entries.push({ playerId: id, value, correct, points: pts, doubled: doubled.has(id) });
+      entries.push({ playerId: id, value, correct, points: pts });
     }
     // Dos verdades y una mentira: el protagonista gana un punto por cada uno al que engañó.
     if (question.kind === 'dosVerdades' && question.subjectId) add(question.subjectId, fooled);
@@ -341,7 +329,7 @@ function rankByDiff(entries, pointsList, add) {
  * Comodines que le quedan a cada dueño (equipo, o jugador si no hay equipos) para todo el concurso.
  */
 export class JokerBank {
-  constructor(allowance = { fifty: 1, double: 1, audience: 1 }, used = {}) {
+  constructor(allowance = { fifty: 1, audience: 1, call: 1 }, used = {}) {
     this.allowance = { ...allowance };
     this.used = structuredClone(used);
   }
@@ -371,4 +359,94 @@ export class JokerBank {
   toJSON() {
     return this.used;
   }
+}
+
+// ------------------------------------------------------------------------------------------ revelado en la tele
+
+/** Redoble antes de que se vea nada (ms). */
+export const DRUMROLL_MS = 2400;
+/** Test, Verdad, Dos verdades: momento en que se ilumina la respuesta buena (ms). */
+export const REVEAL_AT = 2800;
+/** Pausa extra antes del ganador en las listas (ms). */
+export const WINNER_PAUSE_MS = 1600;
+
+/** Separación entre filas de una lista que aparece del último al primero: con muchas, más rápido. */
+export const listGap = (rows) => Math.max(260, Math.min(700, 5000 / Math.max(1, rows)));
+
+/**
+ * Cuánto tarda la tele en enseñar quién ha ganado tras revelar (ms). Los puntos se suman entonces, no antes:
+ * que los marcadores no chiven el resultado durante el suspense.
+ * @param rows filas de la lista (Votación: candidatos; Estimación, Contador, Reflejos: participantes);
+ *             en Test y similares, cuántos han acertado
+ */
+export function revealHoldMs(kind, rows) {
+  if (isChoice(kind)) return REVEAL_AT + 700 + rows * 260;
+  if (rows <= 0) return DRUMROLL_MS;
+  return DRUMROLL_MS + (rows - 1) * listGap(rows) + (rows > 1 ? WINNER_PAUSE_MS : 0) + 500;
+}
+
+// ------------------------------------------------------------------------------------------ Reflejos con despistes
+
+/**
+ * Variantes de Reflejos. La 1ª ronda es la clásica; las siguientes engañan:
+ *  - green:  rojo → verde (pulsa en verde)
+ *  - color:  pulsa solo cuando salga el color objetivo; antes salen otros (¡incluido el verde!)
+ *  - spider: no pulses mientras esté la araña; a ratos se asoma y vuelve; cuando se va, ¡pulsa!
+ */
+export const REFLEX_COLORS = {
+  green: 'VERDE',
+  blue: 'AZUL',
+  purple: 'MORADO',
+  yellow: 'AMARILLO',
+  orange: 'NARANJA',
+  white: 'BLANCO',
+};
+
+export function reflexVariant(round) {
+  if (round <= 1) return 'green';
+  return round % 2 === 0 ? 'color' : 'spider';
+}
+
+/** Retardo hasta la señal buena: las rondas con despistes duran más (caben los engaños). */
+export function reflexDelayMs(variant, rand = Math.random) {
+  const [min, max] = variant === 'green' ? [GREEN_MIN_MS, GREEN_MAX_MS] : [4000, 8000];
+  return min + rand() * (max - min);
+}
+
+/**
+ * Lo que se ve en cada momento de una ronda, en el reloj del portátil: [{t, show}], ordenado. `show` es un color
+ * ('red', 'green', 'blue'…) o 'spider' / 'peek' (la araña se asoma) / 'clear' (se fue). La señal buena llega siempre en
+ * `tGreen`; pulsar antes cuenta como pulsar en rojo.
+ * @returns {{cues, target, rule}} target = qué hay que esperar (para el texto de la tele y el móvil)
+ */
+export function reflexPlan(variant, tOpen, tGreen, rand = Math.random) {
+  const span = tGreen - tOpen;
+  // Despistes repartidos por la espera, sin pegarse al principio ni a la señal buena
+  const decoyTimes = (n) => Array.from({ length: n }, (_, i) => tOpen + span * ((i + 0.6 + rand() * 0.5) / (n + 1)));
+  if (variant === 'color') {
+    const target = rand() < 0.5 ? 'blue' : 'purple';
+    const decoyColors = ['green', 'yellow', 'orange', 'white', target === 'blue' ? 'purple' : 'blue'];
+    const cues = [{ t: tOpen, show: 'red' }];
+    decoyTimes(span > 5500 ? 3 : 2).forEach((t, i) => {
+      // el primer despiste es casi siempre el verde: el que pulsa por costumbre, cae
+      const show = i === 0 && rand() < 0.75 ? 'green' : decoyColors[Math.floor(rand() * decoyColors.length)];
+      cues.push({ t, show }, { t: t + 650, show: 'red' });
+    });
+    cues.push({ t: tGreen, show: target });
+    return { cues, target, rule: `Pulsa SOLO cuando salga el ${REFLEX_COLORS[target]}` };
+  }
+  if (variant === 'spider') {
+    const cues = [{ t: tOpen, show: 'spider' }];
+    for (const t of decoyTimes(span > 5500 ? 2 : 1)) cues.push({ t, show: 'peek' }, { t: t + 700, show: 'spider' });
+    cues.push({ t: tGreen, show: 'clear' });
+    return { cues, target: 'clear', rule: '¡No pulses mientras esté la araña! Cuando se vaya, pulsa' };
+  }
+  return { cues: [{ t: tOpen, show: 'red' }, { t: tGreen, show: 'green' }], target: 'green', rule: 'Pulsa cuando se ponga en VERDE' };
+}
+
+/** Qué se ve en el instante t (antes de abrir: null). */
+export function cueAt(cues, t) {
+  let current = null;
+  for (const c of cues ?? []) if (c.t <= t) current = c.show;
+  return current;
 }

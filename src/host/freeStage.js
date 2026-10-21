@@ -1,7 +1,7 @@
 // Pantalla de la tele en la sección Libre ("Fit o Fat"): presentación de la prueba, cronómetro o contadores
 // en grande y ganador. Solo espectáculo: lo arbitra el presentador desde el mando.
 import { fill, h } from '../shared/dom.js';
-import { getColor, getIcon } from '../shared/appearance.js';
+import { avatarOf, getColor } from '../shared/appearance.js';
 import { FPHASE, TOOL } from '../core/free.js';
 import { kinetic, odometer } from './fx/motion.js';
 
@@ -65,7 +65,7 @@ export function createFreeStage() {
           h(
             'li',
             { class: p.out != null ? 'out' : '', style: { '--pc': getColor(p.color).bg, '--pc-fg': getColor(p.color).fg } },
-            h('span', { class: 'free-name' }, p.icon ? h('span', { class: 'emoji' }, getIcon(p.icon).glyph) : null, ' ', p.name),
+            h('span', { class: 'free-name' }, p.icon || p.face ? h('span', { class: 'emoji' }, avatarOf(p)) : null, ' ', p.name),
             f.tool === TOOL.COUNTER
               ? h('span', { class: 'free-count' }, odometer(p.count, lastCounts.get(p.id) ?? p.count, { duration: 500 }))
               : h('span', { class: 'free-status' }, p.out != null ? `Cayó a los ${formatClock(p.out)}` : f.phase === FPHASE.STOPPED ? '¡Aguantó!' : 'Aguanta…'),
@@ -88,7 +88,7 @@ function chip(p) {
   return h(
     'li',
     { style: { '--pc': getColor(p.color).bg, '--pc-fg': getColor(p.color).fg } },
-    p.icon ? h('span', { class: 'emoji' }, getIcon(p.icon).glyph) : null,
+    p.icon || p.face ? h('span', { class: 'emoji' }, avatarOf(p)) : null,
     h('span', {}, p.name),
   );
 }
@@ -102,7 +102,7 @@ function results(f) {
         'li',
         { class: r.place === 1 ? 'first' : '', style: { '--pc': getColor(r.who.color).bg } },
         h('span', { class: 'f-place' }, `${r.place}º`),
-        h('span', {}, r.who.icon ? getIcon(r.who.icon).glyph : ''),
+        h('span', { class: 'emoji' }, r.who.icon || r.who.face ? avatarOf(r.who) : ''),
         h('span', { class: 'es-name' }, r.who.name),
         h('span', { class: 'es-value' }, f.tool === TOOL.STOPWATCH ? formatClock(r.value) : String(r.value)),
         h('span', {}),

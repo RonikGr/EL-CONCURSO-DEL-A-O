@@ -107,7 +107,7 @@ describe('lectura del libro', () => {
     expect(errors).toEqual([]);
     expect(warnings).toEqual([]);
     expect(show.title).toBe('La gran final');
-    expect(show.settings).toMatchObject({ wrongPoints: -1, jokers: { fifty: 2, double: 1, audience: 1 } });
+    expect(show.settings).toMatchObject({ wrongPoints: -1, jokers: { fifty: 2, audience: 1, call: 1 } });
     expect(show.teams).toEqual([
       { id: 'los-rojos', name: 'Los Rojos', color: 'rojo' },
       { id: 'las-lima', name: 'Las Lima', color: 'naranja' }, // sin color: el primero libre
@@ -122,6 +122,7 @@ describe('lectura del libro', () => {
     expect(rapido).toMatchObject({ presenterPlays: false, music: `spotify:track:${TRACK}` });
     // Entorno por nombre o por id; vacío = automático
     expect(show.sections.map((s) => s.env)).toEqual(['cripta', null, 'tormenta']);
+    expect(show.sections.map((s) => s.turns)).toEqual([false, false, false]);
     expect(rapido.items).toEqual([
       { question: '¿Capital de Francia?', answer: 'París', showOnTv: true, song: null, songStart: 0, notes: 'fácil' },
       { question: '', answer: '', showOnTv: false, song: `spotify:track:${TRACK}`, songStart: 1.5, notes: '' },
@@ -200,6 +201,25 @@ describe('lectura del libro', () => {
       [5, 'La música debe ser un enlace a una canción de Spotify (open.spotify.com/track/…).'],
       [6, 'Falta el nombre de la sección.'],
     ]);
+  });
+
+  it('por turnos: solo en los tipos que lo admiten', () => {
+    const { show, errors, warnings } = parseShowWorkbook(
+      workbook({
+        Concurso: [
+          ['Sección', 'Tipo', 'Por turnos'],
+          ['Cultura', 'Test', 'sí'],
+          ['Rápido', 'Pulsador', 'sí'],
+        ],
+        Contador: null,
+      }),
+    );
+    expect(errors).toEqual([]);
+    expect(show.sections.map((s) => [s.name, s.turns])).toEqual([
+      ['Cultura', true],
+      ['Rápido', false],
+    ]);
+    expect(warnings).toContainEqual(expect.objectContaining({ sheet: 'Concurso', row: 3, message: expect.stringContaining('no se puede jugar por turnos') }));
   });
 
   it('un entorno desconocido solo avisa', () => {

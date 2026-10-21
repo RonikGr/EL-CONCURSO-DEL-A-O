@@ -290,3 +290,307 @@ button.me-score {
 .swatches {
   grid-template-columns: repeat(6, minmax(0, 1fr));
 }
+
+/* Reflejos con despistes: colores y la araña en el botón */
+.ap-light.blue {
+  background: radial-gradient(circle at 50% 45%, #5fb4ff, #1456c9 60%, #071c4a);
+}
+.ap-light.purple {
+  background: radial-gradient(circle at 50% 45%, #c58bff, #7a2bd6 60%, #2a0a52);
+}
+.ap-light.yellow {
+  background: radial-gradient(circle at 50% 45%, #fff38a, #e6c200 60%, #5a4a00);
+  color: #1a1400;
+}
+.ap-light.orange {
+  background: radial-gradient(circle at 50% 45%, #ffc07a, #ff7a12 60%, #5a2400);
+}
+.ap-light.white {
+  background: radial-gradient(circle at 50% 45%, #ffffff, #d9d6e8 60%, #6e6a80);
+  color: #14101f;
+}
+.ap-light.spider,
+.ap-light.peek {
+  background: radial-gradient(circle at 50% 30%, #3a2a55, #160f24 60%, #07050d);
+  font-size: clamp(5rem, 35vw, 10rem);
+}
+.ap-light.peek {
+  animation: phone-peek 700ms ease-in-out;
+}
+.ap-light.clear {
+  background: radial-gradient(circle at 50% 45%, #b6ff7a, #2fbf3a 55%, #0b4a12);
+}
+
+@keyframes phone-peek {
+  50% {
+    padding-bottom: 60%;
+    color: transparent;
+  }
+}
+
+.ap-rule {
+  font-weight: 700;
+  color: var(--text);
+}
+
+/* Mando: quién cuenta por cada equipo en Libre */
+.c-counter-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+  align-items: center;
+  gap: 0.6rem;
+  margin-top: 0.5rem;
+  font-weight: 700;
+}
+
+/* Caras en los avatares del móvil y del mando */
+.face {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 50%;
+}
+
+.emoji .face {
+  display: inline-block;
+  width: 1.2em;
+  height: 1.2em;
+  vertical-align: middle;
+}
+
+.avatar:has(.face),
+.ap-avatar:has(.face),
+.c-avatar:has(.face) {
+  overflow: hidden;
+  padding: 0;
+}
+
+.switch-room {
+  width: 100%;
+  margin-top: 0.8rem;
+}
+
+.name-input:disabled {
+  opacity: 0.6;
+}
+
+/* Mando: avisos del antitrampas */
+.c-cheats {
+  border: 1px solid rgb(255 61 90 / 0.6);
+}
+
+.c-cheat {
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* Por turnos: el portavoz ordena a su equipo */
+.turn-pad {
+  grid-template-rows: auto auto 1fr auto auto;
+  align-items: start;
+}
+
+.turn-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  display: grid;
+  gap: 0.45rem;
+  align-content: start;
+  overflow: auto;
+}
+
+.turn-list li {
+  display: grid;
+  grid-template-columns: 2rem 2.2rem minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 0.8rem;
+  background: var(--surface-2);
+  text-align: left;
+}
+
+.turn-num {
+  display: grid;
+  place-items: center;
+  height: 2rem;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 900;
+}
+
+.turn-avatar {
+  font-size: 1.6rem;
+}
+
+.turn-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 700;
+}
+
+/* ------------------------------------------------------------------ Millonario en el móvil */
+.mill-pad {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  overflow: auto;
+  text-align: center;
+}
+
+.mill-q {
+  margin: 0;
+  padding: 0.8rem 1rem;
+  border-radius: 1rem;
+  background: linear-gradient(180deg, #0b1a5c, #050b30);
+  box-shadow: inset 0 0 0 2px #8ea2cf;
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.mill-pad-options {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.mill-pad-opt {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 3.4rem;
+  padding: 0.5rem 1.6rem;
+  border: 0;
+  clip-path: polygon(1.2rem 0, calc(100% - 1.2rem) 0, 100% 50%, calc(100% - 1.2rem) 100%, 1.2rem 100%, 0 50%);
+  background: linear-gradient(180deg, #0b1a5c, #050b30);
+  box-shadow: inset 0 0 0 2px #8ea2cf;
+  color: #fff;
+  font-size: 1.15rem;
+  font-weight: 600;
+  text-align: left;
+}
+
+.mill-pad-opt:disabled {
+  opacity: 1;
+}
+
+.mill-pad-opt .mill-letter {
+  color: #f5a623;
+  font-weight: 800;
+}
+
+.mill-pad-opt .mill-text {
+  flex: 1;
+}
+
+.mill-pad-opt.selected {
+  box-shadow: inset 0 0 0 3px #ffd23f;
+}
+
+.mill-pad-opt.chosen {
+  background: linear-gradient(180deg, #ffe066, #ffc400 55%, #f0a800);
+  color: #111;
+}
+
+.mill-pad-opt.chosen .mill-letter {
+  color: #111;
+}
+
+.mill-pad-opt.correct {
+  background: linear-gradient(180deg, #5fe04a, #22b52e 55%, #127a1d);
+  color: #fff;
+}
+
+.mill-pct {
+  font-weight: 800;
+}
+
+.mill-pad-jokers {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+}
+
+.mill-joker-btn {
+  display: grid;
+  justify-items: center;
+  gap: 0.2rem;
+  border: 0;
+  background: none;
+  color: var(--text);
+}
+
+.mill-joker-btn .joker-icon {
+  display: block;
+  width: 4rem;
+  height: 4rem;
+}
+
+.mill-joker-btn .joker-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.mill-joker-btn .joker-icon.used {
+  opacity: 0.5;
+}
+
+.mill-friends {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.mill-count {
+  margin: 0;
+}
+
+/* Mando: respuestas del millonario */
+.c-mill-options {
+  margin: 0.5rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.c-mill-options li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.4rem 0.6rem;
+  border-radius: 0.6rem;
+  background: var(--surface-2);
+}
+
+.c-mill-options li .btn {
+  margin-left: auto;
+}
+
+.c-mill-options li.right {
+  box-shadow: inset 0 0 0 2px var(--ok);
+}
+
+.c-mill-options li.choice {
+  box-shadow: inset 0 0 0 2px #ffd23f;
+}
+
+.c-mill-options li.marked {
+  background: #ffc400;
+  color: #111;
+}
+
+.c-mill-options li.hidden {
+  opacity: 0.6;
+}
+
+.c-actions {
+  display: grid;
+  gap: 0.5rem;
+}

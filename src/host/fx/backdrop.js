@@ -220,6 +220,41 @@ float cauldron(vec2 p, out vec3 emit) {
   return m;
 }
 
+// Plató millonario: suelo brillante con anillos de luz, focos que barren el escenario y paneles al fondo.
+float stage(vec2 p, float aspect, out vec3 emit) {
+  emit = vec3(0.0);
+  float t = uTime;
+  // suelo: elipse de luz en el centro con anillos que se expanden
+  float floorY = -0.22;
+  float isFloor = step(p.y, floorY);
+  vec2 q = (p - vec2(0.0, -0.4)) * vec2(1.0, 3.4);
+  float r = length(q);
+  float rings = smoothstep(0.05, 0.0, abs(fract(r * 3.0 - t * 0.25) - 0.5) - 0.42) * smoothstep(1.2, 0.2, r);
+  float disc = smoothstep(0.55, 0.0, r);
+  emit += isFloor * (uGlow * (0.35 * rings + 0.45 * disc) + vec3(0.25, 0.35, 1.0) * 0.12 * smoothstep(1.6, 0.0, r));
+  // reflejo de los focos en el suelo
+  emit += isFloor * vec3(0.2, 0.3, 0.9) * 0.15 * (0.5 + 0.5 * sin(p.x * 9.0 + t));
+  // paneles de luz al fondo (rejilla de rombos que respira)
+  vec2 g = vec2(p.x * 7.0, (p.y - floorY) * 7.0);
+  vec2 cell = abs(fract(g + vec2(0.5 * floor(g.y), 0.0)) - 0.5);
+  float diamond = smoothstep(0.06, 0.0, abs(cell.x + cell.y - 0.45));
+  float wall = (1.0 - isFloor) * smoothstep(0.55, floorY, p.y);
+  emit += wall * diamond * vec3(0.25, 0.4, 1.0) * (0.25 + 0.2 * sin(t * 1.3 + floor(g.x) * 0.7 + floor(g.y)));
+  // focos: haces que salen de arriba y barren
+  for (int i = 0; i < 4; i++) {
+    float fi = float(i);
+    vec2 src = vec2((fi - 1.5) * aspect * 0.28, 0.6);
+    float ang = sin(t * (0.35 + fi * 0.07) + fi * 1.7) * 0.45;
+    vec2 dir = vec2(sin(ang), -cos(ang));
+    vec2 d = p - src;
+    float along = dot(d, dir);
+    float across = abs(d.x * dir.y - d.y * dir.x);
+    float beam = smoothstep(0.03 + along * 0.18, 0.0, across) * step(0.0, along) * smoothstep(1.4, 0.2, along);
+    emit += beam * mix(vec3(0.5, 0.7, 1.0), vec3(1.0, 0.85, 0.5), step(1.5, fi) * step(fi, 2.5)) * 0.22;
+  }
+  return isFloor * 0.85;
+}
+
 // Tormenta: un árbol seco solitario en lo alto de una loma.
 float loneTree(vec2 p, float aspect) {
   float m = max(hills(p), step(length((p - vec2(aspect * 0.22, -0.62)) * vec2(0.6, 1.0)), 0.35));
@@ -369,6 +404,7 @@ void main() {
   if (uSil == 8.0) sil = lab(p, emit);
   if (uSil == 9.0) sil = cauldron(p, emit);
   if (uSil == 10.0) sil = loneTree(p, aspect);
+  if (uSil == 11.0) sil = stage(p, aspect, emit);
   col = mix(col, silCol, sil);
 
   // niebla baja que se arrastra (menos sobre las siluetas, para que se sigan viendo)

@@ -22,6 +22,7 @@ export const MOODS = {
   telarana: { root: 42, scale: [0, 1, 3, 6, 7, 9], tempo: 1, wave: 'triangle', cutoff: 750, amb: ['wind'] },
   aquelarre: { root: 38, scale: [0, 1, 4, 5, 7, 8, 10], tempo: 1.2, wave: 'sawtooth', cutoff: 900, amb: ['fire'], drums: true },
   cripta: { root: 37, scale: [0, 2, 3, 5, 7, 8, 10], tempo: 0.85, wave: 'sine', cutoff: 1200, amb: ['wind'] },
+  millonario: { root: 40, scale: [0, 2, 3, 5, 7, 8, 10], tempo: 1, wave: 'sawtooth', cutoff: 1100, amb: [] },
   tormenta: { root: 33, scale: [0, 1, 3, 5, 7, 8, 10], tempo: 0.9, wave: 'sawtooth', cutoff: 480, amb: ['rain', 'wind'] },
 };
 
@@ -243,6 +244,38 @@ export const STYLES = {
       else for (const m of triad(st.root, scale, chord)) vibes(s, out, mtof(m), t, 0.025);
       const d = st.tune[(bar % 4) * 3 + inBar];
       if (d != null) bell(s, out, mtof(degree(st.root + 12, scale, d)), t, { gain: 0.07, decay: 1.2 });
+    },
+  },
+
+  /** Llamada del millonario: un reloj que avanza sobre un pulso grave (30 s). */
+  call: {
+    bpm: 120,
+    meter: 4,
+    start(st, mood) {
+      st.root = mood.root;
+    },
+    beat({ s, out, soft, t, bar, inBar, spb, st }) {
+      tone(s, out, { freq: inBar % 2 ? 1700 : 1300, t, peak: 0.07, decay: 0.03 }); // tic-tac
+      if (inBar === 0) {
+        thump(s, out, t, 0.35);
+        held(s, soft, { type: 'sawtooth', freq: mtof(st.root + 12 + (bar % 4 === 3 ? 1 : 0)), t, dur: spb * 3.5, attack: 0.05, peak: 0.02 });
+      }
+      if (inBar === 2) pluck(s, out, mtof(st.root - 12 + (bar % 2) * 7), t, { gain: 0.15, decay: 0.4 });
+    },
+  },
+
+  /** Público votando (15 s): pizzicato nervioso. */
+  audienceVote: {
+    bpm: 132,
+    meter: 4,
+    start(st, mood) {
+      st.root = mood.root + 12;
+    },
+    beat({ s, out, t, bar, inBar, spb, st }) {
+      const scale = HARMONIC_MINOR;
+      for (const half of [0, 1]) pizz(s, out, mtof(degree(st.root, scale, (bar * 4 + inBar * 2 + half) % 7)), t + (half * spb) / 2, 0.06);
+      if (inBar % 2 === 0) thump(s, out, t, 0.2);
+      hat(s, out, t + spb / 2, 0.025);
     },
   },
 };

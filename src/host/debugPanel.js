@@ -1,7 +1,7 @@
 // Modo depuración (tecla D): relojes de cada móvil y tiempos de la última ronda.
 // Todos los tiempos de la ronda van en ms desde la apertura del turno, en el reloj del presentador.
 import { fill, h } from '../shared/dom.js';
-import { getIcon } from '../shared/appearance.js';
+import { avatarOf } from '../shared/appearance.js';
 import { PRESS_SOURCE } from '../core/plausibility.js';
 
 const SOURCE_TEXT = {
@@ -13,7 +13,7 @@ const SOURCE_TEXT = {
 
 const ms = (v, digits = 0) => (Number.isFinite(v) ? `${v.toFixed(digits).replace('.', ',')} ms` : '—');
 const signed = (v) => (Number.isFinite(v) ? `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1).replace('.', ',')}` : '—');
-const who = (p) => h('span', { class: 'dbg-who' }, h('span', { class: 'emoji' }, getIcon(p.icon).glyph), ' ', p.name);
+const who = (p) => h('span', { class: 'dbg-who' }, h('span', { class: 'emoji' }, avatarOf(p)), ' ', p.name);
 
 export function createDebugPanel() {
   const root = h('aside', { class: 'debug-panel', hidden: true, 'aria-label': 'Depuración' });

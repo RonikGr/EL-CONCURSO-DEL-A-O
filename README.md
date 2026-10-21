@@ -6,7 +6,7 @@ conectado por HDMI); cada jugador usa su móvil como pulsador, sin instalar nada
 
 > Estado: **fase 9** — concurso por secciones con equipos, cargado desde una hoja de cálculo; la tele es el
 > espectáculo (tema de Halloween, con un decorado animado, música y efectos distintos en cada sección) y el
-> presentador lo maneja desde su móvil. Se juegan **Pulsador**, **Test** (con comodines),
+> presentador lo maneja desde su móvil. Se juegan **Pulsador**, **Test** (como «¿Quién quiere ser millonario?»),
 > **Verdad o mentira**, **Dos verdades y una mentira**, **¿Quién es más probable…?**, **Estimación**,
 > **Parar el contador**, **Duelo de reflejos** y **Libre** (pruebas tipo «Fit o Fat» con cronómetro o contador).
 
@@ -37,25 +37,34 @@ conectado por HDMI); cada jugador usa su móvil como pulsador, sin instalar nada
 6. Quien pulse antes de abrir el turno queda **bloqueado** en esa pregunta (se puede desactivar en **Ajustes** o
    perdonar con «Desbloquear»).
 
-7. En las secciones de **respuestas** (Test, Verdad o mentira, Dos verdades, Votación, Estimación) todos responden a
+7. **Test = «¿Quién quiere ser millonario?»**: concursa una persona cada vez, alternando equipos (pregunta 1 → Los
+   Rojos, pregunta 2 → Los Azules…) y dentro de cada equipo en el orden que eligió su portavoz (ordena las preguntas
+   de la hoja de la más fácil a la más difícil). No hay reloj: desde el mando vas **enseñando las respuestas** (una a
+   una o todas); el concursante elige en su móvil (tú ves cuál) y la **marcas** cuando la dé por definitiva (se pone
+   amarilla con letras negras; también puedes marcar otra si la dice en voz alta); luego **muestras la correcta**: verde.
+   - **Comodines**, uno de cada para todo el concurso, por equipo (o por jugador sin equipos), y solo con las cuatro
+     respuestas a la vista: **50:50** (quita dos incorrectas); **Público** (sus compañeros de equipo votan 15 s en sus
+     móviles sin hablar; si hablan, lo anulas desde el mando; luego se ven los porcentajes); **Llamada** (el concursante
+     elige a un compañero, que sale de la sala con su móvil y le llama; cuando digas «ya» desde el mando, corren 30 s
+     con su reloj en la tele y su propia música).
+   - Si el concursante sale de la app fuera de la llamada, aunque acierte no puntúa (puedes perdonarle).
+   - En el teclado del portátil, Espacio: enseñar respuesta → marcar → mostrar la correcta → siguiente.
+8. En las secciones de **respuestas** (Verdad o mentira, Dos verdades, Votación, Estimación) todos responden a
    la vez desde el móvil: «Abrir respuestas» → cuenta atrás (se cierra sola al acabar o cuando han respondido todos)
    → «Revelar» (respuesta correcta, recuento, quién suma) → «Siguiente pregunta». La primera respuesta es la buena.
-   - **Comodines** (solo en Test, antes de responder): **50 %** quita la mitad de las incorrectas, **×2** dobla los
-     puntos si aciertas, **Público** enseña en directo qué responden los demás. Uno de cada para todo el concurso,
-     por equipo (o por jugador si no hay equipos).
    - **Votación**: nadie puede votarse; suman quienes votan al más votado (con empate, a cualquiera de los empatados).
    - **Estimación**: puntos por puestos según la columna Puntos (p. ej. 3,2,1); «Sin pasarse» deja fuera a quien se pasa.
    - **Dos verdades y una mentira**: el protagonista (su nombre debe coincidir con el de su jugador) no vota y suma
      1 punto por cada uno al que engaña.
    - En el móvil, la respuesta se elige con un toque y se **confirma tocando otra vez la misma**.
    - «Reiniciar pregunta» después de revelar quita los puntos que dio esa pregunta.
-8. **Parar el contador**: «¡Empezar!» → cuenta atrás 3-2-1 → el reloj corre en la tele y en los móviles (visible, a
+9. **Parar el contador**: «¡Empezar!» → cuenta atrás 3-2-1 → el reloj corre en la tele y en los móviles (visible, a
    ciegas o desaparece a los N segundos, según la fila) → cada uno pulsa STOP → «Revelar» ordena por cercanía al
    objetivo. Cuenta el instante exacto del toque con el reloj sincronizado.
-9. **Duelo de reflejos**: «Poner en rojo» → entre 2 y 6 s después, al azar, todo se pone verde (tele y móviles a la
+10. **Duelo de reflejos**: «Poner en rojo» → entre 2 y 6 s después, al azar, todo se pone verde (tele y móviles a la
    vez) → gana la reacción más rápida. Quien pulsa en rojo queda fuera de esa ronda. En modo «Duelo», el presentador
    elige en el mando a los dos que juegan.
-10. **Libre** («Fit o Fat»): cada fila es una prueba. En el mando marcas quién participa (jugadores o equipos, según
+11. **Libre** («Fit o Fat»): cada fila es una prueba. En el mando marcas quién participa (jugadores o equipos, según
     la columna Participan) y la tele la presenta.
     - **Cronómetro**: «¡Empezar!» y, cuando alguien cae, «Eliminado» (con «Deshacer» por si te equivocas). Al caer el
       último se para solo. Gana quien más aguanta.
@@ -215,15 +224,45 @@ Cubren la lógica que no depende de la red (`src/core`, `src/shared`).
 - **Antes de cada pregunta**, una breve explicación (tiempo, puntos) y una **cuenta atrás 3-2-1** en la tele y en los
   móviles. Se ajusta en **Ajustes** («Cuenta atrás antes de cada pregunta», 0 = sin ella).
 - **Música:** cambia según el momento (preparación, presentación, jugando, pregunta abierta, suspense, revelado,
-  marcador y final) y el entorno de la sección. **Tus canciones:** en la preparación, panel **🎵 Música** → «+ .mp3»
-  en cada momento (puedes poner varias: se alternan). Se guardan solo en ese portátil; donde no pongas ninguna suena la
-  música generada. Además hay efectos (pulsar, acierto, fallo, tictac, redoble, fanfarria…).
+  marcador y final) y el entorno de la sección. **Tus canciones:** en la preparación, botón **🎵 Música**. Cada hueco dice
+  dónde suena; arrastra el .mp3 encima o pulsa «Examinar…». Hay huecos para todo el concurso y, por cada sección,
+  huecos propios (p. ej. la música del millonario solo en el Test). Puedes poner varias: se alternan. Se guardan solo
+  en ese portátil; donde no pongas ninguna suena la general o la música generada. Además hay efectos (pulsar, acierto,
+  fallo, tictac, redoble, fanfarria…).
+- **Antitrampas:** si alguien sale de la app del móvil (para buscar en Google, cambiar de app o de pestaña…) con una
+  pregunta abierta y sin responder más de 1,5 s, su respuesta en esa pregunta no cuenta (en el pulsador, queda
+  bloqueado), y sale un aviso grande en la tele y en el mando, donde se le puede **perdonar**. Mientras está fuera, su
+  tarjeta dice «👀 Fuera de la app». En **Ajustes** se puede dejar solo en aviso o quitarlo.
+- **Por turnos** (columna «Por turnos» de la pestaña Concurso, para Verdad o mentira, Estimación y Contador; el Test
+  siempre va por turnos, un concursante cada vez): cada pregunta la responde uno de cada equipo. Antes de empezar el concurso elige el **portavoz** de cada equipo con 📣 en la pantalla de preparación
+  (o en el mando, pestaña Jugadores). Al presentar la sección, cada portavoz ordena a su equipo en su móvil, de la
+  pregunta más fácil a la más difícil, y la tele enseña quién ya ha ordenado. En cada pregunta, la tele dice quién
+  responde y los demás ven «¡sin soplar!».
+- **Canciones del millonario:** en **🎵 Música**, dentro de la sección del Test, además de los momentos hay efectos que
+  suenan una vez: respuesta definitiva, acierto, fallo y cada comodín, y los huecos «Llamada» (los 30 s) y «Público
+  votando» (los 15 s). Y si pones varias canciones en «Jugando»,
+  «Pregunta abierta» o «Suspense», van en escalera: la 1ª en la 1ª pregunta, la 2ª en la 2ª… (por orden de nombre:
+  ponles «1 - …», «2 - …»).
+- **Caras:** en la preparación, botón **🙂 Caras**: suelta una foto por persona. El nombre del archivo da los nombres con
+  que se le reconoce, separados por comas («Rodri, Rodrigo.jpg»), y se pueden cambiar ahí. Quien entre con uno de esos
+  nombres (da igual mayúsculas y tildes) juega con su cara; si no, elige icono y color. Las fotos se guardan solo en ese
+  portátil.
+- **En el móvil:** al entrar se pide el código y el nombre. Con ✏️ se cambia el nombre (solo antes de empezar el
+  concurso), el icono y el equipo, y está «Salir y entrar en otra sala».
 - El navegador no deja sonar nada hasta que se toca la página: si la tele se recarga, aparece **🔊 Activar sonido**
   hasta la primera tecla o clic en el portátil. Música, efectos y volumen: **Ajustes** (tele) o el mando, pestaña
   **Secciones**.
-- **Libre con contador** (flexiones…): el móvil de quien participa muestra **+1 / −1** para ir sumando (con equipos,
-  lo lleva el primer móvil del equipo que suma). El presentador puede corregir desde el mando.
-- **Revelados con suspense:** en Test y Verdad o mentira, redoble y «Y la respuesta correcta es…» antes de iluminar la
+- **Libre con contador** (flexiones…): el móvil de quien participa muestra **+1 / −1** para ir sumando. Con equipos,
+  antes de empezar eliges en el mando quién cuenta por cada equipo: solo su móvil tendrá los botones. El presentador
+  puede corregir desde el mando.
+- **Duelo de reflejos con trampas:** la primera ronda es la clásica (pulsa en verde). Después: «pulsa solo cuando salga
+  el AZUL» (o el morado) con colores trampa antes, ¡verde incluido!, o una araña: mientras esté no se pulsa, a ratos se
+  asoma y vuelve, y cuando se va, ¡a pulsar!
+- **Test como «¿Quién quiere ser millonario?»**: plató con focos, respuestas alargadas «A: B: C: D:» como en el
+  programa, iconos de los comodines y el reloj redondo de la llamada.
+- **Puntos después del suspense:** al revelar, los marcadores no se mueven hasta que la tele enseña quién ha acertado o
+  ganado (y el móvil dice «Mira la tele» mientras).
+- **Revelados con suspense:** en Verdad o mentira, redoble y «Y la respuesta correcta es…» antes de iluminar la
   buena. En Estimación, Votación, Contador y Reflejos, tras el redoble los puestos aparecen del último al primero;
   el ganador sale el último, con golpe y confeti. El marcador parte de cómo estaba la última vez, los puntos ruedan y
   las filas se reordenan. Al final, podio 3º → 2º → 1º con fanfarria.

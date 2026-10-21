@@ -15,6 +15,8 @@ export const MSG = {
   ANSWER: 'answer', // respuesta en secciones de respuestas
   JOKER: 'joker', // usar un comodín
   FREE_COUNT: 'freeCount', // sección Libre: +1/−1 desde el móvil (0 = pedir llevar la cuenta)
+  TURN_ORDER: 'turnOrder', // por turnos: el portavoz manda el orden de su equipo {order: [playerId…]}
+  AWAY: 'away', // antitrampas: el jugador ha salido de la app ('out') o ha vuelto ('back', con los ms que estuvo fuera)
   CMD: 'cmd', // solo el mando
   // portátil → móvil
   WELCOME: 'welcome',
@@ -27,6 +29,7 @@ export const MSG = {
   CONTROL_STATUS: 'controlStatus', // pending | approved
   CONTROL_STATE: 'controlState',
   CMD_RESULT: 'cmdResult',
+  FACES: 'faces', // fotos de los jugadores reconocidos por su nombre: {images: {faceId: imagen}}
 };
 
 export const ERROR_CODE = {
@@ -115,7 +118,14 @@ export function parsePlayerMessage(msg) {
       };
     }
     case MSG.JOKER:
-      return isNum(msg.seq) && isStr(msg.roundId, 80) && isStr(msg.kind, 20) ? { t: msg.t, seq: msg.seq, roundId: msg.roundId, kind: msg.kind } : null;
+      if (!isNum(msg.seq) || !isStr(msg.roundId, 80) || !isStr(msg.kind, 20)) return null;
+      // target: en la llamada, a qué compañero se llama
+      return { t: msg.t, seq: msg.seq, roundId: msg.roundId, kind: msg.kind, target: isStr(msg.target, 64) ? msg.target : undefined };
+    case MSG.TURN_ORDER:
+      return Array.isArray(msg.order) && msg.order.length <= 20 && msg.order.every((id) => isStr(id, 64)) ? { t: msg.t, order: msg.order } : null;
+    case MSG.AWAY:
+      if (msg.state === 'out') return { t: msg.t, state: 'out' };
+      return msg.state === 'back' && isNum(msg.ms) && msg.ms >= 0 ? { t: msg.t, state: 'back', ms: Math.min(msg.ms, 3_600_000) } : null;
     case MSG.FREE_COUNT:
       return isNum(msg.seq) && isStr(msg.roundId, 80) && [-1, 0, 1].includes(msg.delta) ? { t: msg.t, seq: msg.seq, roundId: msg.roundId, delta: msg.delta } : null;
     case MSG.SYNC:
@@ -155,6 +165,8 @@ export function parseHostMessage(msg) {
       return msg.view && typeof msg.view === 'object' ? msg : null;
     case MSG.CMD_RESULT:
       return isNum(msg.id) && typeof msg.ok === 'boolean' ? msg : null;
+    case MSG.FACES:
+      return msg.images && typeof msg.images === 'object' ? msg : null;
     default:
       return null;
   }

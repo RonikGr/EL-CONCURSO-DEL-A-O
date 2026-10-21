@@ -5,6 +5,7 @@
 // El navegador no deja sonar nada hasta que alguien toca la página: se activa con la primera tecla o clic.
 import { bell, bubble, crackle, mtof, noiseHit, owl, snare, thump, tone } from './synth.js';
 import { MOODS, STYLES } from './music.js';
+import { LADDER_SCENES, SFX_SLOT } from './tracks.js';
 
 const CROSSFADE = 0.7; // s (constante de tiempo del fundido entre estilos)
 
@@ -13,6 +14,8 @@ class SoundEngine extends EventTarget {
   settings = { musicOn: true, sfxOn: true, volume: 70 };
   #moodId = 'luna';
   #scene = 'lobby';
+  #section = null; // sección en juego (sus canciones mandan sobre las generales)
+  #step = null; // nº de pregunta en la sección (escalera de canciones)
   #layer = null; // música generada que suena ahora
   #tracks = new Map(); // tus canciones: slot → [{url, name}]
   #players = new Map(); // slot → reproductor de canciones
@@ -67,10 +70,41 @@ class SoundEngine extends EventTarget {
   }
 
   /** Momento del concurso → estilo de música (ver music.js). */
-  setScene(scene) {
-    if (this.#scene === scene || !STYLES[scene]) return;
+  /**
+   * Momento del concurso → estilo de música (ver music.js); `section` = nombre de la sección en juego, para usar sus
+   * canciones si las tiene.
+   */
+  setScene(scene, section = null, step = null) {
+    if (!STYLES[scene]) return;
+    if (this.#scene === scene && this.#section === section) {
+      // misma escena: solo cambia de canción si es una escalera y ha cambiado la pregunta
+      if (this.#step !== step) {
+        this.#step = step;
+        const slot = this.#slotKey();
+        if (this.unlocked && slot && this.#isLadder(slot)) this.#playSlot(slot, false);
+      }
+      return;
+    }
+    this.#step = step;
+    const before = this.#slotKey();
+    const sameScene = this.#scene === scene;
     this.#scene = scene;
+    this.#section = section;
+    // Misma música (p. ej. la general de «Jugando» al pasar de sección): que no vuelva a empezar
+    if (sameScene && before === this.#slotKey()) return;
     if (this.unlocked) this.#switchLayer();
+  }
+
+  /** ¿Este hueco elige canción por número de pregunta? (de una sección, con varias, en jugando/pregunta/suspense) */
+  #isLadder(slot) {
+    return slot.includes('|') && LADDER_SCENES.has(this.#scene) && this.#step != null && (this.#tracks.get(slot)?.length ?? 0) > 1;
+  }
+
+  /** Hueco de canciones que toca ahora: el de la sección si tiene, si no el general; null = música generada. */
+  #slotKey() {
+    const own = this.#section ? `${this.#section}|${this.#scene}` : null;
+    if (own && this.#tracks.get(own)?.length) return own;
+    return this.#tracks.get(this.#scene)?.length ? this.#scene : null;
   }
 
   /** Efecto de sonido, opcionalmente con retraso (ms). */
@@ -78,12 +112,42 @@ class SoundEngine extends EventTarget {
     if (!this.unlocked || !this.settings.sfxOn) return;
     const fn = SFX[name];
     if (!fn) return;
-    if (delayMs <= 0) return fn(this, this.ctx.currentTime + 0.01);
+    // Si hay una canción tuya para este efecto (la de la sección o la general), suena ella en vez del generado
+    const fire = () => {
+      const own = this.#effectTrack(name);
+      if (own) this.#playOnce(own);
+      else fn(this, this.ctx.currentTime + 0.01);
+    };
+    if (delayMs <= 0) return fire();
     const id = setTimeout(() => {
       this.#timers.delete(id);
-      if (this.unlocked) fn(this, this.ctx.currentTime + 0.01);
+      if (this.unlocked) fire();
     }, delayMs);
     this.#timers.add(id);
+  }
+
+  #effectTrack(name) {
+    const slot = SFX_SLOT[name];
+    if (!slot) return null;
+    const list = (this.#section && this.#tracks.get(`${this.#section}|${slot}`)) || this.#tracks.get(slot);
+    return list?.length ? list[(Math.random() * list.length) | 0].url : null;
+  }
+
+  /** Efecto con canción: suena una vez y, mientras, la música de fondo baja. */
+  #playOnce(url) {
+    const audio = new Audio(url);
+    const src = this.ctx.createMediaElementSource(audio);
+    src.connect(this.sfxBus);
+    const t = this.ctx.currentTime;
+    const level = this.settings.musicOn ? 0.6 : 0;
+    this.musicBus.gain.setTargetAtTime(level * 0.2, t, 0.08);
+    const done = () => {
+      src.disconnect();
+      this.musicBus.gain.setTargetAtTime(this.settings.musicOn ? 0.6 : 0, this.ctx.currentTime, 0.5);
+    };
+    audio.addEventListener('ended', done, { once: true });
+    audio.addEventListener('error', done, { once: true });
+    audio.play().catch(done);
   }
 
   /** Anula los efectos programados (al cambiar de pantalla). */
@@ -177,7 +241,7 @@ class SoundEngine extends EventTarget {
   /** Qué suena ahora (para depurar desde la consola). */
   state() {
     const p = this.#slot;
-    return { scene: this.#scene, mood: this.#moodId, generated: !!this.#layer, track: p && { slot: p.slot, paused: p.audio.paused, time: p.audio.currentTime } };
+    return { scene: this.#scene, mood: this.#moodId, generated: !!this.#layer, track: p && { slot: p.slot, src: p.audio.src, paused: p.audio.paused, time: p.audio.currentTime } };
   }
 
   /** Tus canciones por momento: slot → [{url, name}] (ver tracks.js). */
@@ -189,10 +253,11 @@ class SoundEngine extends EventTarget {
   #switchLayer(force = false) {
     const c = this.ctx;
     // Si hay canciones tuyas para este momento, suenan ellas; si no, la música generada.
-    if (this.#tracks.get(this.#scene)?.length) {
+    const slot = this.#slotKey();
+    if (slot) {
       this.#fadeOut(this.#layer);
       this.#layer = null;
-      return this.#playSlot(this.#scene, force);
+      return this.#playSlot(slot, force);
     }
     this.#stopSlot();
     this.#fadeOut(this.#layer);
@@ -234,8 +299,16 @@ class SoundEngine extends EventTarget {
       audio.addEventListener('ended', () => this.#nextTrack(p));
       this.#players.set(slot, p);
       this.#nextTrack(p, false);
-    } else if (performance.now() - p.pausedAt > 180_000) {
+    } else if (performance.now() - p.pausedAt > 180_000 && !this.#isLadder(slot)) {
       this.#nextTrack(p, false);
+    }
+    // Escalera: la canción de esta pregunta (la última se repite para el resto), siempre en bucle
+    if (this.#isLadder(slot)) {
+      const want = list[Math.min(this.#step, list.length - 1)].url;
+      p.audio.loop = true;
+      if (p.audio.src !== want) p.audio.src = want;
+    } else {
+      p.audio.loop = false;
     }
     if (this.#slot && this.#slot !== p) this.#stopSlot();
     this.#slot = p;
@@ -441,6 +514,18 @@ const SFX = {
   thunder(s, t) {
     noiseHit(s, s.sfxBus, t, { type: 'lowpass', freq: 1400, sweepTo: 120, peak: 0.35, attack: 0.02, decay: 2.8 });
     noiseHit(s, s.sfxBus, t + 0.25, { type: 'lowpass', freq: 300, peak: 0.25, attack: 0.1, decay: 2.2 });
+  },
+  /** Comodines: 50:50 (dos golpes que se apagan), público (murmullo) y llamada (timbre de teléfono). */
+  fifty(s, t) {
+    tone(s, s.sfxBus, { type: 'square', freq: 440, slideTo: 220, slideTime: 0.15, t, peak: 0.08, decay: 0.2 });
+    tone(s, s.sfxBus, { type: 'square', freq: 440, slideTo: 220, slideTime: 0.15, t: t + 0.25, peak: 0.08, decay: 0.2 });
+  },
+  audience(s, t) {
+    noiseHit(s, s.sfxBus, t, { freq: 700, q: 0.6, peak: 0.12, attack: 0.3, decay: 1.2 });
+    bell(s, s.sfxBus, 660, t + 0.2, { gain: 0.08, decay: 1 });
+  },
+  call(s, t) {
+    for (let r = 0; r < 2; r++) for (let i = 0; i < 12; i++) tone(s, s.sfxBus, { freq: i % 2 ? 480 : 440, t: t + r * 0.6 + i * 0.03, peak: 0.06, decay: 0.03 });
   },
   /** Redoble de caja antes de un revelado (2,4 s, crece hasta el golpe). */
   drumroll(s, t) {

@@ -12,7 +12,7 @@ import { rankBuzzes } from './ranking.js';
 
 export const PHASE = { IDLE: 'idle', OPEN: 'open', RESULT: 'result', CLOSED: 'closed' };
 export const BUZZ = { OK: 'ok', EARLY: 'early', LOCKED: 'locked', DUPLICATE: 'duplicate', CLOSED: 'closed', STALE: 'stale' };
-export const LOCK = { EARLY: 'early', WRONG: 'wrong' };
+export const LOCK = { EARLY: 'early', WRONG: 'wrong', CHEAT: 'cheat' };
 
 export class QuestionEngine {
   /** @param settings objeto vivo: {scheduledOpenMs, countdownSec, decisionWindowMs, nearTieMs, lockEarlyBuzz} */
@@ -133,6 +133,13 @@ export class QuestionEngine {
 
   unlock(playerId) {
     return this.lockouts.delete(playerId);
+  }
+
+  /** Bloquea a un jugador en esta pregunta (antitrampas: salió de la app con el turno abierto). */
+  lock(playerId, reason) {
+    if (this.lockouts.has(playerId)) return false;
+    this.lockouts.set(playerId, reason);
+    return true;
   }
 }
 

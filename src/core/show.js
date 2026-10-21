@@ -4,6 +4,7 @@
 // Las cabeceras se reconocen sin distinguir mayúsculas, tildes ni el orden de las columnas.
 import { COLORS } from '../shared/appearance.js';
 import { ENVIRONMENTS } from '../shared/environments.js';
+import { TURN_TYPES } from './turns.js';
 
 export const SECTION_TYPES = {
   pulsador: { label: 'Pulsador', sheet: 'Pulsador', ranked: false, presenterPlays: false, needsItems: false },
@@ -26,7 +27,7 @@ export const DEFAULT_SETTINGS = {
   wrongPoints: 0,
   lockEarlyBuzz: true,
   testSeconds: 20,
-  jokers: { fifty: 1, double: 1, audience: 1 },
+  jokers: { fifty: 1, audience: 1, call: 1 },
 };
 
 const RANKED_DEFAULT_POINTS = [3, 2, 1];
@@ -170,6 +171,7 @@ const COLUMNS = {
     description: ['descripcion'],
     points: ['puntos'],
     presenterPlays: ['el presentador juega', 'presentador juega', 'presentador'],
+    turns: ['por turnos', 'turnos'],
     music: ['musica'],
     env: ['entorno'],
   },
@@ -241,7 +243,7 @@ export function parseShowWorkbook(sheets) {
       };
       if (key.startsWith('titulo')) settings.title = text(value) || settings.title;
       else if (key.includes('50')) settings.jokers.fifty = number() ?? settings.jokers.fifty;
-      else if (key.includes('doble')) settings.jokers.double = number() ?? settings.jokers.double;
+      else if (key.includes('llamada')) settings.jokers.call = number() ?? settings.jokers.call;
       else if (key.includes('publico')) settings.jokers.audience = number() ?? settings.jokers.audience;
       else if (key.includes('puntos por defecto')) settings.defaultPoints = number() ?? settings.defaultPoints;
       else if (key.includes('puntos por fallo')) {
@@ -327,6 +329,13 @@ export function parseShowWorkbook(sheets) {
       points ??= info.ranked ? [...RANKED_DEFAULT_POINTS] : [settings.defaultPoints];
       const presenterPlays = parseYesNo(values.presenterPlays, info.presenterPlays);
       if (presenterPlays === undefined) err('Concurso', row, '"El presentador juega" debe ser sí o no.');
+      // Por turnos: cada pregunta la responde uno de cada equipo, en el orden que elige su portavoz
+      let turns = parseYesNo(values.turns, false);
+      if (turns === undefined) err('Concurso', row, '"Por turnos" debe ser sí o no.');
+      if (turns && !TURN_TYPES.has(type)) {
+        warn('Concurso', row, `"${info.label}" no se puede jugar por turnos (solo Test, Verdad o mentira, Estimación y Parar el contador): se juega normal.`);
+        turns = false;
+      }
       const music = parseSpotifyTrack(values.music);
       if (!isEmpty(values.music) && !music) err('Concurso', row, 'La música debe ser un enlace a una canción de Spotify (open.spotify.com/track/…).');
       // Entorno de Halloween (opcional): si no se pone o no existe, se reparte uno distinto por sección.
@@ -340,6 +349,7 @@ export function parseShowWorkbook(sheets) {
         description: text(values.description),
         points,
         presenterPlays: presenterPlays ?? info.presenterPlays,
+        turns: !!turns,
         music,
         env,
         items: [],

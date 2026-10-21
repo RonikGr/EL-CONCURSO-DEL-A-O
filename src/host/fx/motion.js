@@ -121,3 +121,18 @@ export function enterScreen(el) {
 export function later(el, ms, fn) {
   setTimeout(() => el.isConnected && fn(), ms);
 }
+
+/** Transición del revelado: la pantalla se oscurece un instante y la cruza un destello de luz. */
+export function revealSweep(el) {
+  if (reducedMotion) return;
+  el.animate(
+    [
+      { filter: 'brightness(0.35) blur(6px)', transform: 'scale(0.985)' },
+      { filter: 'none', transform: 'none' },
+    ],
+    { duration: 750, easing: EASE_OUT },
+  );
+  const sweep = h('div', { class: 'reveal-sweep', 'aria-hidden': 'true' });
+  el.append(sweep);
+  sweep.addEventListener('animationend', () => sweep.remove());
+}

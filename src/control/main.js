@@ -5,7 +5,7 @@ import '@fontsource/creepster/latin.css';
 import './control.css';
 import '../shared/phone.css';
 import { $, fill, h } from '../shared/dom.js';
-import { getColor, getIcon } from '../shared/appearance.js';
+import { avatarOf, getColor } from '../shared/appearance.js';
 import { formatDeltaMs, formatSeconds } from '../shared/format.js';
 import { optionStyle } from '../shared/options.js';
 import { isValidRoomCode, normalizeRoomCode } from '../shared/roomCode.js';
@@ -168,7 +168,7 @@ function renderBanner(text) {
 
 const btn = (label, onclick, cls = '') => h('button', { class: `btn ${cls}`, onclick }, label);
 const avatar = (p) =>
-  h('span', { class: 'c-avatar emoji', style: { background: getColor(p.color).bg, color: getColor(p.color).fg } }, getIcon(p.icon).glyph);
+  h('span', { class: 'c-avatar emoji', style: { background: getColor(p.color).bg, color: getColor(p.color).fg } }, avatarOf(p));
 const teamOf = (id) => view.teams.find((t) => t.id === id);
 
 function navRow() {
@@ -183,7 +183,30 @@ function navRow() {
 
 // ---------- Pestaña Juego
 
+/** Antitrampas: quién ha salido de la app con una pregunta abierta (últimos 10 min), con «Perdonar». */
+function cheatCard() {
+  const recent = (view.cheatAlerts ?? []).filter((a) => Date.now() - a.at < 600_000).reverse();
+  if (!recent.length) return null;
+  return h(
+    'section',
+    { class: 'c-card c-cheats' },
+    h('p', { class: 'c-kicker' }, '🚨 Han salido de la app'),
+    recent.map((a) =>
+      h(
+        'div',
+        { class: 'c-row c-cheat' },
+        h('span', {}, h('strong', {}, a.name), ` · ${Math.round(a.ms / 1000)} s fuera${a.forgiven ? ' · perdonado' : a.voided ? ' · anulado' : ''}`),
+        a.voided && !a.forgiven ? btn('Perdonar', () => cmd('forgive', { playerId: a.playerId })) : null,
+      ),
+    ),
+  );
+}
+
 function gameTab() {
+  return [cheatCard(), gameTabBody()];
+}
+
+function gameTabBody() {
   switch (view.screen) {
     case 'setup':
       return setupPanel();
@@ -192,6 +215,7 @@ function gameTab() {
     case 'intro':
       return [sectionCard(), bigNext(view.playable ? 'Empezar sección →' : 'Saltar esta sección →'), navRow()];
     case 'play':
+      if (view.millionaire) return millionairePanel();
       if (view.free) return freePanel();
       if (view.answer) return answerPanel();
       return view.section?.type === 'pulsador' ? buzzerPanel() : [sectionCard(), bigNext('Siguiente →'), navRow()];
@@ -335,12 +359,139 @@ function buzzerPanel() {
 let freeWinners = { roundId: null, ids: new Set() };
 
 /** Sección Libre ("Fit o Fat"): participantes, cronómetro o contador, y ganadores. */
+/**
+ * Millonario: quién concursa, enseñar respuestas, ver lo que ha elegido, marcarla (amarillo), mostrar la buena (verde)
+ * y llevar la llamada y el público.
+ */
+function millionairePanel() {
+  const m = view.millionaire;
+  const L = ['A', 'B', 'C', 'D', 'E', 'F'];
+  const playing = m.phase === 'playing';
+  const revealed = m.phase === 'revealed';
+  const progress = `Pregunta ${view.itemIndex + 1} de ${view.itemCount}`;
+
+  const seatCard = h(
+    'section',
+    { class: 'c-card' },
+    h('p', { class: 'c-kicker' }, [view.section.name, progress, `${m.points} ${m.points === 1 ? 'punto' : 'puntos'}`].join(' · ')),
+    h(
+      'label',
+      { class: 'c-counter-row' },
+      h('span', {}, 'Concursa'),
+      h(
+        'select',
+        { class: 'c-select', disabled: revealed, onchange: (e) => cmd('mSeat', { playerId: e.target.value }) },
+        m.seat ? null : h('option', { value: '', selected: true }, '— elige —'),
+        view.players.map((p) => h('option', { value: p.id, selected: p.id === m.seat?.id }, `${p.name}${p.connected ? '' : ' (desconectado)'}`)),
+      ),
+    ),
+    m.jokers ? h('p', { class: 'muted small' }, 'Comodines: ' + ['fifty', 'audience', 'call'].map((k) => `${{ fifty: '50:50', audience: 'Público', call: 'Llamada' }[k]} ${m.jokers[k] > 0 ? '✓' : '✗'}`).join(' · ')) : null,
+    m.cheated ? h('p', { class: 'c-live' }, '🚨 Ha salido de la app: aunque acierte, no puntúa (puedes perdonarle arriba)') : null,
+  );
+
+  const optionsCard = h(
+    'section',
+    { class: 'c-card' },
+    h('h2', {}, m.text),
+    h(
+      'ol',
+      { class: 'c-mill-options' },
+      m.options.map((text, i) =>
+        h(
+          'li',
+          { class: [i === m.correct ? 'right' : '', i === m.marked ? 'marked' : '', i === m.choice ? 'choice' : '', i >= m.shown ? 'hidden' : ''].join(' ') },
+          h('strong', {}, `${L[i]}: `),
+          text,
+          i === m.correct ? ' ✓' : '',
+          m.removed.includes(i) ? h('small', {}, ' · quitada (50:50)') : null,
+          i === m.choice && !revealed ? h('small', {}, ' · ← la elegida') : null,
+          i >= m.shown ? h('small', {}, ' · aún no se ve') : null,
+          playing && !m.removed.includes(i) ? btn(`Marcar ${L[i]}`, () => cmd('mMark', { index: i }), i === m.choice ? 'primary small' : 'small') : null,
+        ),
+      ),
+    ),
+  );
+
+  const actions = [];
+  if (!revealed && m.shown < m.count) {
+    actions.push(btn(m.shown ? 'Enseñar la siguiente respuesta' : 'Enseñar la respuesta A', () => cmd('mShow'), 'primary big'), btn('Enseñar todas', () => cmd('mShow', { all: true })));
+  }
+  if (playing && m.shown >= m.count) {
+    actions.push(
+      m.choice != null
+        ? btn(`Marcar la del concursante (${L[m.choice]})`, () => cmd('mMark'), 'primary big')
+        : h('p', { class: 'c-live' }, 'Esperando a que el concursante elija (o márcala tú)'),
+    );
+  }
+  if (m.phase === 'marked') actions.push(btn('Mostrar la respuesta correcta', () => cmd('mReveal'), 'primary big'), btn('Desmarcar', () => cmd('mUnmark')));
+  if (revealed) {
+    actions.push(
+      h('p', { class: 'c-live' }, m.result.correct ? `✓ ¡Correcta!${m.cheated ? ' (sin puntos)' : ` +${m.points}`}` : `✗ Marcó la ${L[m.marked]}, era la ${L[m.correct]}`),
+      btn('Siguiente pregunta →', () => cmd('nextItem'), 'primary big'),
+    );
+  }
+
+  const jokerCards = [];
+  if (m.audience && m.audience.state !== 'cancelled') {
+    jokerCards.push(
+      h(
+        'section',
+        { class: 'c-card' },
+        h('p', { class: 'c-kicker' }, '👥 Público'),
+        m.audience.state === 'voting'
+          ? [
+              h('p', {}, `Votando: ${m.audience.voted} de ${m.audience.voters}`),
+              h('div', { class: 'c-row' }, btn('Terminar ya', () => cmd('mAudienceEnd')), btn('Anular (han hablado)', () => confirm('¿Anular el comodín del público? No se devuelve.') && cmd('mAudienceCancel'), 'danger')),
+            ]
+          : h('p', {}, m.audience.percentages.map((p, i) => `${L[i]}: ${p} %`).join(' · ')),
+      ),
+    );
+  }
+  if (m.call && m.call.state !== 'done') {
+    jokerCards.push(
+      h(
+        'section',
+        { class: 'c-card' },
+        h('p', { class: 'c-kicker' }, `📞 Llamada a ${m.call.friend?.name ?? '¿?'}`),
+        m.call.state === 'waiting'
+          ? [h('p', {}, 'Cuando estén al teléfono, di «ya»:'), btn('¡Ya! Empezar los 30 s', () => cmd('mCallStart'), 'primary big')]
+          : [h('p', {}, 'Corren los 30 segundos…'), btn('Terminar la llamada', () => cmd('mCallEnd'))],
+      ),
+    );
+  }
+
+  return [seatCard, optionsCard, ...jokerCards, h('div', { class: 'c-actions' }, actions), navRow()];
+}
+
+/** Libre con contador y equipos: qué jugador de cada equipo cuenta desde su móvil (solo ese móvil puede sumar). */
+function countersCard(f) {
+  return h(
+    'section',
+    { class: 'c-card' },
+    h('p', { class: 'c-kicker' }, '¿Quién cuenta por cada equipo?'),
+    h('p', { class: 'muted small' }, 'Solo el móvil de ese jugador tendrá los botones +1 / −1.'),
+    f.participants.map((t) =>
+      h(
+        'label',
+        { class: 'c-counter-row' },
+        h('span', {}, t.name),
+        h(
+          'select',
+          { class: 'c-select', onchange: (e) => cmd('freeCounter', { teamId: t.id, playerId: e.target.value }) },
+          h('option', { value: '', selected: !t.counter }, 'Nadie (cuento yo)'),
+          (t.members ?? []).map((m) => h('option', { value: m.id, selected: m.id === t.counter }, m.name)),
+        ),
+      ),
+    ),
+  );
+}
+
 function freePanel() {
   const f = view.free;
   const toolLabel = { none: 'Sin herramienta', stopwatch: 'Cronómetro', counter: 'Contador' }[f.tool];
   const progress = view.itemCount > 1 ? `Prueba ${view.itemIndex + 1} de ${view.itemCount}` : '';
   const chosen = new Set(f.participants.map((p) => p.id));
-  const label = (p) => [p.icon ? getIcon(p.icon).glyph : '', p.name].filter(Boolean).join(' ');
+  const label = (p) => [p.icon || p.face ? h('span', { class: 'c-mini emoji' }, avatarOf(p)) : null, ' ', p.name];
 
   const card = h(
     'section',
@@ -382,12 +533,14 @@ function freePanel() {
         h('div', { class: 'c-row' }, btn('Todos', () => send(f.pool.map((p) => p.id))), btn('Ninguno', () => send([]))),
       ),
     );
+    if (f.tool === 'counter' && f.byTeams && f.participants.length) body.push(countersCard(f));
     if (f.tool !== 'none') {
       body.push(h('button', { class: 'btn primary big', disabled: !chosen.size, onclick: () => cmd('freeStart') }, f.tool === 'stopwatch' ? '¡Empezar! (cronómetro)' : '¡Empezar!'));
     } else if (chosen.size) {
       body.push(winnersPicker(f));
     }
   } else if (f.phase === 'running') {
+    if (f.tool === 'counter' && f.byTeams) body.push(countersCard(f)); // se puede cambiar quién cuenta en marcha
     body.push(
       h('p', { class: 'c-live' }, f.tool === 'stopwatch' ? 'Cronómetro en marcha: marca a quien caiga' : 'En marcha: suma lo que haga cada uno'),
       h(
@@ -614,7 +767,7 @@ function revealSummary(a) {
     h('p', { class: 'c-kicker' }, 'Resultado'),
     extra.map((t) => h('p', {}, t)),
     scorers.length
-      ? h('ol', { class: 'c-followers plain' }, scorers.map((e) => h('li', {}, `${e.player.name} +${e.points}${e.doubled ? ' (×2)' : ''}`)))
+      ? h('ol', { class: 'c-followers plain' }, scorers.map((e) => h('li', {}, `${e.player.name} +${e.points}`)))
       : h('p', { class: 'muted' }, 'Nadie suma en esta pregunta.'),
   );
 }
@@ -627,7 +780,7 @@ function resultCard(game) {
   return h(
     'div',
     { class: 'c-winner', style: { '--wc': getColor(w.color).bg, '--wc-fg': getColor(w.color).fg } },
-    h('div', { class: 'c-winner-main' }, h('span', { class: 'emoji big-icon' }, getIcon(w.icon).glyph), h('div', {}, h('strong', {}, w.name), team ? h('small', {}, team.name) : null)),
+    h('div', { class: 'c-winner-main' }, w.icon || w.face ? h('span', { class: 'emoji big-icon' }, avatarOf(w)) : null, h('div', {}, h('strong', {}, w.name), team ? h('small', {}, team.name) : null)),
     first ? h('span', { class: 'c-time' }, formatSeconds(first.reactionMs)) : null,
     game.judged === 'correct' ? h('p', { class: 'c-verdict' }, `¡Correcto! +${view.pointsForCorrect}`) : null,
     game.ranking.length > 1
@@ -663,7 +816,42 @@ function standingsCard(title) {
 
 // ---------- Pestaña Jugadores
 
+/** Portavoces de los equipos (para las secciones por turnos). */
+function spokespeopleCard() {
+  if (!view.teams.length) return null;
+  const turns = view.turns;
+  return h(
+    'section',
+    { class: 'c-card' },
+    h('p', { class: 'c-kicker' }, '📣 Portavoces'),
+    h('p', { class: 'muted small' }, 'En las secciones por turnos, el portavoz ordena a su equipo desde su móvil.'),
+    view.teams.map((t) => {
+      const members = view.players.filter((p) => p.teamId === t.id);
+      const tt = turns?.teams.find((x) => x.team.id === t.id);
+      return h(
+        'div',
+        {},
+        h(
+          'label',
+          { class: 'c-counter-row' },
+          h('span', {}, t.name),
+          h(
+            'select',
+            { class: 'c-select', onchange: (e) => cmd('setSpokesperson', { teamId: t.id, playerId: e.target.value }) },
+            members.map((m) => h('option', { value: m.id, selected: m.id === view.spokespeople?.[t.id] }, m.name)),
+          ),
+        ),
+        tt ? h('p', { class: 'muted small' }, (tt.ready ? '✓ Orden: ' : 'Orden (aún sin elegir): ') + tt.order.filter(Boolean).map((p, i) => `${i + 1}. ${p.name}`).join(' · ')) : null,
+      );
+    }),
+  );
+}
+
 function playersTab() {
+  return [spokespeopleCard(), playersTabBody()];
+}
+
+function playersTabBody() {
   const groups = view.teams.length
     ? [...view.teams.map((t) => ({ team: t, members: view.players.filter((p) => p.teamId === t.id) })), { team: null, members: view.players.filter((p) => !p.teamId) }]
     : [{ team: null, members: view.players }];

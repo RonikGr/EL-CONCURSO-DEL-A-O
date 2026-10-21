@@ -1,17 +1,16 @@
 // Pantallas de la tele (salvo el juego del Pulsador, en stage.js). Cada función devuelve el contenido de la
 // pantalla a partir de `room.view()`; main.js decide cuándo repintar.
 import { h } from '../shared/dom.js';
-import { getColor, getIcon } from '../shared/appearance.js';
+import { avatarOf, getColor } from '../shared/appearance.js';
 import { MAX_PLAYERS, MIN_PLAYERS } from '../core/players.js';
 import { envGradient, getEnv, sectionEnv } from '../shared/environments.js';
 import { flipReorder, kinetic, later, odometer } from './fx/motion.js';
 import { celebrate } from './fx/confetti.js';
 import { sound } from './fx/audio.js';
-import { MUSIC_SLOTS } from './fx/tracks.js';
 
 const kbd = (key) => h('kbd', {}, key);
 const avatar = (p, cls = 'avatar') =>
-  h('span', { class: `${cls} emoji`, style: { '--pc': getColor(p.color).bg, '--pc-fg': getColor(p.color).fg }, 'aria-hidden': 'true' }, getIcon(p.icon).glyph);
+  h('span', { class: `${cls} emoji`, style: { '--pc': getColor(p.color).bg, '--pc-fg': getColor(p.color).fg }, 'aria-hidden': 'true' }, avatarOf(p));
 
 function pointsText(points, ranked) {
   if (!points?.length) return '';
@@ -23,7 +22,7 @@ function pointsText(points, ranked) {
 // ---------------------------------------------------------------------------------------- Preparación
 
 /**
- * @param ctx {joinQr, controlQr, joinUrlText, onFile, onStart, onLockTeams, onMoveTeam, tracks, onAddTracks, onRemoveTrack}
+ * @param ctx {joinQr, controlQr, joinUrlText, onFile, onStart, onLockTeams, onMoveTeam, facesCount, tracksCount, onOpenFaces, onOpenMusic}
  */
 export function setupScreen(view, ctx) {
   const connected = view.players.filter((p) => p.connected).length;
@@ -70,7 +69,7 @@ export function setupScreen(view, ctx) {
       'section',
       { class: 'setup-main' },
       importBox,
-      musicBox(ctx),
+      extrasBox(ctx),
       h(
         'div',
         { class: 'setup-players' },
@@ -109,60 +108,19 @@ export function setupScreen(view, ctx) {
   );
 }
 
-// Panel «Música»: tus .mp3 para cada momento (se guardan en este portátil). Plegado por defecto; se recuerda si se abrió.
-let musicOpen = false;
-
-function musicBox(ctx) {
-  const tracks = ctx.tracks ?? {};
-  const total = Object.values(tracks).reduce((n, list) => n + list.length, 0);
+// Caras y música: dos botones que abren sus ventanas (main.js), con un resumen de lo que hay.
+function extrasBox(ctx) {
+  const n = ctx.tracksCount;
   return h(
-    'details',
-    { class: 'import-box music-box', open: musicOpen, ontoggle: (e) => (musicOpen = e.target.open) },
+    'div',
+    { class: 'import-box extras-box' },
     h(
-      'summary',
-      {},
-      h('h3', {}, '🎵 Música'),
-      h('span', { class: 'muted small' }, total ? `${total} ${total === 1 ? 'canción tuya' : 'canciones tuyas'}` : 'Música generada en todos los momentos'),
+      'div',
+      { class: 'import-actions' },
+      h('button', { class: 'btn', type: 'button', onclick: ctx.onOpenFaces }, `🙂 Caras · ${ctx.facesCount}`),
+      h('button', { class: 'btn', type: 'button', onclick: ctx.onOpenMusic }, `🎵 Música · ${n ? `${n} ${n === 1 ? 'canción' : 'canciones'}` : 'generada'}`),
     ),
-    h('p', { class: 'muted small' }, 'Añade tus .mp3 a cada momento (puedes poner varias: van alternándose). Se guardan solo en este portátil.'),
-    h(
-      'ul',
-      { class: 'music-slots' },
-      MUSIC_SLOTS.map((slot) => {
-        const list = tracks[slot.id] ?? [];
-        const input = h('input', {
-          type: 'file',
-          accept: 'audio/*,.mp3',
-          multiple: true,
-          hidden: true,
-          onchange: (e) => {
-            ctx.onAddTracks(slot.id, e.target.files);
-            e.target.value = '';
-          },
-        });
-        return h(
-          'li',
-          {},
-          h('div', { class: 'ms-head' }, h('strong', {}, slot.label), h('small', { class: 'muted' }, slot.help)),
-          h(
-            'div',
-            { class: 'ms-tracks' },
-            list.length
-              ? list.map((t) =>
-                  h(
-                    'span',
-                    { class: 'ms-track' },
-                    t.name,
-                    h('button', { class: 'ms-remove', type: 'button', title: 'Quitar', 'aria-label': `Quitar ${t.name}`, onclick: () => ctx.onRemoveTrack(t.id) }, '×'),
-                  ),
-                )
-              : h('span', { class: 'muted small' }, 'Generada'),
-          ),
-          h('button', { class: 'btn small', type: 'button', onclick: () => input.click() }, '+ .mp3'),
-          input,
-        );
-      }),
-    ),
+    h('p', { class: 'muted small' }, 'Fotos de los jugadores (se reconocen por su nombre) y tus canciones para cada momento. Se guardan en este portátil.'),
   );
 }
 
@@ -211,6 +169,19 @@ function teamsBoardView(view, ctx) {
                   { class: p.connected ? '' : 'offline' },
                   avatar(p, 'mini-avatar'),
                   h('span', { class: 'member-name' }, p.name),
+                  team.id
+                    ? h(
+                        'button',
+                        {
+                          type: 'button',
+                          class: `spokes-btn ${view.spokespeople?.[team.id] === p.id ? 'on' : ''}`,
+                          title: view.spokespeople?.[team.id] === p.id ? 'Portavoz del equipo' : `Hacer portavoz a ${p.name}`,
+                          'aria-label': view.spokespeople?.[team.id] === p.id ? `${p.name} es el portavoz` : `Hacer portavoz a ${p.name}`,
+                          onclick: () => ctx.onSpokesperson(team.id, p.id),
+                        },
+                        '📣',
+                      )
+                    : null,
                   h(
                     'select',
                     {
@@ -282,6 +253,7 @@ export function coverScreen(view) {
             ['📱', 'Tu móvil es tu pulsador: respondes desde él.'],
             ['⏱️', 'Antes de cada pregunta, una cuenta atrás. ¡No pulses antes de tiempo!'],
             ['🔒', 'La primera respuesta es la que vale: tócala dos veces para confirmar.'],
+            ['🚨', 'Si sales de la app con una pregunta abierta, ¡te pillamos! Y tu respuesta no cuenta.'],
             teams.length ? ['🏆', `Juegan ${teams.length} equipos: cada punto tuyo suma para el tuyo.`] : ['🏆', 'Gana quien más puntos tenga al final.'],
           ].map(([icon, text], i) => h('li', { style: { '--d': `${1300 + i * 220}ms` } }, h('span', { class: 'emoji' }, icon), h('span', {}, text))),
         ),
@@ -308,6 +280,35 @@ export function introScreen(view) {
     s.description ? h('p', { class: 'intro-desc' }, s.description) : null,
     h('p', { class: 'intro-points' }, pointsText(s.points, s.points.length > 1)),
     view.playable ? null : h('p', { class: 'intro-soon' }, 'Esta sección llegará en una próxima versión: se saltará.'),
+    view.turns ? turnsIntro(view.turns) : null,
+  );
+}
+
+/** Por turnos: cada uno responde una pregunta; el portavoz de cada equipo elige el orden en su móvil. */
+function turnsIntro(turns) {
+  return h(
+    'div',
+    { class: 'turns-intro' },
+    h('p', { class: 'how' }, 'Por turnos: cada uno responde una pregunta. ¡Portavoces, ordenad a vuestro equipo de la más fácil a la más difícil!'),
+    h(
+      'ul',
+      { class: 'turns-teams' },
+      turns.teams.map((t) =>
+        h(
+          'li',
+          { class: t.ready ? 'ready' : '', style: { '--tc': getColor(t.team.color).bg } },
+          h('strong', {}, t.team.name),
+          h('span', { class: 'muted' }, t.ready ? '✓ Orden listo' : `📣 ${t.spokesperson?.name ?? '¿?'} está ordenando…`),
+          t.ready
+            ? h(
+                'ol',
+                {},
+                t.order.filter(Boolean).map((p) => h('li', {}, h('span', { class: 'emoji' }, avatarOf(p)), p.name)),
+              )
+            : null,
+        ),
+      ),
+    ),
   );
 }
 
@@ -396,7 +397,7 @@ export function finalScreen(view) {
         return h(
           'div',
           { class: `podium-step p${i + 1}`, style: { '--pc': getColor(e.color).bg, '--pc-fg': getColor(e.color).fg, '--d': `${PODIUM_AT[i + 1]}ms` } },
-          e.icon ? h('span', { class: 'podium-icon emoji' }, getIcon(e.icon).glyph) : null,
+          e.icon || e.face ? h('span', { class: 'podium-icon emoji' }, avatarOf(e)) : null,
           h('span', { class: 'podium-name' }, e.name),
           h('span', { class: 'podium-score' }, `${e.score} pts`),
           h('span', { class: 'podium-block' }, `${i + 1}º`),

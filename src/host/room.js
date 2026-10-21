@@ -10,22 +10,30 @@ import {
   ANSWER_TYPES,
   APHASE,
   AnswerRound,
-  GREEN_MAX_MS,
   GREEN_MIN_MS,
   JokerBank,
   buildQuestion,
   isChoice,
   isTiming,
+  AWAY_MIN_MS,
+  reflexDelayMs,
+  reflexPlan,
+  reflexVariant,
+  revealHoldMs,
 } from '../core/answers.js';
 import { ERROR_CODE, MSG } from '../shared/protocol.js';
 import { FPHASE, FreeRound } from '../core/free.js';
 import { PeerSource } from './sources/peerSource.js';
 import { saveRoom } from './persistence.js';
+import { matchFace } from '../core/faces.js';
+import { TURN_TYPES, answererFor, normalizeOrder, seatFor } from '../core/turns.js';
+import { MPHASE, MillionaireRound } from '../core/millionaire.js';
 import { sectionEnv } from '../shared/environments.js';
 
 /** Ajustes de tiempos del pulsador y del sonido de la tele (los puntos vienen del concurso). */
 export const DEFAULT_SETTINGS = {
   lockEarlyBuzz: true,
+  antiCheat: 'void', // salir de la app con una pregunta abierta: 'void' anula su respuesta, 'warn' solo avisa, 'off' nada
   scheduledOpenMs: 300,
   countdownSec: 3, // cuenta atrás 3-2-1 antes de cada pregunta (pulsador y respuestas)
   decisionWindowMs: 150,
@@ -40,6 +48,20 @@ const ANSWER_GRACE_MS = 500; // tras el final, se espera un poco a respuestas da
 const now = () => performance.now();
 
 export class HostRoom extends EventTarget {
+  // Puntos de un revelado que se suman cuando la tele ya enseña quién ha ganado (no antes: chivarían el resultado).
+  #pendingPoints = null; // {points: {playerId: pts}, timer}
+  // Millonario (secciones de Test): la pregunta en juego, sus temporizadores y desde cuándo se ve
+  millionaire = null;
+  #mTimers = [];
+  #mStartedAt = null;
+  // Caras: fotos guardadas en este portátil, cada una con sus nombres. Quien entra con uno de ellos juega con su cara.
+  faces = []; // [{id, names, img}]
+  #sentFaces = ''; // caras que tienen ahora los móviles (ids), para no reenviarlas sin cambios
+  // Antitrampas: quién está ahora fuera de la app (desde cuándo) y los avisos de la tele y el mando
+  #away = new Map(); // playerId → instante en que salió
+  #buzzerOpenedAt = null;
+  cheatAlerts = []; // [{id, playerId, name, ms, voided, forgiven, at}] los últimos
+  #alertSeq = 0;
   #windowTimer = null;
   #openTimer = null;
   #answerTimer = null;
@@ -67,12 +89,16 @@ export class HostRoom extends EventTarget {
     this.game = new QuestionEngine(this.settings);
     this.jokers = new JokerBank(this.show.settings?.jokers ?? SHOW_DEFAULTS.jokers, saved?.jokersUsed ?? {});
     this.itemResults = saved?.itemResults ?? {}; // playKey → resultado ya puntuado de una pregunta de respuestas
+    // Por turnos: portavoz de cada equipo (lo elige el presentador; si no, el primero que entró) y orden por sección
+    this.spokespeople = new Map(Object.entries(saved?.spokespeople ?? {})); // teamId → playerId
+    this.turnOrders = saved?.turnOrders ?? {}; // sectionId → teamId → [playerId…]
     this.answerRound = null;
     this.freeRound = null; // sección Libre: la prueba actual
     this.duelPick = []; // Duelo de reflejos: los dos que juegan (se mantiene entre rondas)
     this.#playKey = this.runner.playKey;
     this.#syncAnswerRound();
     this.#syncFreeRound();
+    this.#syncMillionaire();
     this.lastImport = null;
 
     this.network = { state: 'connecting', message: '' };
@@ -93,6 +119,8 @@ export class HostRoom extends EventTarget {
         onAnswer: (playerId, msg) => this.#onAnswer(playerId, msg),
         onJoker: (playerId, msg) => this.#onJoker(playerId, msg),
         onFreeCount: (playerId, msg) => this.#onFreeCount(playerId, msg),
+        onAway: (playerId, msg) => this.#onAway(playerId, msg),
+        onTurnOrder: (playerId, msg) => this.#onTurnOrder(playerId, msg),
         onSyncReport: (playerId, report) => {
           this.sync.set(playerId, report);
           this.#changed({ persist: false });
@@ -139,6 +167,87 @@ export class HostRoom extends EventTarget {
   }
 
   /** ¿Se está jugando una prueba de la sección Libre? */
+  /** Sección por turnos (con equipos): cada pregunta la responde uno de cada equipo, en el orden de su portavoz. */
+  get inTurns() {
+    const s = this.runner.section;
+    return this.roster.hasTeams && (s?.type === 'test' || (!!s?.turns && TURN_TYPES.has(s.type)));
+  }
+
+  /** ¿Se está jugando una pregunta del millonario (sección de Test)? */
+  get inMillionairePlay() {
+    return this.runner.screen === SCREEN.PLAY && this.runner.section?.type === 'test' && !this.runner.peekScoreboard && !!this.millionaire;
+  }
+
+  /** Millonario: grupos para el asiento (equipos con el orden de su portavoz; sin equipos, todos por orden de llegada). */
+  #seatGroups() {
+    if (!this.roster.hasTeams) return [{ teamId: null, order: this.roster.list().map((p) => p.id) }];
+    return this.roster.teams.map((t) => ({ teamId: t.id, order: this.#turnOrder(t.id) }));
+  }
+
+  /** Millonario: en qué pregunta (1, 2…) concursa este jugador en la sección actual (si todos estuvieran conectados). */
+  #seatQuestionOf(playerId) {
+    const groups = this.#seatGroups();
+    for (let k = 0; k < Math.max(1, this.runner.itemCount); k++) if (seatFor(groups, k)?.playerId === playerId) return k + 1;
+    return null;
+  }
+
+  #members(teamId) {
+    return this.roster.list().filter((p) => p.teamId === teamId);
+  }
+
+  /** Portavoz de un equipo: el elegido por el presentador o, si no hay, el primero que entró en el equipo. */
+  spokespersonOf(teamId) {
+    const members = this.#members(teamId);
+    const chosen = this.spokespeople.get(teamId);
+    return members.find((p) => p.id === chosen)?.id ?? members[0]?.id ?? null;
+  }
+
+  /** Orden del equipo en la sección actual (el del portavoz, completado). */
+  #turnOrder(teamId) {
+    const ids = this.#members(teamId).map((p) => p.id);
+    return normalizeOrder(this.turnOrders[this.runner.section?.id]?.[teamId], ids);
+  }
+
+  /** Quién responde la pregunta actual por cada equipo (saltando a los desconectados). */
+  #answerers() {
+    const connected = (id) => !!this.roster.get(id)?.connected;
+    return this.roster.teams
+      .map((team) => ({ team, playerId: answererFor(this.#turnOrder(team.id), this.runner.itemIndex, connected) }))
+      .filter((a) => a.playerId);
+  }
+
+  /** Por turnos, para la tele y el mando: portavoces, si ya ordenaron, el orden y a quién le toca ahora. */
+  #turnsView() {
+    if (!this.inTurns || ![SCREEN.INTRO, SCREEN.PLAY].includes(this.runner.screen)) return null;
+    const sec = this.runner.section.id;
+    const pub = (id) => (id && this.roster.get(id) ? publicPlayer(this.roster.get(id)) : null);
+    return {
+      teams: this.roster.teams.map((team) => ({
+        team,
+        spokesperson: pub(this.spokespersonOf(team.id)),
+        ready: !!this.turnOrders[sec]?.[team.id],
+        order: this.#turnOrder(team.id).map(pub),
+      })),
+      answerers:
+        this.runner.screen !== SCREEN.PLAY
+          ? []
+          : this.runner.section.type === 'test'
+            ? this.millionaire?.seat.playerId
+              ? [{ team: this.roster.team(this.millionaire.seat.teamId), player: pub(this.millionaire.seat.playerId) }]
+              : []
+            : this.#answerers().map(({ team, playerId }) => ({ team, player: pub(playerId) })),
+    };
+  }
+
+  /** Por turnos: el portavoz manda desde su móvil el orden de su equipo (mientras se presenta la sección). */
+  #onTurnOrder(playerId, msg) {
+    const p = this.roster.get(playerId);
+    if (!p?.teamId || !this.inTurns || this.runner.screen !== SCREEN.INTRO || this.spokespersonOf(p.teamId) !== playerId) return;
+    const sec = this.runner.section.id;
+    this.turnOrders[sec] = { ...this.turnOrders[sec], [p.teamId]: normalizeOrder(msg.order, this.#members(p.teamId).map((m) => m.id)) };
+    this.#afterChange();
+  }
+
   get inFreePlay() {
     return this.runner.screen === SCREEN.PLAY && this.runner.section?.type === 'libre' && !this.runner.peekScoreboard && !!this.freeRound;
   }
@@ -170,6 +279,8 @@ export class HostRoom extends EventTarget {
       ...p,
       rtt: p.connected ? (this.rtt.get(p.id) ?? null) : null,
       lock: this.inBuzzerPlay ? (this.game.lockouts.get(p.id) ?? null) : null,
+      away: this.#away.has(p.id), // antitrampas: ahora mismo fuera de la app
+      cheated: this.inAnswerPlay && this.answerRound.cheaters.has(p.id),
     }));
   }
 
@@ -216,12 +327,13 @@ export class HostRoom extends EventTarget {
       duel: !!q.duel,
       duelPick: q.duel ? this.duelPick.map(pub) : [],
       tGreen: r.tGreen,
+      reflex: r.reflex ?? (q.kind === 'reflejos' ? { variant: reflexVariant(q.round), cues: [] } : null),
       candidates: r.candidates.map(pub),
       subject: q.subjectId ? pub(q.subjectId) : q.subjectName ? { name: q.subjectName } : null,
       tOpen: r.tOpen,
       deadline: r.deadline,
       answeredIds: [...r.answers.keys()],
-      eligibleIds: [...r.eligible],
+      eligibleIds: [...r.eligible].filter((id) => !r.cheaters.has(id)), // los anulados ya no cuentan en «X de Y han respondido»
       counts: showCounts ? r.counts() : null,
       correct: revealed || forControl ? q.correct : null,
       points: q.points,
@@ -248,7 +360,7 @@ export class HostRoom extends EventTarget {
         return { id, name: team?.name ?? '¿?', color: team?.color ?? 'gris', icon: null, isTeam: true };
       }
       const p = this.roster.get(id);
-      return { id, name: p?.name ?? '¿?', color: p?.color ?? 'gris', icon: p?.icon ?? null, isTeam: false };
+      return { id, name: p?.name ?? '¿?', color: p?.color ?? 'gris', icon: p?.icon ?? null, face: p?.face ?? null, isTeam: false };
     };
     const pool = r.byTeams ? this.roster.teams.map((tm) => tm.id) : this.roster.list().map((p) => p.id);
     return {
@@ -265,6 +377,9 @@ export class HostRoom extends EventTarget {
         ...who(id),
         out: id in r.out ? r.out[id] : null,
         count: r.counts[id] ?? 0,
+        // Con equipos: quién cuenta desde su móvil y entre quiénes se puede elegir (solo el mando)
+        counter: r.byTeams ? (r.counters[id] ?? null) : null,
+        members: forControl && r.byTeams ? this.roster.list().filter((p) => p.teamId === id).map((p) => ({ id: p.id, name: p.name })) : null,
       })),
       ranking: r.ranking(t).map((row) => ({ ...row, who: who(row.id) })),
       winners: r.winners.map(who),
@@ -297,6 +412,7 @@ export class HostRoom extends EventTarget {
       game: this.inBuzzerPlay ? this.gameView() : null,
       answer: this.inAnswerPlay ? this.answerView() : null,
       free: this.inFreePlay ? this.freeView() : null,
+      millionaire: this.inMillionairePlay ? this.millionaireView() : null,
       pointsForCorrect: this.pointsForCorrect,
       pointsForWrong: this.pointsForWrong,
       players: this.players(),
@@ -307,6 +423,9 @@ export class HostRoom extends EventTarget {
       pendingControls: [...this.pendingControls].map(([id, info]) => ({ id, ...info })),
       controlsConnected: this.connectedControls.size,
       lastImport: this.lastImport,
+      cheatAlerts: this.cheatAlerts.slice(-5),
+      turns: this.#turnsView(),
+      spokespeople: Object.fromEntries(this.roster.teams.map((t) => [t.id, this.spokespersonOf(t.id)])),
       settings: this.settings,
     };
   }
@@ -324,7 +443,7 @@ export class HostRoom extends EventTarget {
   /** Vista para el mando del presentador (incluye respuestas: solo se manda a mandos aprobados). */
   controlView() {
     const v = this.view();
-    const pub = (p) => p && { id: p.id, name: p.name, icon: p.icon, color: p.color, teamId: p.teamId };
+    const pub = (p) => p && { id: p.id, name: p.name, icon: p.icon, face: p.face ?? null, color: p.color, teamId: p.teamId };
     return {
       code: v.code,
       network: this.network,
@@ -361,6 +480,7 @@ export class HostRoom extends EventTarget {
       },
       answer: this.inAnswerPlay ? this.answerView({ forControl: true }) : null,
       free: this.inFreePlay ? this.freeView({ forControl: true }) : null,
+      millionaire: this.inMillionairePlay ? this.millionaireView({ forControl: true }) : null,
       pointsForCorrect: v.pointsForCorrect,
       pointsForWrong: v.pointsForWrong,
       players: v.players.map((p) => ({ ...pub(p), score: p.score, connected: p.connected, rtt: p.rtt, lock: p.lock })),
@@ -371,6 +491,9 @@ export class HostRoom extends EventTarget {
       minPlayers: MIN_PLAYERS,
       pendingControls: v.pendingControls,
       lastImport: v.lastImport,
+      cheatAlerts: v.cheatAlerts,
+      turns: v.turns,
+      spokespeople: v.spokespeople,
       settings: v.settings,
     };
   }
@@ -381,6 +504,8 @@ export class HostRoom extends EventTarget {
   run(action, args = {}) {
     const fn = this.#actions[action];
     if (!fn) return { ok: false, error: `Orden desconocida: ${action}` };
+    // Cualquier orden (pasar de pregunta, reiniciar, corregir puntos…) da antes los puntos que estuvieran esperando.
+    this.#applyPendingPoints();
     const res = fn(args ?? {});
     if (res === false) return { ok: false, error: 'No se puede hacer ahora.' };
     if (typeof res === 'string') return { ok: false, error: res };
@@ -409,6 +534,7 @@ export class HostRoom extends EventTarget {
       if (!this.inBuzzerPlay) return false;
       if (!this.canStart) return `Hacen falta al menos ${MIN_PLAYERS} jugadores conectados.`;
       if (!this.game.open(now())) return false;
+      this.#buzzerOpenedAt = now();
       if (this.runner.item?.showOnTv) this.runner.showQuestion(); // al abrir, la pregunta se ve en la tele
       this.#scheduleOpenRepaint();
       return true;
@@ -430,6 +556,7 @@ export class HostRoom extends EventTarget {
       return true;
     },
     restart: () => {
+      if (this.inMillionairePlay) return this.#restartMillionaire();
       if (this.inAnswerPlay) return this.#restartAnswerRound();
       if (this.inFreePlay) return this.#restartFreeRound();
       if (!this.inBuzzerPlay) return false;
@@ -443,14 +570,19 @@ export class HostRoom extends EventTarget {
       if (!this.canStart) return `Hacen falta al menos ${MIN_PLAYERS} jugadores conectados.`;
       const q = this.answerRound.question;
       let eligibleIds = this.roster.list().filter((p) => p.connected).map((p) => p.id);
+      // Por turnos: solo el que le toca de cada equipo
+      if (this.inTurns && !q.duel) eligibleIds = this.#answerers().map((a) => a.playerId).filter((id) => eligibleIds.includes(id));
       if (q.duel) {
         eligibleIds = this.duelPick.filter((id) => eligibleIds.includes(id));
         if (eligibleIds.length !== 2) return 'Elige a los dos jugadores del duelo (y que estén conectados).';
       }
-      const greenDelayMs = GREEN_MIN_MS + Math.random() * (GREEN_MAX_MS - GREEN_MIN_MS);
+      // Reflejos: la 1ª ronda, clásica; las demás, con despistes (colores que no valen, una araña…)
+      const variant = q.kind === 'reflejos' ? reflexVariant(q.round) : null;
+      const greenDelayMs = variant ? reflexDelayMs(variant) : GREEN_MIN_MS;
       if (!this.answerRound.open({ now: now(), eligibleIds, scheduledOpenMs: this.settings.scheduledOpenMs, greenDelayMs, countdownMs: this.settings.countdownSec * 1000 })) return false;
       if (!this.answerRound.eligible.size) return 'No hay nadie que pueda responder a esta pregunta.';
       const r = this.answerRound;
+      if (variant) r.reflex = { variant, ...reflexPlan(variant, r.tOpen, r.tGreen) };
       // Reflejos: repintar la tele justo al ponerse verde (los móviles cambian solos con su reloj sincronizado).
       clearTimeout(this.#greenTimer);
       if (r.tGreen != null) this.#greenTimer = setTimeout(() => this.#changed({ persist: false }), Math.max(0, r.tGreen - now()));
@@ -466,6 +598,12 @@ export class HostRoom extends EventTarget {
     freeOut: ({ id }) => this.inFreePlay && this.freeRound.eliminate(id, now()),
     freeRevive: ({ id }) => this.inFreePlay && this.freeRound.revive(id),
     freeCount: ({ id, delta }) => this.inFreePlay && this.freeRound.count(id, Number(delta) || 0),
+    // Con equipos: el jugador que cuenta desde su móvil por su equipo ('' = nadie)
+    freeCounter: ({ teamId, playerId = '' }) => {
+      if (!this.inFreePlay) return false;
+      if (playerId && this.roster.get(playerId)?.teamId !== teamId) return 'Ese jugador no es de ese equipo.';
+      return this.freeRound.setCounter(teamId, playerId || null);
+    },
     freeStop: () => this.inFreePlay && this.freeRound.stop(now()),
     freeAward: ({ ids = '' }) => {
       if (!this.inFreePlay) return false;
@@ -486,27 +624,91 @@ export class HostRoom extends EventTarget {
       return true;
     },
     closeAnswers: () => {
-      if (!this.inAnswerPlay || !this.answerRound.close()) return false;
+      if (!this.inAnswerPlay || !this.answerRound.close(now())) return false;
       clearTimeout(this.#answerTimer);
       return true;
     },
     reveal: () => {
       if (!this.inAnswerPlay) return false;
       const r = this.answerRound;
-      if (!r.reveal({ ownerOf: this.ownerOf })) return false;
+      if (!r.reveal()) return false;
       clearTimeout(this.#answerTimer);
-      for (const [id, pts] of Object.entries(r.results.points)) this.roster.adjustScore(id, pts);
+      // Los puntos, cuando la tele ya enseña a los ganadores (tras el redoble y el suspense)
+      const kind = r.question.kind;
+      const rows = isChoice(kind) ? r.results.entries.filter((e) => e.correct).length : kind === 'votacion' ? r.candidates.length : r.results.entries.length;
+      this.#holdPoints(r.results.points, revealHoldMs(kind, rows));
       this.itemResults[this.runner.playKey] = {
         answers: [...r.answers],
         candidates: r.candidates,
         eligible: [...r.eligible],
         results: r.results,
-        jokers: [...r.jokers].map(([owner, kinds]) => [owner, [...kinds]]),
-        removed: [...r.removed],
       };
       return true;
     },
     unlock: ({ playerId }) => this.game.unlock(playerId),
+    // Millonario: enseñar respuestas, marcar (amarillo), revelar (verde), llamada y público
+    mShow: ({ all = false }) => this.inMillionairePlay && this.millionaire.show(!!all),
+    mSeat: ({ playerId }) => {
+      if (!this.inMillionairePlay || this.millionaire.phase === MPHASE.REVEALED) return false;
+      const p = this.roster.get(playerId);
+      if (!p) return false;
+      this.millionaire.seat = { playerId, teamId: p.teamId ?? null };
+      this.millionaire.choice = null;
+      return true;
+    },
+    mMark: ({ index }) => {
+      if (!this.inMillionairePlay) return false;
+      const r = this.millionaire;
+      const i = index === undefined || index === '' ? r.choice : Number(index);
+      if (i == null) return 'El concursante aún no ha elegido: marca tú una respuesta.';
+      r.finishAudience();
+      return r.mark(i);
+    },
+    mUnmark: () => this.inMillionairePlay && this.millionaire.unmark(),
+    mReveal: () => {
+      if (!this.inMillionairePlay) return false;
+      const r = this.millionaire;
+      if (!r.reveal()) return 'Marca antes la respuesta del concursante.';
+      this.#holdPoints(r.results.points, 2200); // tras el verde
+      this.itemResults[this.runner.playKey] = { millionaire: r.toJSON() };
+      return true;
+    },
+    mCallStart: () => {
+      if (!this.inMillionairePlay || !this.millionaire.runCall(now())) return false;
+      const round = this.millionaire;
+      this.#mTimer(round.call.endsAt, () => {
+        if (round === this.millionaire && round.endCall()) this.#afterChange({ persist: false });
+      });
+      return true;
+    },
+    mCallEnd: () => this.inMillionairePlay && this.millionaire.endCall(),
+    mAudienceCancel: () => this.inMillionairePlay && this.millionaire.cancelAudience(),
+    mAudienceEnd: () => this.inMillionairePlay && this.millionaire.finishAudience(),
+    // Por turnos: portavoz de un equipo y, si hace falta, el orden desde el mando ('id,id,…')
+    setSpokesperson: ({ teamId, playerId }) => {
+      if (this.roster.get(playerId)?.teamId !== teamId) return 'Ese jugador no es de ese equipo.';
+      this.spokespeople.set(teamId, playerId);
+      return true;
+    },
+    setTurnOrder: ({ teamId, order = '' }) => {
+      if (!this.inTurns) return 'Esta sección no se juega por turnos.';
+      const sec = this.runner.section.id;
+      this.turnOrders[sec] = { ...this.turnOrders[sec], [teamId]: normalizeOrder(String(order).split(','), this.#members(teamId).map((m) => m.id)) };
+      return true;
+    },
+    // Antitrampas: el presentador perdona a quien salió de la app (vuelve a poder responder o pulsar)
+    forgive: ({ playerId }) => {
+      let ok = false;
+      if (this.inAnswerPlay) ok = this.answerRound.forgive(playerId);
+      if (this.inBuzzerPlay && this.game.lockouts.get(playerId) === LOCK.CHEAT) ok = this.game.unlock(playerId);
+      if (this.inMillionairePlay && this.millionaire.seat.playerId === playerId && this.millionaire.cheated && this.millionaire.phase !== MPHASE.REVEALED) {
+        this.millionaire.cheated = false;
+        ok = true;
+      }
+      if (!ok) return 'Ya no se puede perdonar en esta pregunta.';
+      for (const a of this.cheatAlerts) if (a.playerId === playerId && a.voided) a.forgiven = true;
+      return true;
+    },
 
     lockTeams: ({ locked = true }) => {
       if (!this.roster.hasTeams) return 'Este concurso no tiene equipos.';
@@ -523,6 +725,7 @@ export class HostRoom extends EventTarget {
       this.itemResults = {};
       this.#syncAnswerRound();
       this.#syncFreeRound();
+      this.#syncMillionaire();
       return true;
     },
     removePlayer: ({ playerId }) => {
@@ -539,6 +742,7 @@ export class HostRoom extends EventTarget {
       if (!this.pendingControls.delete(controlId)) return false;
       this.approvedControls.add(controlId);
       this.connectedControls.add(controlId);
+      this.source.sendToControl(controlId, { t: MSG.FACES, images: this.#faceImages() });
       this.source.sendToControl(controlId, { t: MSG.CONTROL_STATUS, status: 'approved' });
       return true;
     },
@@ -585,14 +789,22 @@ export class HostRoom extends EventTarget {
     if (!res.ok) {
       return { ok: false, error: { code: ERROR_CODE.ROOM_FULL, message: `La sala está llena (máximo ${MAX_PLAYERS} jugadores).` } };
     }
+    this.#assignFaces();
+    this.source.sendTo(playerId, { t: MSG.FACES, images: this.#faceImages() }); // antes del welcome: que ya se vea su cara
+    this.#broadcastFaces();
     this.#sendWelcome(res);
     this.#afterChange(); // cambian el número de jugadores y los iconos ocupados para todos
     return { ok: true };
   }
 
   #onProfile(playerId, msg) {
-    const res = this.roster.updateProfile(playerId, msg);
+    // El nombre solo se cambia antes de empezar el concurso (el icono, el color y el equipo siguen sus reglas).
+    const current = this.roster.get(playerId);
+    const started = this.runner.screen !== SCREEN.SETUP;
+    const res = this.roster.updateProfile(playerId, started && current ? { ...msg, name: current.name } : msg);
     if (!res) return;
+    this.#assignFaces();
+    this.#broadcastFaces();
     this.#sendWelcome(res);
     this.#afterChange();
   }
@@ -620,6 +832,7 @@ export class HostRoom extends EventTarget {
   }
 
   #onAnswer(playerId, msg) {
+    if (this.inMillionairePlay && msg.roundId === this.millionaire.roundId) return this.#onMillionaireAnswer(playerId, msg);
     const r = this.answerRound;
     const ack = (result) => this.source.sendTo(playerId, { t: MSG.ANSWER_ACK, seq: msg.seq, result });
     if (!this.inAnswerPlay || msg.roundId !== r.roundId) return ack(ANSWER_RESULT.CLOSED);
@@ -633,17 +846,59 @@ export class HostRoom extends EventTarget {
     else this.#afterChange({ persist: false });
   }
 
+  /** Comodines: solo en el millonario. */
   #onJoker(playerId, msg) {
-    const r = this.answerRound;
-    const ack = (result, message) => this.source.sendTo(playerId, { t: MSG.ANSWER_ACK, seq: msg.seq, result, message });
-    if (!this.inAnswerPlay || msg.roundId !== r.roundId) return ack('closed', 'Ahora no se pueden usar comodines.');
-    const owner = this.ownerOf(playerId);
-    const blocker = r.jokerBlocker(owner, msg.kind, playerId);
-    if (blocker) return ack('denied', blocker);
-    if (!this.jokers.use(owner, msg.kind)) return ack('denied', this.roster.hasTeams ? 'A tu equipo no le quedan comodines de ese tipo.' : 'No te quedan comodines de ese tipo.');
-    r.activateJoker(owner, msg.kind);
-    ack('ok');
-    this.#afterChange(); // se guarda: el comodín ya está gastado
+    if (this.inMillionairePlay && msg.roundId === this.millionaire.roundId) return this.#onMillionaireJoker(playerId, msg);
+    this.source.sendTo(playerId, { t: MSG.ANSWER_ACK, seq: msg.seq, result: 'closed', message: 'Ahora no se pueden usar comodines.' });
+  }
+
+  /**
+   * Antitrampas: el móvil avisa al salir de la app ('out') y al volver ('back' con cuánto estuvo fuera). Si estuvo
+   * fuera mientras tenía una pregunta abierta y sin responder (buscando la respuesta en Google…), según el ajuste se
+   * anula su respuesta en esa pregunta o solo se avisa. La tele y el mando lo enseñan.
+   */
+  #onAway(playerId, msg) {
+    const t = now();
+    if (msg.state === 'out') {
+      this.#away.set(playerId, t);
+      return this.#afterChange({ persist: false });
+    }
+    const leftAt = t - msg.ms;
+    this.#away.delete(playerId);
+    const mode = this.settings.antiCheat;
+    let ms = 0;
+    let voided = false;
+    if (mode !== 'off' && this.inMillionairePlay) {
+      const r = this.millionaire;
+      if (r.onCall(playerId)) return this.#afterChange({ persist: false }); // en la llamada se puede salir: es el comodín
+      if (playerId === r.seat.playerId && (r.phase === MPHASE.READY || r.phase === MPHASE.PLAYING)) {
+        ms = t - Math.max(leftAt, this.#mStartedAt ?? leftAt);
+        if (ms >= AWAY_MIN_MS && mode === 'void' && !r.cheated) voided = r.cheated = true;
+      } else if (r.audience?.state === 'voting' && r.audience.voters.includes(playerId)) {
+        ms = t - leftAt;
+        if (ms >= AWAY_MIN_MS && mode === 'void') {
+          delete r.audience.votes[playerId];
+          r.audience.voters = r.audience.voters.filter((id) => id !== playerId);
+          voided = true;
+        }
+      }
+    } else if (mode !== 'off' && this.inAnswerPlay) {
+      const r = this.answerRound;
+      ms = r.awayWhileOpen(playerId, leftAt, t);
+      if (ms >= AWAY_MIN_MS && mode === 'void') voided = r.disqualify(playerId);
+      // si era el último que faltaba, se cierra ya
+      const connected = new Set(this.roster.list().filter((p) => p.connected).map((p) => p.id));
+      if (voided && r.phase === APHASE.OPEN && r.allAnswered(connected)) this.#closeAnswers(r);
+    } else if (mode !== 'off' && this.inBuzzerPlay && this.game.phase === PHASE.OPEN && this.#buzzerOpenedAt != null) {
+      ms = t - Math.max(leftAt, this.#buzzerOpenedAt);
+      if (ms >= AWAY_MIN_MS && mode === 'void') voided = this.game.lock(playerId, LOCK.CHEAT);
+    }
+    if (ms >= AWAY_MIN_MS) {
+      const name = this.roster.get(playerId)?.name ?? '¿?';
+      this.cheatAlerts.push({ id: ++this.#alertSeq, playerId, name, ms: Math.round(ms), voided, forgiven: false, at: Date.now() });
+      this.cheatAlerts = this.cheatAlerts.slice(-20);
+    }
+    this.#afterChange({ persist: false });
   }
 
   /** Libre con contador: el móvil del concursante (uno por equipo) suma o resta. */
@@ -653,13 +908,13 @@ export class HostRoom extends EventTarget {
     if (!this.inFreePlay || msg.roundId !== r.roundId) return ack('closed', 'Ahora no se puede contar.');
     const player = this.roster.get(playerId);
     const result = r.countFrom(playerId, r.byTeams ? player?.teamId : playerId, msg.delta);
-    if (result === 'taken') return ack(result, 'Ya lleva la cuenta otro móvil de tu equipo.');
+    if (result === 'not-counter') return ack(result, 'La cuenta de tu equipo la lleva otro móvil.');
     ack(result);
     if (result === 'ok') this.#afterChange({ persist: false });
   }
 
   #closeAnswers(round) {
-    if (round !== this.answerRound || !round.close()) return;
+    if (round !== this.answerRound || !round.close(now())) return;
     clearTimeout(this.#answerTimer);
     this.#afterChange({ persist: false });
   }
@@ -679,22 +934,180 @@ export class HostRoom extends EventTarget {
       round.answers = new Map(stored.answers);
       round.candidates = stored.candidates;
       round.eligible = new Set(stored.eligible);
-      round.jokers = new Map(stored.jokers.map(([owner, kinds]) => [owner, new Set(kinds)]));
-      round.removed = new Map(stored.removed);
       round.results = stored.results;
       round.phase = APHASE.REVEALED;
     }
     this.answerRound = round;
   }
 
-  /** Al dejar una pregunta sin revelar, sus comodines no cuentan: se devuelven. */
+  // ------------------------------------------------------------------------------------------ millonario
+
+  /** Crea la pregunta del millonario (o la recupera revelada); el asiento sale del orden de los portavoces. */
+  #syncMillionaire() {
+    this.#mTimers.forEach(clearTimeout);
+    this.#mTimers = [];
+    const key = this.runner.playKey;
+    const section = this.runner.section;
+    if (!key || section?.type !== 'test' || !this.runner.item) {
+      this.millionaire = null;
+      return;
+    }
+    const question = buildQuestion(section, this.runner.item, { players: this.roster.list(), settings: this.show.settings });
+    const stored = this.itemResults[key]?.millionaire;
+    if (stored) {
+      this.millionaire = MillionaireRound.fromJSON(question, stored);
+      return;
+    }
+    const connected = (id) => !!this.roster.get(id)?.connected;
+    const seat = seatFor(this.#seatGroups(), this.runner.itemIndex, connected) ?? { playerId: null, teamId: null };
+    this.millionaire = new MillionaireRound(question, { roundId: `${key}#${++this.#roundSeq}`, seat });
+    this.#mStartedAt = now();
+  }
+
+  /** "R" en el millonario: quita los puntos, devuelve los comodines de esta pregunta y empieza de cero. */
+  #restartMillionaire() {
+    const key = this.runner.playKey;
+    const r = this.millionaire;
+    const owner = r.seat.playerId ? this.ownerOf(r.seat.playerId) : null;
+    if (owner) for (const kind of r.used) this.jokers.refund(owner, kind);
+    const stored = this.itemResults[key]?.millionaire;
+    if (stored) for (const [id, pts] of Object.entries(stored.results?.points ?? {})) this.roster.adjustScore(id, -pts);
+    delete this.itemResults[key];
+    this.#syncMillionaire();
+    return true;
+  }
+
+  /** Dueño de los comodines del asiento: su equipo (o él sin equipos). */
+  #mOwner() {
+    const id = this.millionaire?.seat.playerId;
+    return id ? this.ownerOf(id) : null;
+  }
+
+  /** Quiénes votan en el público: los de su equipo (o todos los demás sin equipos), conectados. */
+  #audienceVoters() {
+    const seat = this.millionaire.seat;
+    return this.roster
+      .list()
+      .filter((p) => p.connected && p.id !== seat.playerId && (!seat.teamId || p.teamId === seat.teamId))
+      .map((p) => p.id);
+  }
+
+  /** A quién se puede llamar: compañeros de equipo (o cualquiera sin equipos) que no concursan ahora. */
+  #callable() {
+    const seat = this.millionaire.seat;
+    return this.roster.list().filter((p) => p.id !== seat.playerId && (!seat.teamId || p.teamId === seat.teamId));
+  }
+
+  #mTimer(at, fn) {
+    this.#mTimers.push(setTimeout(fn, Math.max(0, at - now())));
+  }
+
+  /** Comodín del millonario pedido desde el móvil del concursante. */
+  #onMillionaireJoker(playerId, msg) {
+    const r = this.millionaire;
+    const ack = (result, message) => this.source.sendTo(playerId, { t: MSG.ANSWER_ACK, seq: msg.seq, result, message });
+    if (playerId !== r.seat.playerId) return ack('denied', 'Solo puede usar comodines quien concursa.');
+    const blocker = r.jokerBlocker(msg.kind);
+    if (blocker) return ack('denied', blocker);
+    const owner = this.#mOwner();
+    if (!(this.jokers.remaining(owner)[msg.kind] > 0)) return ack('denied', this.roster.hasTeams ? 'A tu equipo no le queda ese comodín.' : 'No te queda ese comodín.');
+    if (msg.kind === 'audience' && !this.#audienceVoters().length) return ack('denied', 'No hay nadie de tu equipo para votar.');
+    if (msg.kind === 'call' && !this.#callable().some((p) => p.id === msg.target)) return ack('denied', 'Elige a un compañero para llamar.');
+    this.jokers.use(owner, msg.kind);
+    if (msg.kind === 'fifty') r.fifty();
+    if (msg.kind === 'audience') {
+      r.startAudience(this.#audienceVoters(), now());
+      const round = r;
+      this.#mTimer(r.audience.endsAt + 300, () => {
+        if (round === this.millionaire && round.finishAudience()) this.#afterChange({ persist: false });
+      });
+    }
+    if (msg.kind === 'call') r.startCall(msg.target);
+    ack('ok');
+    this.#afterChange();
+  }
+
+  /** Respuesta en el millonario: la elección del concursante o un voto del público. */
+  #onMillionaireAnswer(playerId, msg) {
+    const r = this.millionaire;
+    const ack = (result) => this.source.sendTo(playerId, { t: MSG.ANSWER_ACK, seq: msg.seq, result });
+    if (playerId === r.seat.playerId) {
+      const res = r.choose(playerId, msg.value);
+      ack(res === 'ok' ? 'ok' : res === 'closed' ? 'closed' : 'invalid');
+      if (res === 'ok') this.#afterChange({ persist: false });
+      return;
+    }
+    const res = r.vote(playerId, msg.value, now());
+    ack(res === 'ok' ? 'ok' : res === 'late' ? 'late' : res === 'duplicate' ? 'duplicate' : 'not-eligible');
+    if (res !== 'ok') return;
+    // en cuanto han votado todos, se acaba el comodín
+    if (r.audience.voters.every((id) => id in r.audience.votes)) r.finishAudience();
+    this.#afterChange({ persist: false });
+  }
+
+  /** Para la tele (y, con forControl, el mando: con lo que ha elegido el concursante y la buena). */
+  millionaireView({ forControl = false } = {}) {
+    const r = this.millionaire;
+    const q = r.question;
+    const revealed = r.phase === MPHASE.REVEALED;
+    const pub = (id) => (id && this.roster.get(id) ? publicPlayer(this.roster.get(id)) : null);
+    const owner = this.#mOwner();
+    const a = r.audience;
+    return {
+      roundId: r.roundId,
+      phase: r.phase,
+      text: q.text,
+      image: q.image,
+      points: q.points?.[0] ?? 1,
+      options: q.options.map((o, i) => (i < r.shown || forControl ? o : null)),
+      count: q.options.length,
+      shown: r.shown,
+      removed: r.removed,
+      marked: r.marked,
+      choice: forControl ? r.choice : null,
+      correct: forControl || revealed ? q.correct : null,
+      result: r.results,
+      seat: pub(r.seat.playerId),
+      team: r.seat.teamId ? this.roster.team(r.seat.teamId) : null,
+      jokers: owner ? this.jokers.remaining(owner) : null,
+      used: r.used,
+      audience: a && {
+        state: a.state,
+        endsAt: a.endsAt,
+        voters: a.voters.length,
+        voted: Object.keys(a.votes).length,
+        percentages: a.state === 'done' || forControl ? r.audiencePercentages() : null,
+      },
+      call: r.call && { state: r.call.state, friend: pub(r.call.friendId), endsAt: r.call.endsAt },
+      callable: forControl ? this.#callable().map((p) => ({ id: p.id, name: p.name })) : null,
+      cheated: r.cheated,
+    };
+  }
+
+  /** Lo que ve cada móvil: quien concursa, quien vota en el público, quien recibe la llamada o quien mira. */
+  #millionaireFor(player) {
+    const r = this.millionaire;
+    const t = now();
+    const tv = this.millionaireView();
+    const isSeat = player.id === r.seat.playerId;
+    const voter = r.audience?.state === 'voting' && r.audience.voters.includes(player.id);
+    const friend = r.call && r.call.state !== 'done' && r.call.friendId === player.id;
+    return {
+      ...tv,
+      role: isSeat ? 'seat' : voter ? 'voter' : friend ? 'friend' : 'watcher',
+      choice: isSeat ? r.choice : null,
+      myVote: r.audience?.votes[player.id] ?? null,
+      audience: tv.audience && { ...tv.audience, inMs: tv.audience.endsAt - t },
+      call: tv.call && { ...tv.call, inMs: tv.call.endsAt != null ? tv.call.endsAt - t : null },
+      // para la llamada: a quién puede llamar quien concursa
+      callable: isSeat && r.phase === MPHASE.PLAYING ? this.#callable().filter((p) => p.connected).map((p) => publicPlayer(p)) : null,
+      jokers: isSeat ? tv.jokers : null,
+    };
+  }
+
   #leaveAnswerRound() {
-    const r = this.answerRound;
     clearTimeout(this.#answerTimer);
     clearTimeout(this.#greenTimer);
-    if (r && r.phase !== APHASE.REVEALED) {
-      for (const [owner, kinds] of r.jokers) for (const kind of kinds) this.jokers.refund(owner, kind);
-    }
   }
 
   /** Crea la prueba Libre actual (o la recupera si ya dio sus puntos). */
@@ -725,13 +1138,12 @@ export class HostRoom extends EventTarget {
     return true;
   }
 
-  /** "R" en una pregunta de respuestas: deshace sus puntos, devuelve los comodines y empieza de cero. */
+  /** "R" en una pregunta de respuestas: deshace sus puntos y empieza de cero. */
   #restartAnswerRound() {
     const key = this.runner.playKey;
     const stored = this.itemResults[key];
     if (stored) {
       for (const [id, pts] of Object.entries(stored.results.points)) this.roster.adjustScore(id, -pts);
-      for (const [owner, kinds] of stored.jokers) for (const kind of kinds) this.jokers.refund(owner, kind);
       delete this.itemResults[key];
     } else {
       this.#leaveAnswerRound();
@@ -766,6 +1178,7 @@ export class HostRoom extends EventTarget {
     }
     if (this.approvedControls.has(controlId)) {
       this.connectedControls.add(controlId);
+      this.source.sendToControl(controlId, { t: MSG.FACES, images: this.#faceImages() });
       this.source.sendToControl(controlId, { t: MSG.CONTROL_STATUS, status: 'approved' });
       this.#pushControlsNow();
       this.#changed({ persist: false });
@@ -836,6 +1249,26 @@ export class HostRoom extends EventTarget {
       winner: winner ? publicPlayer(winner) : null,
       answer: this.inAnswerPlay ? this.#answerViewFor(player) : null,
       free: this.inFreePlay ? this.#freeViewFor(player) : null,
+      millionaire: this.inMillionairePlay ? this.#millionaireFor(player) : null,
+      turns: this.#turnsFor(player),
+    };
+  }
+
+  /** Por turnos, en el móvil: si es el portavoz (y puede ordenar), el orden de su equipo y a quién le toca ahora. */
+  #turnsFor(player) {
+    const tv = this.#turnsView();
+    const mine = tv?.teams.find((t) => t.team.id === player.teamId);
+    if (!mine) return null;
+    const isSpokesperson = mine.spokesperson?.id === player.id;
+    return {
+      spokesperson: isSpokesperson,
+      spokespersonName: mine.spokesperson?.name ?? null,
+      canOrder: isSpokesperson && this.runner.screen === SCREEN.INTRO,
+      ready: mine.ready,
+      order: mine.order,
+      // nº de pregunta que le toca (1 = la más fácil); en el millonario, alternando equipos
+      position: this.runner.section.type === 'test' ? this.#seatQuestionOf(player.id) : mine.order.findIndex((p) => p?.id === player.id) + 1,
+      answerer: tv.answerers.find((a) => a.team.id === player.teamId)?.player ?? null,
     };
   }
 
@@ -858,7 +1291,7 @@ export class HostRoom extends EventTarget {
       count: participating && r.tool === 'counter' ? (r.counts[me] ?? 0) : null,
       counter:
         participating && r.tool === 'counter'
-          ? { mine: !r.counters[me] || r.counters[me] === player.id, by: this.roster.get(r.counters[me])?.name ?? null }
+          ? { mine: r.canCount(player.id, me), by: r.byTeams ? (this.roster.get(r.counters[me])?.name ?? null) : null }
           : null,
     };
   }
@@ -869,13 +1302,12 @@ export class HostRoom extends EventTarget {
     const q = r.question;
     const t = now();
     const own = r.answers.get(player.id);
-    const owner = this.ownerOf(player.id);
-    const active = r.activeJokers(player.id, this.ownerOf);
     const revealed = r.phase === APHASE.REVEALED;
     const opened = r.phase !== APHASE.READY;
 
     let result = null;
-    if (revealed) {
+    // Mientras la tele hace el suspense, el móvil tampoco lo chiva: "Mira la tele".
+    if (revealed && !this.#pendingPoints) {
       const entry = r.results.entries.find((e) => e.playerId === player.id) ?? null;
       const name = (id) => this.roster.get(id)?.name ?? '¿?';
       result = {
@@ -913,7 +1345,12 @@ export class HostRoom extends EventTarget {
       rounds: q.rounds ?? null,
       tGreen: r.tGreen,
       greenInMs: r.tGreen != null ? Math.max(0, r.tGreen - t) : null,
-      removed: r.removedFor(player.id, this.ownerOf),
+      // Reflejos: qué se ve en cada momento (con cuánto falta, para los móviles aún sin sincronizar)
+      reflex: r.reflex
+        ? { ...r.reflex, cues: r.reflex.cues.map((c) => ({ ...c, inMs: c.t - t })) }
+        : q.kind === 'reflejos'
+          ? { variant: reflexVariant(q.round), cues: [] }
+          : null,
       candidates: r.candidates.filter((id) => id !== player.id).map((id) => publicPlayer(this.roster.get(id) ?? { id, name: '¿?' })),
       tOpen: r.tOpen,
       opensInMs: r.tOpen != null ? Math.max(0, r.tOpen - t) : null,
@@ -922,9 +1359,7 @@ export class HostRoom extends EventTarget {
       canAnswer: opened && r.eligible.has(player.id),
       isSubject: q.subjectId === player.id,
       // En las de tiempo, el tiempo propio no se enseña hasta revelar (suspense).
-      you: { answered: !!own, early: !!own?.early, value: own && (!isTiming(q.kind) || revealed) ? own.value : null },
-      jokers: q.kind === 'test' ? { remaining: this.jokers.remaining(owner), active } : null,
-      audience: active.includes('audience') && r.phase === APHASE.OPEN ? r.counts() : null,
+      you: { answered: !!own, early: !!own?.early, cheated: r.cheaters.has(player.id), value: own && (!isTiming(q.kind) || revealed) ? own.value : null },
       result,
     };
   }
@@ -943,6 +1378,14 @@ export class HostRoom extends EventTarget {
       this.game.next();
       this.#syncAnswerRound();
       this.#syncFreeRound();
+      this.#syncMillionaire();
+    }
+    // Millonario sin nadie en el asiento (p. ej. la tele se recargó y aún no habían vuelto los móviles): en cuanto
+    // haya alguien conectado, se sienta quien toca
+    const m = this.millionaire;
+    if (m && !m.seat.playerId && m.phase === MPHASE.READY) {
+      const seat = seatFor(this.#seatGroups(), this.runner.itemIndex, (id) => !!this.roster.get(id)?.connected);
+      if (seat) m.seat = seat;
     }
     const ranking = this.game.ranking();
     if (ranking.length) this.lastRound = { qid: this.runner.itemIndex + 1, tOpen: this.game.tOpen, decided: !!this.game.winnerId, ranking };
@@ -964,19 +1407,69 @@ export class HostRoom extends EventTarget {
     this.#openTimer = null;
   }
 
+  /** Caras guardadas en el portátil: [{id, names, img}]. Se reconocen al momento los jugadores que ya están. */
+  setFaces(list) {
+    this.faces = list;
+    this.#assignFaces();
+    this.#broadcastFaces(true);
+    this.#changed({ persist: false });
+  }
+
+  #assignFaces() {
+    for (const p of this.roster.list()) p.face = matchFace(p.name, this.faces);
+  }
+
+  /** Imágenes de las caras que se usan ahora: id → imagen. */
+  #faceImages() {
+    const used = new Set(this.roster.list().map((p) => p.face).filter(Boolean));
+    return Object.fromEntries(this.faces.filter((f) => used.has(f.id)).map((f) => [f.id, f.img]));
+  }
+
+  /** Manda las caras a todos los móviles (jugadores y mandos) si cambiaron. */
+  #broadcastFaces(force = false) {
+    const images = this.#faceImages();
+    const key = Object.keys(images).sort().join();
+    if (!force && key === this.#sentFaces) return;
+    this.#sentFaces = key;
+    const msg = { t: MSG.FACES, images };
+    for (const p of this.roster.list()) this.source.sendTo(p.id, msg);
+    for (const id of this.connectedControls) this.source.sendToControl(id, msg);
+  }
+
+  #holdPoints(points, ms) {
+    this.#applyPendingPoints();
+    const timer = setTimeout(() => {
+      this.#applyPendingPoints();
+      this.#afterChange();
+    }, ms);
+    this.#pendingPoints = { points, timer };
+  }
+
+  #applyPendingPoints() {
+    const p = this.#pendingPoints;
+    if (!p) return;
+    clearTimeout(p.timer);
+    this.#pendingPoints = null;
+    for (const [id, pts] of Object.entries(p.points)) this.roster.adjustScore(id, pts);
+  }
+
   #persist() {
+    // Lo guardado ya incluye los puntos en espera: si la tele se recarga a mitad del suspense, no se pierden.
+    const pending = this.#pendingPoints?.points ?? {};
     saveRoom({
       code: this.code,
       controlSecret: this.controlSecret,
       approvedControls: [...this.approvedControls],
       show: this.show,
       runner: this.runner.toJSON(),
-      players: this.roster.toJSON(),
+      players: this.roster.toJSON().map((p) => ({ ...p, score: p.score + (pending[p.id] ?? 0) })),
       teamsLocked: this.roster.teamsLocked,
       teamBonus: Object.fromEntries(this.roster.teamBonus),
       settings: this.settings,
       jokersUsed: this.jokers.toJSON(),
       itemResults: this.itemResults,
+      spokespeople: Object.fromEntries(this.spokespeople),
+      turnOrders: this.turnOrders,
     });
   }
 
@@ -987,7 +1480,7 @@ export class HostRoom extends EventTarget {
   }
 }
 
-const publicPlayer = ({ id, name, color, icon, score, teamId }) => ({ id, name, color, icon, score, teamId });
+const publicPlayer = ({ id, name, color, icon, face = null, score, teamId }) => ({ id, name, color, icon, face, score, teamId });
 
 function randomSecret() {
   const bytes = crypto.getRandomValues(new Uint8Array(16));

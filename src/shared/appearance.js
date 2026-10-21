@@ -72,3 +72,30 @@ export const isKnownIcon = (id) => iconById.has(id);
 
 /** Clave de la pareja color+icono, que es lo que debe ser único en la sala. */
 export const appearanceKey = (color, icon) => `${color}|${icon}`;
+
+// Caras: fotos de los jugadores reconocidos por su nombre (ver core/faces.js). La tele las tiene guardadas y las manda a
+// los móviles; aquí se guarda cada imagen por id para pintar el avatar.
+const faceImages = new Map(); // faceId → URL de la imagen
+
+export function setFaceImages(images) {
+  faceImages.clear();
+  for (const [id, url] of Object.entries(images ?? {})) faceImages.set(id, url);
+}
+
+export const hasFace = (p) => !!(p?.face && faceImages.has(p.face));
+
+/**
+ * Contenido del avatar de un jugador: su cara si la tiene; si no, el emoji de su icono. Sirve como hijo de h().
+ * (Sin caras no hace falta el DOM: así lo pueden usar los tests y la lógica.)
+ */
+export function avatarOf(p) {
+  if (hasFace(p)) {
+    const img = document.createElement('img');
+    img.className = 'face';
+    img.src = faceImages.get(p.face);
+    img.alt = '';
+    img.draggable = false;
+    return img;
+  }
+  return getIcon(p?.icon).glyph;
+}

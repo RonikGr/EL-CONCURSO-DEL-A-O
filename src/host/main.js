@@ -6,7 +6,7 @@ import './host.css';
 import './show.css';
 import QRCode from 'qrcode';
 import { $, clear, fill, h } from '../shared/dom.js';
-import { getColor, getIcon } from '../shared/appearance.js';
+import { avatarOf, getColor, setFaceImages } from '../shared/appearance.js';
 import { generateRoomCode } from '../shared/roomCode.js';
 import { LOCK, PHASE } from '../core/game.js';
 import { SCREEN } from '../core/runner.js';
@@ -16,6 +16,8 @@ import { clearSavedRoom, loadSavedRoom } from './persistence.js';
 import { createStage } from './stage.js';
 import { createAnswerStage } from './answerStage.js';
 import { createFreeStage } from './freeStage.js';
+import { createMillionaireStage } from './millionaireStage.js';
+import { MPHASE } from '../core/millionaire.js';
 import { APHASE } from '../core/answers.js';
 import { coverScreen, finalScreen, introScreen, scoreboardScreen, setupScreen } from './screens.js';
 import { openSettingsDialog } from './settingsDialog.js';
@@ -23,6 +25,9 @@ import { createDebugPanel } from './debugPanel.js';
 import { Backdrop } from './fx/backdrop.js';
 import { sound } from './fx/audio.js';
 import { TrackStore } from './fx/tracks.js';
+import { FaceStore } from './faceStore.js';
+import { openFacesDialog } from './facesDialog.js';
+import { openMusicDialog } from './musicDialog.js';
 import { createDirector, envFor, screenKey } from './fx/director.js';
 import { enterScreen, kinetic, odometer } from './fx/motion.js';
 import { envGradient, HOME_ENV } from '../shared/environments.js';
@@ -36,6 +41,7 @@ let room = null;
 let stage = null;
 let answerStage = null;
 let freeStage = null;
+let millionaireStage = null;
 let qrs = null; // {join, joinMini, control}
 let lastScreenSignature = null;
 const debug = createDebugPanel();
@@ -56,15 +62,31 @@ if (backdrop.ok) {
 const direct = createDirector({ backdrop: backdrop.ok ? backdrop : null });
 sound.addEventListener('unlock', () => room && render());
 
-// Tus canciones, guardadas en este portátil
+// Tus canciones y las caras de los jugadores, guardadas en este portátil
 const trackStore = new TrackStore();
 trackStore.addEventListener('change', () => {
   sound.setTracks(trackStore.tracks);
-  lastScreenSignature = null; // repintar el panel de música
+  lastScreenSignature = null; // repintar el resumen de la preparación
   if (room) render();
 });
 trackStore.load();
-if (import.meta.env.DEV) window.__fx = { backdrop, sound, trackStore }; // para probar desde la consola
+
+const faceStore = new FaceStore();
+faceStore.addEventListener('change', () => {
+  setFaceImages(faceStore.images()); // la tele pinta todas
+  room?.setFaces(faceStore.faces); // y reconoce a los jugadores por su nombre
+  lastScreenSignature = null;
+  for (const card of cards.values()) card.look = null; // repintar avatares de las tarjetas
+  if (room) render();
+});
+faceStore.load();
+if (import.meta.env.DEV) window.__fx = { backdrop, sound, trackStore, faceStore }; // para probar desde la consola
+
+let panel = null; // ventana de caras o de música abierta
+const openPanel = (open) => {
+  panel?.close();
+  panel = open();
+};
 
 /** Ejecuta una orden y avisa si no se pudo. */
 function run(action, args) {
@@ -126,6 +148,7 @@ function startRoom(saved) {
   const code = saved?.code ?? generateRoomCode();
   writeTabMark(code);
   room = new HostRoom({ code, saved });
+  room.setFaces(faceStore.faces);
   if (import.meta.env.DEV) window.__room = room; // para probar desde la consola
   qrs = makeQrs();
   renderShell();
@@ -194,6 +217,7 @@ function renderShell() {
   stage = createStage();
   answerStage = createAnswerStage();
   freeStage = createFreeStage();
+  millionaireStage = createMillionaireStage();
 
   clear(app).append(
     h(
@@ -250,6 +274,7 @@ function render() {
   renderScreen(view);
   renderPlayers(view);
   renderApproval(view);
+  renderCheatAlert(view);
   debug.render(room);
 }
 
@@ -313,6 +338,7 @@ function renderScreen(view) {
   stage.stop();
   answerStage.stop();
   freeStage.stop();
+  millionaireStage.stop();
   // Los sonidos programados (suspense, podio) se anulan al cambiar de momento, no en cada repintado.
   const momentKey = [screenKey(view), view.answer?.roundId, view.answer?.phase, view.game?.phase, view.free?.phase].join('|');
   if (momentKey !== lastMomentKey) sound.cancel();
@@ -338,9 +364,14 @@ function renderScreen(view) {
           onStart: () => run('next'),
           onLockTeams: (locked) => run('lockTeams', { locked }),
           onMoveTeam: (playerId, teamId) => run('moveTeam', { playerId, teamId }),
-          tracks: trackStore.summary(),
-          onAddTracks: (slot, files) => trackStore.add(slot, files).then((n) => n || toast('Elige archivos de audio (.mp3).')),
-          onRemoveTrack: (id) => trackStore.remove(id),
+          onSpokesperson: (teamId, playerId) => run('setSpokesperson', { teamId, playerId }),
+          facesCount: faceStore.faces.length,
+          tracksCount: [...trackStore.tracks.values()].reduce((n, list) => n + list.length, 0),
+          onOpenFaces: () => openPanel(() => openFacesDialog({ store: faceStore, players: () => room.view().players, toast })),
+          onOpenMusic: () =>
+            openPanel(() =>
+              openMusicDialog({ store: trackStore, sections: () => room.view().sections.map(({ name, label }) => ({ name, label })), toast }),
+            ),
         }),
       );
     case SCREEN.COVER:
@@ -348,6 +379,11 @@ function renderScreen(view) {
     case SCREEN.INTRO:
       return fill(screen, introScreen(view));
     case SCREEN.PLAY:
+      if (view.millionaire) {
+        millionaireStage.render(view);
+        if (millionaireStage.root.parentNode !== screen) fill(screen, millionaireStage.root);
+        return;
+      }
       if (view.free) {
         freeStage.render(view);
         if (freeStage.root.parentNode !== screen) fill(screen, freeStage.root);
@@ -430,7 +466,7 @@ function createCard() {
   return { root, avatar, name, meta, place, score, lastScore: null };
 }
 
-const LOCK_TEXT = { [LOCK.EARLY]: 'Bloqueado · pulsó antes', [LOCK.WRONG]: 'Bloqueado · falló' };
+const LOCK_TEXT = { [LOCK.EARLY]: 'Bloqueado · pulsó antes', [LOCK.WRONG]: 'Bloqueado · falló', [LOCK.CHEAT]: '🚨 Bloqueado · salió de la app' };
 
 /** @param hasAnswered true/false en una pregunta de respuestas abierta; null si no aplica */
 function updateCard(card, p, place, hasAnswered = null) {
@@ -439,11 +475,20 @@ function updateCard(card, p, place, hasAnswered = null) {
   card.root.style.setProperty('--pc-fg', color.fg);
   card.root.classList.toggle('offline', !p.connected);
   card.root.classList.toggle('locked', !!p.lock);
-  card.avatar.textContent = getIcon(p.icon).glyph;
+  // Solo si cambia (con una foto, repintarla en cada latido haría parpadear la tarjeta)
+  const look = `${p.face ?? ''}|${p.icon}`;
+  if (card.look !== look) {
+    card.look = look;
+    card.avatar.replaceChildren(avatarOf(p));
+  }
   card.name.textContent = p.name;
   let status = p.connected ? `Conectado${p.rtt != null ? ` · ${Math.round(p.rtt)} ms` : ''}` : 'Desconectado';
   if (p.lock) status = LOCK_TEXT[p.lock] + (p.connected ? '' : ' · desconectado');
   if (hasAnswered != null) status = hasAnswered ? '✓ Ha respondido' : 'Pensando…';
+  // Antitrampas: fuera de la app ahora mismo, o anulado en esta pregunta por haber salido
+  if (p.cheated) status = '🚨 Anulado · salió de la app';
+  else if (p.away) status = '👀 Fuera de la app';
+  card.root.classList.toggle('away', !!p.away || !!p.cheated);
   card.meta.textContent = status;
   card.root.classList.toggle('answered', hasAnswered === true);
   card.place.textContent = place ? `${place}º` : '';
@@ -462,6 +507,30 @@ function updateCard(card, p, place, hasAnswered = null) {
     }
     card.lastScore = p.score;
   }
+}
+
+// Antitrampas: aviso grande unos segundos cuando alguien sale de la app con una pregunta abierta.
+let lastCheatAlert = null; // id del último aviso enseñado (al cargar, los anteriores no se repiten)
+
+function renderCheatAlert(view) {
+  const alerts = view.cheatAlerts ?? [];
+  const latest = alerts.at(-1);
+  if (lastCheatAlert === null) {
+    lastCheatAlert = latest?.id ?? 0;
+    return;
+  }
+  if (!latest || latest.id <= lastCheatAlert) return;
+  lastCheatAlert = latest.id;
+  const secs = Math.round(latest.ms / 1000);
+  const el = h(
+    'div',
+    { class: 'cheat-alert', role: 'alert' },
+    h('span', { class: 'emoji' }, '🚨'),
+    h('div', {}, h('strong', {}, `¡${latest.name} ha salido de la app!`), h('small', {}, `${secs} s fuera con la pregunta abierta${latest.voided ? ' · su respuesta no cuenta' : ''}`)),
+  );
+  document.body.append(el);
+  sound.play('wrong');
+  setTimeout(() => el.remove(), 7000);
 }
 
 /** Un móvil pide ser el mando: se confirma aquí (Enter) o se rechaza (Esc). */
@@ -510,6 +579,7 @@ addEventListener('dragover', (e) => {
 });
 addEventListener('drop', (e) => {
   if (room?.runner.screen !== SCREEN.SETUP) return;
+  if (document.querySelector('dialog[open]')) return e.preventDefault(); // en las ventanas de caras y música, no es un concurso
   const file = e.dataTransfer?.files?.[0];
   if (!file) return;
   e.preventDefault();
@@ -539,7 +609,13 @@ document.addEventListener('keydown', (e) => {
   switch (e.code) {
     case 'Space':
       e.preventDefault(); // que no "pulse" el botón con foco
-      if (answerPhase) {
+      if (room.inMillionairePlay) {
+        const m = room.millionaire;
+        if (m.phase === MPHASE.REVEALED) run('nextItem');
+        else if (m.phase === MPHASE.MARKED) run('mReveal');
+        else if (m.shown < m.options.length) run('mShow');
+        else run('mMark');
+      } else if (answerPhase) {
         const next = { ready: 'openAnswers', open: 'closeAnswers', closed: 'reveal', revealed: 'nextItem' }[answerPhase];
         run(next);
       } else if (phase === PHASE.IDLE) actions.open();
@@ -559,7 +635,7 @@ document.addEventListener('keydown', (e) => {
       actions.showAnswer();
       break;
     case 'KeyR':
-      if (phase || answerPhase || room.inFreePlay) actions.restart();
+      if (phase || answerPhase || room.inFreePlay || room.inMillionairePlay) actions.restart();
       break;
     case 'KeyA':
       if (phase === PHASE.RESULT) actions.correct();

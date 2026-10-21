@@ -1,5 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { ANSWER_RESULT, APHASE, AnswerRound, COUNTDOWN_MS, JokerBank, REACTION_LIMIT_MS, buildQuestion, scoreRound } from '../src/core/answers.js';
+import {
+  ANSWER_RESULT,
+  APHASE,
+  AnswerRound,
+  COUNTDOWN_MS,
+  GREEN_MAX_MS,
+  JokerBank,
+  REACTION_LIMIT_MS,
+  buildQuestion,
+  cueAt,
+  reflexDelayMs,
+  reflexPlan,
+  reflexVariant,
+  scoreRound,
+} from '../src/core/answers.js';
 
 const section = (type, points = [2]) => ({ type, points });
 const PLAYERS = [
@@ -68,58 +82,6 @@ describe('ronda de respuestas', () => {
     expect(r.allAnswered(new Set(['ana', 'bea']))).toBe(true); // Cris se ha desconectado: no se le espera
   });
 
-  it('revela y puntúa un Test con el comodín Doble', () => {
-    const r = openRound('test', TEST, { points: [2] });
-    r.activateJoker('ana', 'double');
-    r.answer('ana', 1, at(2000));
-    r.answer('bea', 1, at(2000));
-    r.answer('cris', 0, at(2000));
-    expect(r.counts()).toEqual([1, 2, 0, 0]);
-    r.reveal();
-    expect(r.phase).toBe(APHASE.REVEALED);
-    expect(r.results.points).toEqual({ ana: 4, bea: 2 });
-  });
-
-  it('el Doble de un equipo vale para todos sus miembros', () => {
-    const team = { ana: 'rojos', bea: 'rojos', cris: 'azules' };
-    const ownerOf = (id) => team[id];
-    const r = openRound('test', TEST);
-    r.activateJoker('rojos', 'double');
-    for (const id of IDS) r.answer(id, 1, at(2000));
-    r.reveal({ ownerOf });
-    expect(r.results.points).toEqual({ ana: 4, bea: 4, cris: 2 });
-    expect(r.activeJokers('bea', ownerOf)).toEqual(['double']);
-  });
-
-  it('el 50 % quita la mitad de las respuestas, nunca la correcta', () => {
-    for (let seed = 0; seed < 20; seed++) {
-      const r = openRound('test', TEST);
-      r.activateJoker('ana', 'fifty', () => seed / 20);
-      const removed = r.removedFor('ana');
-      expect(removed).toHaveLength(2);
-      expect(removed).not.toContain(1);
-    }
-    const three = openRound('test', { ...TEST, options: ['a', 'b', 'c'], correct: 0 });
-    three.activateJoker('ana', 'fifty', () => 0);
-    expect(three.removedFor('ana')).toEqual([1]);
-  });
-
-  it('cuándo se puede usar un comodín', () => {
-    const r = openRound('test', TEST);
-    expect(r.jokerBlocker('ana', 'fifty', 'ana')).toBeNull();
-    r.activateJoker('ana', 'fifty');
-    expect(r.jokerBlocker('ana', 'fifty', 'ana')).toMatch(/activo/);
-    r.answer('bea', 1, at(2000));
-    expect(r.jokerBlocker('bea', 'double', 'bea')).toMatch(/respondido/);
-    expect(r.jokerBlocker('cris', 'raro', 'cris')).toMatch(/desconocido/);
-    const two = openRound('test', { ...TEST, options: ['a', 'b'], correct: 0 });
-    expect(two.jokerBlocker('ana', 'fifty', 'ana')).toMatch(/50/);
-    const vf = openRound('verdad', { statement: 'x', isTrue: true });
-    expect(vf.jokerBlocker('ana', 'double', 'ana')).toMatch(/Test/);
-    r.close();
-    expect(r.jokerBlocker('cris', 'double', 'cris')).toMatch(/Ahora no/);
-  });
-
   it('Dos verdades: el protagonista no vota y gana un punto por cada engañado', () => {
     const r = openRound('dosVerdades', { about: 'Bea', statements: ['a', 'b', 'c'], lie: 2 }, { points: [1] });
     expect(r.answer('bea', 2, at(2000))).toBe(ANSWER_RESULT.NOT_ELIGIBLE);
@@ -177,15 +139,15 @@ describe('ronda de respuestas', () => {
 
 describe('comodines del concurso', () => {
   it('cuenta los que quedan por dueño, y se pueden devolver', () => {
-    const bank = new JokerBank({ fifty: 1, double: 1, audience: 2 });
-    expect(bank.remaining('rojos')).toEqual({ fifty: 1, double: 1, audience: 2 });
+    const bank = new JokerBank({ fifty: 1, audience: 2, call: 1 });
+    expect(bank.remaining('rojos')).toEqual({ fifty: 1, audience: 2, call: 1 });
     expect(bank.use('rojos', 'fifty')).toBe(true);
     expect(bank.use('rojos', 'fifty')).toBe(false);
     expect(bank.remaining('rojos').fifty).toBe(0);
     expect(bank.remaining('azules').fifty).toBe(1);
     bank.refund('rojos', 'fifty');
     expect(bank.remaining('rojos').fifty).toBe(1);
-    const restored = new JokerBank({ fifty: 1, double: 1, audience: 2 }, JSON.parse(JSON.stringify(bank.toJSON())));
+    const restored = new JokerBank({ fifty: 1, audience: 2, call: 1 }, JSON.parse(JSON.stringify(bank.toJSON())));
     expect(restored.remaining('rojos')).toEqual(bank.remaining('rojos'));
   });
 });
@@ -261,5 +223,64 @@ describe('cuenta atrás antes de responder', () => {
     r.open({ now: 1000, eligibleIds: IDS, scheduledOpenMs: 300, countdownMs: 3000 });
     expect(r.tOpen).toBe(4000);
     expect(r.deadline).toBe(14000);
+  });
+});
+
+describe('Reflejos con despistes', () => {
+  const seq = (values) => {
+    let i = 0;
+    return () => values[i++ % values.length];
+  };
+  it('la primera ronda es la clásica y las siguientes alternan color y araña', () => {
+    expect([1, 2, 3, 4, 5].map((n) => reflexVariant(n))).toEqual(['green', 'color', 'spider', 'color', 'spider']);
+  });
+  it('color: despistes antes de la señal buena, que llega justo en tGreen', () => {
+    const { cues, target, rule } = reflexPlan('color', 1000, 7000, seq([0.2, 0.5, 0.3, 0.9, 0.1]));
+    expect(target).toBe('blue');
+    expect(rule).toMatch(/AZUL/);
+    expect(cues[0]).toEqual({ t: 1000, show: 'red' });
+    expect(cues.at(-1)).toEqual({ t: 7000, show: 'blue' });
+    expect(cues.slice(1, -1).every((c) => c.t > 1000 && c.t < 7000 && c.show !== 'blue')).toBe(true);
+    expect(cues.map((c) => c.show)).toContain('green'); // el despiste más traicionero
+    expect(cueAt(cues, 500)).toBeNull();
+    expect(cueAt(cues, 7000)).toBe('blue');
+  });
+  it('araña: se asoma y vuelve; al irse, se puede pulsar', () => {
+    const { cues, target } = reflexPlan('spider', 0, 6000, () => 0.5);
+    expect(target).toBe('clear');
+    expect(cues.map((c) => c.show)).toEqual(['spider', 'peek', 'spider', 'peek', 'spider', 'clear']);
+    expect(cueAt(cues, 5999)).toBe('spider');
+  });
+  it('las rondas con despistes esperan más', () => {
+    expect(reflexDelayMs('green', () => 1)).toBe(GREEN_MAX_MS);
+    expect(reflexDelayMs('spider', () => 0)).toBe(4000);
+  });
+});
+
+describe('antitrampas', () => {
+  it('cuenta el tiempo fuera de la app solo mientras la pregunta estaba abierta y sin responder', () => {
+    const r = openRound('test', TEST); // abierta en 1000
+    expect(r.awayWhileOpen('ana', 0, 3000)).toBe(2000); // salió antes de abrir: cuenta desde que se abrió
+    r.answer('bea', 1, at(1400));
+    expect(r.awayWhileOpen('bea', 2000, 5000)).toBe(0); // ya había respondido
+    expect(r.awayWhileOpen('cris', 1500, 2000)).toBe(500);
+    r.close(1800);
+    expect(r.awayWhileOpen('cris', 1500, 9000)).toBe(300); // hasta que se cerró
+    expect(r.awayWhileOpen('nadie', 1500, 9000)).toBe(0);
+  });
+
+  it('anular deja sin respuesta y no puede volver a responder; perdonar lo deshace', () => {
+    const r = openRound('test', TEST);
+    r.answer('ana', 1, at(1400));
+    expect(r.disqualify('ana')).toBe(true);
+    expect(r.answers.has('ana')).toBe(false);
+    expect(r.answer('ana', 1, at(1500))).toBe(ANSWER_RESULT.CHEAT);
+    expect(r.allAnswered(new Set(['ana']))).toBe(true); // el anulado no se espera
+    expect(r.forgive('ana')).toBe(true);
+    expect(r.answer('ana', 1, at(1600))).toBe(ANSWER_RESULT.OK);
+    r.disqualify('bea');
+    r.reveal();
+    expect(r.results.entries.map((e) => e.playerId)).toEqual(['ana']);
+    expect(r.forgive('bea')).toBe(false); // ya revelada
   });
 });

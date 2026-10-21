@@ -1,7 +1,7 @@
 // Pantalla de juego del Pulsador en la tele: pregunta en grande, estado del turno y ganador a pantalla completa.
 // La tele es solo espectáculo: no tiene botones. Se maneja desde el mando del presentador (o el teclado).
 import { fill, h } from '../shared/dom.js';
-import { getColor, getIcon } from '../shared/appearance.js';
+import { avatarOf, getColor } from '../shared/appearance.js';
 import { formatDeltaMs, formatSeconds, ordinal } from '../shared/format.js';
 import { PHASE } from '../core/game.js';
 import { MIN_PLAYERS } from '../core/players.js';
@@ -107,7 +107,7 @@ export function createStage() {
     fill(
       overlay,
       h('p', { class: 'result-q' }, `${view.section.name} · Pregunta ${view.itemIndex + 1}`),
-      h('div', { class: 'result-avatar emoji', 'aria-hidden': 'true' }, getIcon(winner.icon).glyph),
+      h('div', { class: 'result-avatar emoji', 'aria-hidden': 'true' }, avatarOf(winner)),
       kinetic('h2', 'result-name', winner.name, { step: 45 }),
       team ? h('p', { class: 'result-team' }, team.name) : null,
       h('p', { class: 'result-time' }, first ? formatSeconds(first.reactionMs) : ''),
@@ -137,7 +137,7 @@ function followersList(followers) {
         'li',
         { class: r.nearTie ? 'near-tie' : '', style: { '--fc': getColor(r.player.color).bg } },
         h('span', { class: 'f-place' }, ordinal(r.place)),
-        h('span', { class: 'f-icon emoji' }, getIcon(r.player.icon).glyph),
+        h('span', { class: 'f-icon emoji' }, avatarOf(r.player)),
         h('span', { class: 'f-name' }, r.player.name),
         h('span', { class: 'f-delta' }, formatDeltaMs(r.deltaMs)),
         r.nearTie ? h('span', { class: 'f-tie' }, 'casi empate') : null,
@@ -153,7 +153,7 @@ function miniStandings(view, winner) {
     : [...view.players]
         .sort((a, b) => b.score - a.score)
         .slice(0, 8)
-        .map((p) => ({ key: p.id, name: p.name, color: p.color, icon: p.icon, score: p.score, mine: p.id === winner.id }));
+        .map((p) => ({ key: p.id, name: p.name, color: p.color, icon: p.icon, face: p.face, score: p.score, mine: p.id === winner.id }));
   return h(
     'ol',
     { class: 'mini-standings' },
@@ -162,7 +162,7 @@ function miniStandings(view, winner) {
         'li',
         { class: r.mine ? 'mine' : '', style: { '--fc': getColor(r.color).bg } },
         h('span', { class: 'f-place' }, ordinal(i + 1)),
-        r.icon ? h('span', { class: 'f-icon emoji' }, getIcon(r.icon).glyph) : null,
+        r.icon ? h('span', { class: 'f-icon emoji' }, avatarOf(r)) : null,
         h('span', { class: 'f-name' }, r.name),
         h('span', { class: 'f-score' }, `${r.score} pts`),
       ),

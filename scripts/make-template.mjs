@@ -39,6 +39,12 @@ const SHEETS = [
       { title: 'Puntos', width: 10, note: 'Un número (por acierto) o una lista por puestos, como 3,2,1.' },
       { title: 'El presentador juega', width: 12, list: yesNo, note: 'Vacío = lo normal del tipo (sí en Votación, Contador, Reflejos y Libre).' },
       {
+        title: 'Por turnos',
+        width: 11,
+        list: yesNo,
+        note: 'Sí: cada pregunta la responde un solo jugador de cada equipo. Al empezar la sección, el portavoz de cada equipo elige el orden en su móvil (de la pregunta más fácil a la más difícil). Solo Verdad o mentira, Estimación y Parar el contador, y con equipos. El Test (millonario) siempre va por turnos: un concursante cada vez, alternando equipos.',
+      },
+      {
         title: 'Entorno',
         width: 22,
         list: ENVIRONMENTS.map((e) => e.name),
@@ -47,14 +53,14 @@ const SHEETS = [
     ],
     rows: [
       [1, 'Calentamiento', 'Pulsador', 'El primero que pulse, responde.', 1, 'No'],
-      [2, 'Cultura general', 'Test', 'Cuatro respuestas, solo una buena.', 2, null],
+      [2, 'Cultura general', 'Test', '¿Quién quiere ser millonario? Uno cada vez; vuestro portavoz decide el orden.', 2, null, null],
       [3, '¿Verdad o mentira?', 'Verdad o mentira', '¿Te lo crees o no?', 1, null],
       [4, '¿Quién es más probable…?', 'Votación', 'Votad sin piedad.', 1, null],
       [5, 'Calcula', 'Estimación', 'El que más se acerque.', '3,2,1', null],
       [6, 'Reloj interno', 'Parar el contador', 'Para el reloj lo más cerca posible del objetivo.', '3,2,1', null],
       [7, 'Reflejos', 'Duelo de reflejos', 'Cuando se ponga en verde… ¡pulsa!', '3,2,1', null],
       [8, 'Dos verdades y una mentira', 'Dos verdades y una mentira', '¿Cuál es la mentira?', 1, null],
-      [9, 'Fit o Fat', 'Libre', 'Pruebas físicas.', 3, 'Sí', 'Noche de luna'],
+      [9, 'Fit o Fat', 'Libre', 'Pruebas físicas.', 3, 'Sí', null, 'Noche de luna'],
     ],
   },
   {
@@ -79,7 +85,7 @@ const SHEETS = [
     rows: [
       ['Título del concurso', 'El concurso del año'],
       ['Comodín 50 %', 1],
-      ['Comodín Doble', 1],
+      ['Comodín Llamada', 1],
       ['Comodín Público', 1],
       ['Puntos por defecto', 1],
       ['Puntos por fallo', 0],
@@ -114,12 +120,15 @@ const SHEETS = [
       { title: 'C', width: 22, note: 'C y D son opcionales.' },
       { title: 'D', width: 22 },
       { title: 'Correcta', width: 10, list: ['A', 'B', 'C', 'D'] },
-      { title: 'Segundos', width: 10, note: 'Vacío = el de Ajustes.' },
       { title: 'Imagen', width: 40, note: 'Opcional: dirección web de una imagen.' },
     ],
+    // Se juega como el millonario: sin reloj, el presentador enseña las respuestas, marca la elegida y muestra la buena.
+    // Ordena las preguntas de la más fácil a la más difícil.
     rows: [
-      ['Cultura general', '¿En qué año llegó el hombre a la Luna?', '1965', '1969', '1972', '1975', 'B', null, null],
-      ['Cultura general', '¿Cuál es el planeta más grande?', 'Saturno', 'Neptuno', 'Júpiter', null, 'C', 15, null],
+      ['Cultura general', '¿Cuántos lados tiene un hexágono?', 'Cinco', 'Seis', 'Siete', 'Ocho', 'B', null],
+      ['Cultura general', '¿En qué año llegó el hombre a la Luna?', '1965', '1969', '1972', '1975', 'B', null],
+      ['Cultura general', '¿Cuál es la capital de provincia española que está a más altura?', 'Cuenca', 'Badajoz', 'Jaén', 'Ávila', 'D', null],
+      ['Cultura general', '¿Cuál es el planeta más grande?', 'Saturno', 'Neptuno', 'Júpiter', 'Urano', 'C', null],
     ],
   },
   {
@@ -223,7 +232,8 @@ const INSTRUCTIONS = [
   [''],
   ['1. Concurso: una fila por sección, en el orden en que se jugarán. Elige el tipo en el desplegable.'],
   ['2. Equipos: uno por fila con su color. Si la dejas vacía, se juega sin equipos.'],
-  ['3. Ajustes: título, comodines por equipo (o por jugador si no hay equipos) y puntos por defecto.'],
+  ['3. Ajustes: título, comodines del Test (50:50, Público y Llamada) por equipo (o por jugador sin equipos) y puntos.'],
+  ['   El Test se juega como «¿Quién quiere ser millonario?»: un concursante cada vez; ordena sus preguntas de fácil a difícil.'],
   ['4. Cada tipo de sección tiene su pestaña. En la columna "Sección" escribe (o elige) el nombre de la sección'],
   ['   de la pestaña Concurso a la que pertenece cada fila.'],
   ['5. Las filas de ejemplo se pueden borrar o cambiar. Las columnas pueden ir en cualquier orden,'],

@@ -4,7 +4,7 @@ import '@fontsource/creepster/latin.css';
 import './player.css';
 import '../shared/phone.css';
 import { $, fill, h } from '../shared/dom.js';
-import { COLORS, ICONS, getColor, getIcon } from '../shared/appearance.js';
+import { COLORS, ICONS, avatarOf, getColor, setFaceImages } from '../shared/appearance.js';
 import { isValidRoomCode, normalizeRoomCode } from '../shared/roomCode.js';
 import { ERROR_CODE, MSG, PROTOCOL_VERSION } from '../shared/protocol.js';
 import { loadJSON, newId, saveJSON } from '../shared/storage.js';
@@ -13,6 +13,7 @@ import { PlayerConnection } from './network.js';
 import { createProfilePicker } from './profilePicker.js';
 import { SyncClient } from './syncClient.js';
 import { createAnswerPad } from './answerPad.js';
+import { createMillionairePad } from './millionairePad.js';
 import { envGradient, HOME_ENV } from '../shared/environments.js';
 import { keepScreenAwake } from '../shared/wakeLock.js';
 
@@ -60,7 +61,23 @@ const pad = createAnswerPad({
 });
 $('#screen-game').append(pad.root);
 
+// Millonario (secciones de Test): concursante, público, amigo de la llamada o espectador
+const millPad = createMillionairePad({
+  onAnswer: (roundId, value) => {
+    const seq = ++buzzSeq;
+    ackKinds.set(seq, 'answer');
+    connection?.send({ t: MSG.ANSWER, seq, roundId, value });
+  },
+  onJoker: (roundId, kind, target) => {
+    const seq = ++buzzSeq;
+    ackKinds.set(seq, 'joker');
+    connection?.send({ t: MSG.JOKER, seq, roundId, kind, target });
+  },
+});
+$('#screen-game').append(millPad.root);
+
 const ANSWER_REJECTED = {
+  cheat: '🚨 Saliste de la app con la pregunta abierta: tu respuesta no cuenta.',
   late: 'Se acabó el tiempo: tu respuesta llegó tarde.',
   closed: 'La pregunta ya está cerrada.',
   'not-eligible': 'Esta pregunta no es para ti.',
@@ -70,8 +87,13 @@ const ANSWER_REJECTED = {
 
 const joinPicker = createProfilePicker(profile);
 const editPicker = createProfilePicker(profile);
+const lookPicker = createProfilePicker(profile);
+// Al entrar, solo el nombre: si hay foto con ese nombre, juegas con tu cara; si no, luego se elige icono y color.
+joinPicker.showLook(false);
+lookPicker.showName(false);
 $('#join-picker').append(joinPicker.root);
 $('#edit-picker').append(editPicker.root);
+$('#look-picker').append(lookPicker.root);
 
 function init() {
   const fromUrl = normalizeRoomCode(new URLSearchParams(location.search).get('sala'));
@@ -149,6 +171,7 @@ function join(code) {
         teamId: profile.teamId ?? null,
       });
       sync.start(); // después del hello: el presentador ignora todo lo anterior
+      sendBack(); // si volvió a la app mientras no había conexión
     },
     onMessage: handleMessage,
     onStatus: handleStatus,
@@ -211,8 +234,9 @@ function handleMessage(msg, tRecv) {
       const notes = [];
       if (msg.adjusted?.renamed) notes.push(`Ya había alguien con ese nombre: aparecerás como «${me.name}».`);
       if (msg.adjusted?.appearanceChanged) notes.push('Ese icono ya estaba cogido: te hemos puesto otro.');
-      if (notes.length) toast(notes.join(' ') + ' Puedes cambiarlo en «Cambiar».');
-      if (firstTime) show('screen-game');
+      if (me.face && firstTime) notes.push('¡Te hemos reconocido! Juegas con tu foto.');
+      if (notes.length) toast(notes.join(' ') + (msg.adjusted?.renamed || msg.adjusted?.appearanceChanged ? ' Puedes cambiarlo con ✏️.' : ''));
+      if (firstTime && !needsLook()) show('screen-game');
       renderMe();
       break;
     }
@@ -232,25 +256,38 @@ function handleMessage(msg, tRecv) {
       // El fondo del móvil lleva los colores del entorno de la sección (el mismo que la tele).
       document.body.style.setProperty('--env-bg', envGradient(msg.section?.env ?? HOME_ENV));
       if (standingsDialog.open) renderStandings();
-      if (msg.answer) {
+      if (msg.millionaire) {
+        pad.hide();
+        for (const id of ['#buzzer', '#free-pad', '#turn-pad']) $(id).hidden = true;
+        millPad.show();
+        millPad.render(msg.millionaire, { me, stateReceivedAt });
+      } else if (msg.answer) {
+        millPad.hide();
         $('#buzzer').hidden = true;
         pad.show();
         if (msg.answer.result?.points && !lastResultRound.has(msg.answer.roundId)) {
           lastResultRound.add(msg.answer.roundId);
           vibrate([80, 60, 80]);
         }
-        pad.render(msg.answer, { stateReceivedAt });
+        // Por turnos: a quién le toca de mi equipo (para «¡Te toca!» / «Le toca a Ana»)
+        const answerer = msg.turns?.answerer;
+        pad.render({ ...msg.answer, turnOf: answerer?.name ?? null, myTurn: answerer?.id === me.id }, { stateReceivedAt });
       } else {
         pad.hide();
+        millPad.hide();
         // Libre con contador: si participas, el móvil cuenta (+1/−1) en vez del botón grande.
         const counting = !!msg.free?.counter && ['setup', 'running'].includes(msg.free.phase);
+        const ordering = !counting && !!msg.turns?.canOrder; // portavoz ordenando a su equipo
         $('#free-pad').hidden = !counting;
-        $('#buzzer').hidden = counting;
+        $('#turn-pad').hidden = !ordering;
+        $('#buzzer').hidden = counting || ordering;
         if (counting) renderFreePad(msg.free);
+        else if (ordering) renderTurnPad(msg.turns);
         else renderBuzzer();
       }
-      // Con equipos, quien aún no tiene uno tiene que elegirlo antes de nada.
+      // Con equipos, quien aún no tiene uno tiene que elegirlo antes de nada; luego, icono y color si no hay foto.
       if (msg.teams?.length && !me.teamId && !teamRequested) showTeamPicker(msg.teams);
+      else if (needsLook()) showLook(msg);
       else if ($('#screen-game').hidden) show('screen-game');
       break;
     }
@@ -268,11 +305,108 @@ function handleMessage(msg, tRecv) {
       }
       break;
     }
+    case MSG.FACES:
+      // Fotos de los jugadores reconocidos por su nombre (la tuya incluida)
+      setFaceImages(msg.images);
+      renderMe();
+      if (standingsDialog.open) renderStandings();
+      break;
     case MSG.ERROR:
       handleError(msg);
       break;
   }
 }
+
+// ---------- Por turnos: el portavoz ordena a su equipo ----------
+
+let turnDraft = null; // orden que está montando el portavoz (ids), hasta que lo guarda
+let turnDirty = false;
+
+function renderTurnPad(turns) {
+  const ids = turns.order.map((p) => p.id);
+  // Si cambia el equipo (alguien entra o sale) o aún no ha tocado nada, se parte del orden de la tele
+  if (!turnDraft || !turnDirty || turnDraft.length !== ids.length || turnDraft.some((id) => !ids.includes(id))) {
+    turnDraft = ids;
+    turnDirty = false;
+  }
+  const byId = new Map(turns.order.map((p) => [p.id, p]));
+  const move = (i, d) => {
+    const j = i + d;
+    if (j < 0 || j >= turnDraft.length) return;
+    [turnDraft[i], turnDraft[j]] = [turnDraft[j], turnDraft[i]];
+    turnDirty = true;
+    renderTurnPad(turns);
+  };
+  fill(
+    $('#turn-list'),
+    turnDraft.map((id, i) => {
+      const p = byId.get(id);
+      return h(
+        'li',
+        {},
+        h('span', { class: 'turn-num' }, String(i + 1)),
+        h('span', { class: 'emoji turn-avatar' }, avatarOf(p)),
+        h('span', { class: 'turn-name' }, p.name, p.id === me?.id ? ' (tú)' : ''),
+        h('button', { class: 'btn small', type: 'button', disabled: i === 0, 'aria-label': `Subir a ${p.name}`, onclick: () => move(i, -1) }, '↑'),
+        h('button', { class: 'btn small', type: 'button', disabled: i === turnDraft.length - 1, 'aria-label': `Bajar a ${p.name}`, onclick: () => move(i, 1) }, '↓'),
+      );
+    }),
+  );
+  $('#turn-status').textContent = turnDirty ? 'Sin guardar' : turns.ready ? '✓ Guardado: ya sale en la tele' : 'Aún no lo has guardado';
+}
+
+$('#turn-save').addEventListener('click', () => {
+  if (!turnDraft || !connection?.connected) return;
+  connection.send({ t: MSG.TURN_ORDER, order: turnDraft });
+  turnDirty = false;
+  vibrate(30);
+  toast('Orden guardado');
+});
+
+// ---------- Antitrampas ----------
+
+// Si sales de la app (otra app, otra pestaña, Google…) el portátil lo sabe: al salir se avisa y al volver se dice cuánto
+// tiempo estuviste fuera. Si tenías una pregunta abierta, según el ajuste tu respuesta no cuenta.
+let leftAt = null;
+let pendingBack = null; // ms fuera, por mandar (si al volver aún no hay conexión)
+
+function sendBack() {
+  if (pendingBack == null || !connection?.connected) return;
+  connection.send({ t: MSG.AWAY, state: 'back', ms: Math.round(pendingBack) });
+  pendingBack = null;
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') {
+    leftAt = performance.now();
+    if (connection?.connected) connection.send({ t: MSG.AWAY, state: 'out' });
+  } else if (leftAt != null) {
+    pendingBack = (pendingBack ?? 0) + (performance.now() - leftAt);
+    leftAt = null;
+    sendBack();
+  }
+});
+
+// ---------- Icono y color (si no hay foto con tu nombre) ----------
+
+/** Hay que elegir icono y color: no tiene foto y aún no los eligió en este móvil. */
+const needsLook = () => !!me && !me.face && !profile.lookChosen;
+
+function showLook(state) {
+  if (!$('#screen-look').hidden) return;
+  lookPicker.setTaken(state.taken ?? []);
+  lookPicker.setFixedColor(state.teams?.find((t) => t.id === me.teamId)?.color ?? null);
+  lookPicker.value = { ...profile, color: me.color, icon: me.icon };
+  show('screen-look');
+}
+
+$('#look-done').addEventListener('click', () => {
+  const value = lookPicker.value;
+  Object.assign(profile, { color: value.color, icon: value.icon, lookChosen: true });
+  saveProfile();
+  connection?.send({ t: MSG.PROFILE, name: me?.name ?? profile.name, color: value.color, icon: value.icon, teamId: me?.teamId ?? null });
+  show('screen-game');
+});
 
 function handleError(msg) {
   sync.stop();
@@ -295,7 +429,7 @@ function renderMe() {
   const color = getColor(me.color);
   document.documentElement.style.setProperty('--me', color.bg);
   document.documentElement.style.setProperty('--me-fg', color.fg);
-  $('#me-avatar').textContent = getIcon(me.icon).glyph;
+  $('#me-avatar').replaceChildren(avatarOf(me));
   $('#me-name').textContent = me.name;
   $('#me-score').textContent = me.score;
 }
@@ -327,7 +461,9 @@ function renderFreePad(free) {
   $('#free-title').textContent = free.title;
   $('#free-count').textContent = free.count;
   $('#free-hint').textContent = !c.mine
-    ? `Lleva la cuenta ${c.by} desde su móvil`
+    ? c.by
+      ? `Lleva la cuenta ${c.by} desde su móvil`
+      : 'La cuenta la lleva el presentador'
     : running
       ? free.byTeams
         ? 'Suma uno por cada repetición de tu equipo'
@@ -374,7 +510,14 @@ function renderInfo(state) {
   const [label, sub] = freeText ?? {
     setup: ['Espera', state.playerCount < state.minPlayers ? `Esperando jugadores (mínimo ${state.minPlayers})` : 'Enseguida empezamos'],
     cover: ['¡Empezamos!', 'Mira la tele'],
-    intro: [section?.name ?? 'Nueva sección', section?.label ?? ''],
+    intro: state.turns
+      ? [
+          section?.name ?? 'Nueva sección',
+          state.turns.ready
+            ? `Por turnos: responderás la pregunta ${state.turns.position}`
+            : `Por turnos: ${state.turns.spokespersonName ?? 'tu portavoz'} está eligiendo el orden de tu equipo`,
+        ]
+      : [section?.name ?? 'Nueva sección', section?.label ?? ''],
     play: [section?.name ?? 'Espera', 'Mira la tele'],
     scoreboard: ['Marcador', 'Mira la tele'],
     final: ['¡Fin del concurso!', `Has hecho ${me?.score ?? 0} ${me?.score === 1 ? 'punto' : 'puntos'}`],
@@ -408,7 +551,10 @@ function renderBuzzer() {
     first: g.judged === 'correct' ? ['¡Has acertado!', '¡Bien hecho!'] : ['¡Has sido el primero!', formatSeconds(g.reactionMs ?? 0)],
     placed: [`Llegaste ${g.place}º`, `(${formatDeltaSeconds(g.deltaMs ?? 0)})${g.nearTie ? ' · ¡casi empate!' : ''}`],
     missed: g.judged === 'correct' ? [`${winnerName} ha acertado`, ''] : ['Espera', `Ha pulsado antes ${winnerName}`],
-    blocked: ['Bloqueado', g.reason === 'early' ? 'Pulsaste antes de tiempo' : 'Fallaste: espera a la siguiente pregunta'],
+    blocked: [
+      'Bloqueado',
+      { early: 'Pulsaste antes de tiempo', cheat: '🚨 Saliste de la app con el turno abierto' }[g.reason] ?? 'Fallaste: espera a la siguiente pregunta',
+    ],
     closed: ['Nadie acertó', 'Espera a la siguiente pregunta'],
   }[status] ?? ['Espera', ''];
 
@@ -468,8 +614,18 @@ $('#edit-profile').addEventListener('click', () => {
     teams.map((t) => h('option', { value: t.id, selected: t.id === me?.teamId }, t.name)),
   );
   editPicker.setFixedColor(teams.length ? (teams.find((t) => t.id === me?.teamId)?.color ?? null) : null);
-  editPicker.value = { ...profile, color: me?.color ?? profile.color, icon: me?.icon ?? profile.icon };
+  editPicker.value = { ...profile, name: me?.name ?? profile.name, color: me?.color ?? profile.color, icon: me?.icon ?? profile.icon };
+  // Con foto no hace falta icono; el nombre, solo antes de empezar el concurso
+  editPicker.showLook(!me?.face);
+  editPicker.lockName(!!lastState && lastState.screen !== 'setup');
   dialog.showModal();
+});
+
+$('#switch-room').addEventListener('click', () => {
+  if (!confirm('¿Salir de esta sala? Podrás entrar en otra con su código.')) return;
+  dialog.close();
+  $('#code').value = '';
+  leave();
 });
 
 // Al cambiar de equipo en el diálogo, los iconos ocupados se calculan con el color del nuevo equipo.
@@ -522,12 +678,12 @@ $('#standings-form').addEventListener('submit', (e) => {
 function renderStandings() {
   const st = lastState?.standings;
   if (!st) return;
-  const row = (place, name, score, { color, icon, mine }) =>
+  const row = (place, name, score, { color, icon, face, mine }) =>
     h(
       'li',
       { class: mine ? 'mine' : '', style: { '--pc': getColor(color).bg } },
       h('span', { class: 'st-place' }, `${place}º`),
-      icon ? h('span', { class: 'emoji' }, getIcon(icon).glyph) : null,
+      icon ? h('span', { class: 'emoji' }, avatarOf({ icon, face })) : null,
       h('span', { class: 'st-name' }, name),
       h('strong', {}, String(score)),
     );
@@ -547,7 +703,7 @@ function renderStandings() {
     h(
       'ol',
       { class: 'st-list' },
-      st.players.map((p, i) => row(i + 1, p.name, p.score, { color: p.color, icon: p.icon, mine: p.id === me?.id })),
+      st.players.map((p, i) => row(i + 1, p.name, p.score, { color: p.color, icon: p.icon, face: p.face, mine: p.id === me?.id })),
     ),
   );
 }
@@ -598,6 +754,7 @@ function loadProfile() {
     name: typeof saved.name === 'string' ? saved.name : '',
     color: saved.color ?? COLORS[Math.floor(Math.random() * COLORS.length)].id,
     icon: saved.icon ?? ICONS[Math.floor(Math.random() * ICONS.length)].id,
+    lookChosen: saved.lookChosen === true, // ya eligió icono y color en este móvil
   };
   saveJSON(PROFILE_KEY, p);
   return p;

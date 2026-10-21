@@ -6,6 +6,17 @@ const FIELDS = [
   { key: 'sfxOn', type: 'checkbox', label: 'Efectos de sonido' },
   { key: 'volume', type: 'range', label: 'Volumen', min: 0, max: 100 },
   { key: 'countdownSec', type: 'number', label: 'Cuenta atrás antes de cada pregunta (s)', min: 0, max: 10, help: '0 = sin cuenta atrás.' },
+  {
+    key: 'antiCheat',
+    type: 'select',
+    label: 'Si alguien sale de la app con una pregunta abierta',
+    help: 'Para pillar a quien cambia de ventana para buscar la respuesta (más de 1,5 s fuera).',
+    options: [
+      ['void', 'Su respuesta no cuenta (y aviso en la tele)'],
+      ['warn', 'Solo aviso en la tele y el mando'],
+      ['off', 'Nada'],
+    ],
+  },
   { key: 'lockEarlyBuzz', type: 'checkbox', label: 'Bloquear durante la pregunta a quien pulse antes de abrir el turno' },
   { key: 'nearTieMs', type: 'number', label: 'Umbral de casi empate (ms)', min: 0, max: 500 },
   {
@@ -33,9 +44,12 @@ export function openSettingsDialog(room) {
     { method: 'dialog', class: 'settings-form' },
     h('h2', {}, 'Ajustes'),
     FIELDS.map((f) => {
-      const input = h('input', { type: f.type, name: f.key, min: f.min, max: f.max, step: 1 });
+      const input =
+        f.type === 'select'
+          ? h('select', { name: f.key }, f.options.map(([value, text]) => h('option', { value, selected: room.settings[f.key] === value }, text)))
+          : h('input', { type: f.type, name: f.key, min: f.min, max: f.max, step: 1 });
       if (f.type === 'checkbox') input.checked = !!room.settings[f.key];
-      else input.value = room.settings[f.key];
+      else if (f.type !== 'select') input.value = room.settings[f.key];
       inputs.set(f.key, { input, field: f });
       return h(
         'label',
@@ -63,6 +77,7 @@ export function openSettingsDialog(room) {
       const patch = {};
       for (const [key, { input, field }] of inputs) {
         if (field.type === 'checkbox') patch[key] = input.checked;
+        else if (field.type === 'select') patch[key] = input.value;
         else {
           const n = Math.round(Number(input.value));
           if (Number.isFinite(n)) patch[key] = Math.min(field.max, Math.max(field.min, n));

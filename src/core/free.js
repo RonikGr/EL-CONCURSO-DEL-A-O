@@ -21,7 +21,7 @@ export class FreeRound {
     this.tStop = null;
     this.out = {}; // cronómetro: id → ms aguantados al caer
     this.counts = {}; // contador: id → número
-    this.counters = {}; // contador desde el móvil: participante → playerId que lleva su cuenta (uno por equipo)
+    this.counters = {}; // contador desde el móvil, con equipos: equipo → playerId que lleva su cuenta (lo elige el presentador)
     this.winners = [];
     this.points = {}; // id → puntos dados
   }
@@ -76,19 +76,28 @@ export class FreeRound {
     return true;
   }
 
+  /** Con equipos: qué jugador cuenta desde su móvil por su equipo (null = nadie: cuenta el presentador). */
+  setCounter(teamId, playerId) {
+    if (!this.byTeams || this.phase === FPHASE.AWARDED) return false;
+    if (playerId) this.counters[teamId] = playerId;
+    else delete this.counters[teamId];
+    return true;
+  }
+
+  /** ¿Puede contar este móvil por este participante? Sin equipos, cada uno lo suyo; con equipos, el elegido. */
+  canCount(playerId, participantId) {
+    if (this.tool !== TOOL.COUNTER || !this.participants.includes(participantId)) return false;
+    return this.byTeams ? this.counters[participantId] === playerId : participantId === playerId;
+  }
+
   /**
-   * Cuenta desde el móvil de un concursante (+1/−1; delta 0 = solo pedir llevar la cuenta). Con equipos lleva la cuenta
-   * un único móvil por equipo: el primero que lo pide.
-   * @returns 'ok' | 'taken' (otro lleva la cuenta) | 'closed'
+   * +1/−1 desde el móvil de un concursante.
+   * @returns 'ok' | 'not-counter' (este móvil no lleva la cuenta) | 'closed'
    */
   countFrom(playerId, participantId, delta) {
-    const open = this.phase === FPHASE.SETUP || this.phase === FPHASE.RUNNING;
-    if (!open || this.tool !== TOOL.COUNTER || !this.participants.includes(participantId)) return 'closed';
-    const owner = this.counters[participantId];
-    if (owner && owner !== playerId) return 'taken';
-    if (delta && this.phase !== FPHASE.RUNNING) return 'closed';
-    this.counters[participantId] = playerId;
-    if (delta) this.count(participantId, delta);
+    if (this.phase !== FPHASE.RUNNING || this.tool !== TOOL.COUNTER || !this.participants.includes(participantId)) return 'closed';
+    if (!this.canCount(playerId, participantId)) return 'not-counter';
+    this.count(participantId, delta);
     return 'ok';
   }
 
