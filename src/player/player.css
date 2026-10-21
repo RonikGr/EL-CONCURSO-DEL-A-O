@@ -762,3 +762,100 @@ body.offline .buzzer {
 .ap-light.done:not(.out) {
   opacity: 0.85;
 }
+
+/* --- Barra de sección --- */
+.section-bar {
+  padding: 0.5rem 0.8rem;
+  border-radius: 0.8rem;
+  background: var(--surface);
+  border-left: 0.35rem solid var(--me);
+}
+
+.section-bar p {
+  margin: 0;
+}
+
+.section-top {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.section-name {
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.section-desc {
+  color: var(--muted);
+  font-size: 0.9rem;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+}
+
+/* La puntuación de la cabecera es un botón: abre el marcador. */
+button.me-score {
+  border: 2px solid var(--border);
+  border-radius: 0.8rem;
+  background: var(--surface);
+  padding: 0.2rem 0.6rem;
+  color: var(--text);
+}
+
+/* --- Marcador sin salir del juego --- */
+.standings-sheet {
+  margin-bottom: 0;
+  border-radius: 1.25rem 1.25rem 0 0;
+  max-height: 85dvh;
+}
+
+.standings-sheet h3 {
+  margin: 0.8rem 0 0.4rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.st-list {
+  list-style: none;
+  margin: 0 0 1rem;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.st-list li {
+  display: grid;
+  grid-template-columns: 2.2rem auto 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.7rem;
+  border-radius: 0.6rem;
+  background: var(--surface);
+  border-left: 0.35rem solid var(--pc);
+  font-weight: 700;
+}
+
+.st-list li:not(:has(.emoji)) {
+  grid-template-columns: 2.2rem 1fr auto;
+}
+
+.st-list li.mine {
+  outline: 2px solid var(--accent);
+  background: var(--surface-2);
+}
+
+.st-place {
+  color: var(--muted);
+}
+
+.st-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

@@ -43,9 +43,16 @@
           <div id="me-name" class="me-name"></div>
           <div id="room-line" class="room-line"></div>
         </div>
-        <div class="me-score"><span id="me-score">0</span><small>puntos</small></div>
+        <button id="open-standings" class="me-score" type="button" aria-label="Ver el marcador">
+          <span id="me-score">0</span><small>puntos ▾</small>
+        </button>
         <button id="edit-profile" class="btn small" type="button">Cambiar</button>
       </header>
+      <div id="section-bar" class="section-bar" hidden>
+        <p id="section-top" class="section-top"></p>
+        <p id="section-name" class="section-name"></p>
+        <p id="section-desc" class="section-desc"></p>
+      </div>
       <div id="net-banner" class="net-banner" role="status" hidden></div>
       <button id="buzzer" class="buzzer" type="button" data-state="wait">
         <span id="buzzer-label" class="buzzer-label">Espera</span>
@@ -58,6 +65,14 @@
       <p id="message-text" class="lead"></p>
       <button id="message-action" class="btn primary big" type="button">Volver</button>
     </section>
+
+    <dialog id="standings-dialog" class="sheet standings-sheet">
+      <form id="standings-form" method="dialog">
+        <h2>Marcador</h2>
+        <div id="standings-body"></div>
+        <button class="btn primary big" value="close" type="submit">Volver al juego</button>
+      </form>
+    </dialog>
 
     <dialog id="profile-dialog" class="sheet">
       <form id="profile-form" method="dialog" novalidate>

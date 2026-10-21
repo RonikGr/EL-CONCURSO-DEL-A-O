@@ -108,7 +108,13 @@ export function createStage() {
     );
   }
 
-  return { root, overlay, render };
+  /** Al salir de esta pantalla: quitar el ganador a pantalla completa y parar el cronómetro. */
+  function stop() {
+    stopTimer();
+    overlay.hidden = true;
+  }
+
+  return { root, overlay, render, stop };
 }
 
 function followersList(followers) {

@@ -230,6 +230,13 @@ function renderScreen(view) {
   if (signature === lastScreenSignature) return;
   lastScreenSignature = signature;
 
+  // Antes de pintar, se limpia todo lo de la pantalla anterior (el ganador a pantalla completa del pulsador,
+  // relojes y cuentas atrás): la pantalla que toque ahora vuelve a poner lo suyo. Si no, al saltar de sección
+  // se quedaba encima el ganador de la pregunta anterior.
+  stage.stop();
+  answerStage.stop();
+  freeStage.stop();
+
   const screen = $('#screen');
   screen.dataset.screen = view.peekScoreboard ? 'scoreboard' : view.screen;
   if (view.peekScoreboard) return fill(screen, scoreboardScreen(view));

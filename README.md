@@ -60,6 +60,10 @@ conectado por HDMI); cada jugador usa su móvil como pulsador, sin instalar nada
     - El mando propone el ganador (puedes cambiarlo o marcar varios) y «Dar puntos»: a cada jugador o, si participan
       equipos, al equipo entero.
 
+En el móvil de cada concursante, bajo su nombre, se ve en qué sección está (nº de sección, tipo, pregunta y puntos en
+juego) y su equipo con el puesto. Tocando sus puntos se abre el **marcador** (equipos y concursantes, en directo) sin
+salir de lo que está pasando: «Volver al juego» lo cierra.
+
 El mando tiene tres pestañas: **Juego** (lo que toca ahora), **Jugadores** (puntos ±, puntos de equipo, mover de
 equipo, quitar) y **Secciones** (saltar a cualquiera).
 

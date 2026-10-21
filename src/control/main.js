@@ -273,7 +273,6 @@ function buzzerPanel() {
     item?.question ? h('p', { class: 'c-question' }, item.question) : h('p', { class: 'muted' }, item?.song ? '🎵 Pregunta con canción' : 'Sin pregunta escrita: improvisa.'),
     item?.answer ? h('p', { class: 'c-answer' }, h('small', {}, 'Respuesta'), item.answer) : null,
     item?.notes ? h('p', { class: 'c-notes' }, '📝 ', item.notes) : null,
-    item?.song ? h('p', { class: 'muted small' }, '🎵 La canción sonará cuando esté Spotify (fase 8).') : null,
     item?.showOnTv && item.question
       ? h('p', { class: 'muted small' }, view.shown.question ? '✓ La pregunta se ve en la tele.' : 'La pregunta aún no se ve en la tele.')
       : item && !item.showOnTv

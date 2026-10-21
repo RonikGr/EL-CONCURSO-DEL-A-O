@@ -217,10 +217,14 @@ function handleMessage(msg, tRecv) {
       stateReceivedAt = performance.now();
       editPicker.setTaken(msg.taken ?? []);
       const team = msg.teams?.find((t) => t.id === me.teamId);
-      $('#room-line').textContent = [team?.name, `Sala ${msg.room}`, `${msg.playerCount} ${msg.playerCount === 1 ? 'jugador' : 'jugadores'}`]
+      const teamPlace = team ? (msg.standings?.teams.findIndex((t) => t.id === team.id) ?? -1) + 1 : 0;
+      const teamText = team ? `${team.name}${teamPlace ? ` · ${teamPlace}º` : ''}` : null;
+      $('#room-line').textContent = [teamText, `Sala ${msg.room}`, `${msg.playerCount} ${msg.playerCount === 1 ? 'jugador' : 'jugadores'}`]
         .filter(Boolean)
         .join(' · ');
       renderMe();
+      renderSectionBar(msg);
+      if (standingsDialog.open) renderStandings();
       if (msg.answer) {
         $('#buzzer').hidden = true;
         pad.show();
@@ -431,6 +435,68 @@ $('#profile-form').addEventListener('submit', (e) => {
   saveProfile();
   connection?.send({ t: MSG.PROFILE, name: value.name, color: value.color, icon: value.icon, teamId });
 });
+
+// ---------- Sección y marcador ----------
+
+/** Barra bajo la cabecera: en qué sección estamos, qué pregunta va y cuántos puntos hay en juego. */
+function renderSectionBar(state) {
+  const bar = $('#section-bar');
+  const s = state.section;
+  bar.hidden = !s;
+  if (!s) return;
+  const unit = { contador: 'Ronda', reflejos: 'Ronda', libre: 'Prueba' }[state.answer?.kind ?? (state.free ? 'libre' : '')] ?? 'Pregunta';
+  const item = s.itemIndex == null ? '' : s.itemCount ? `${unit} ${s.itemIndex + 1} de ${s.itemCount}` : `${unit} ${s.itemIndex + 1}`;
+  const pts = s.points?.length > 1 ? `${s.points.join('·')} pts` : `${s.points?.[0] ?? 1} ${s.points?.[0] === 1 ? 'pt' : 'pts'}`;
+  $('#section-top').textContent = [`Sección ${s.index + 1} de ${s.count}`, s.label, item].filter(Boolean).join(' · ');
+  $('#section-name').textContent = `${s.name} · ${pts}`;
+  $('#section-desc').textContent = s.description ?? '';
+  $('#section-desc').hidden = !s.description;
+}
+
+const standingsDialog = $('#standings-dialog');
+$('#open-standings').addEventListener('click', () => {
+  renderStandings();
+  standingsDialog.showModal();
+});
+// 'submit' y no 'close': Chrome no dispara 'close' mientras la página no se pinta.
+$('#standings-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  standingsDialog.close();
+});
+
+/** Marcador en directo: equipos (si hay) y jugadores, con el tuyo resaltado. */
+function renderStandings() {
+  const st = lastState?.standings;
+  if (!st) return;
+  const row = (place, name, score, { color, icon, mine }) =>
+    h(
+      'li',
+      { class: mine ? 'mine' : '', style: { '--pc': getColor(color).bg } },
+      h('span', { class: 'st-place' }, `${place}º`),
+      icon ? h('span', { class: 'emoji' }, getIcon(icon).glyph) : null,
+      h('span', { class: 'st-name' }, name),
+      h('strong', {}, String(score)),
+    );
+  fill(
+    $('#standings-body'),
+    st.teams.length
+      ? [
+          h('h3', {}, 'Equipos'),
+          h(
+            'ol',
+            { class: 'st-list' },
+            st.teams.map((t, i) => row(i + 1, t.name, t.score, { color: t.color, mine: t.id === me?.teamId })),
+          ),
+        ]
+      : null,
+    h('h3', {}, st.teams.length ? 'Concursantes' : 'Clasificación'),
+    h(
+      'ol',
+      { class: 'st-list' },
+      st.players.map((p, i) => row(i + 1, p.name, p.score, { color: p.color, icon: p.icon, mine: p.id === me?.id })),
+    ),
+  );
+}
 
 // ---------- Elegir equipo ----------
 

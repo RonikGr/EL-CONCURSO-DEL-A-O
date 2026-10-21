@@ -782,7 +782,27 @@ export class HostRoom extends EventTarget {
       teamsLocked: this.roster.teamsLocked,
       you: publicPlayer(player),
       screen: r.peekScoreboard ? SCREEN.SCOREBOARD : r.screen,
-      section: showSection ? { name: r.section.name, label: SECTION_TYPES[r.section.type].label } : null,
+      section: showSection
+        ? {
+            name: r.section.name,
+            label: SECTION_TYPES[r.section.type].label,
+            description: r.section.description,
+            points: r.section.points,
+            index: r.sectionIndex,
+            count: this.show.sections.length,
+            // En juego: qué pregunta / prueba / ronda va (0 = sin lista).
+            itemIndex: r.screen === SCREEN.PLAY ? r.itemIndex : null,
+            itemCount: r.itemCount,
+          }
+        : null,
+      // Marcador para consultarlo sin salir del juego.
+      standings: {
+        teams: this.roster.teamStandings().map((s) => ({ id: s.team.id, name: s.team.name, color: s.team.color, score: s.score })),
+        players: this.roster
+          .list()
+          .map(publicPlayer)
+          .sort((a, b) => b.score - a.score),
+      },
       game: play ? playerView(g, player.id, now()) : null,
       winner: winner ? publicPlayer(winner) : null,
       answer: this.inAnswerPlay ? this.#answerViewFor(player) : null,

@@ -8,7 +8,6 @@ import { COLORS } from '../src/shared/appearance.js';
 const OUT = resolve(import.meta.dirname, '../public/plantilla-concurso.xlsx');
 const ROWS = 200; // filas con desplegables
 const SECTION_LIST = 'Concurso!$B$2:$B$100';
-const TRACK = 'https://open.spotify.com/track/4uLU6hMCjMI75M1A2tKUQC';
 
 const yesNo = ['Sí', 'No'];
 const TYPES = [
@@ -38,18 +37,17 @@ const SHEETS = [
       { title: 'Descripción', width: 50, note: 'Se muestra en la tele al presentar la sección.' },
       { title: 'Puntos', width: 10, note: 'Un número (por acierto) o una lista por puestos, como 3,2,1.' },
       { title: 'El presentador juega', width: 12, list: yesNo, note: 'Vacío = lo normal del tipo (sí en Votación, Contador, Reflejos y Libre).' },
-      { title: 'Música de entrada', width: 46, note: 'Opcional: enlace a una canción de Spotify.' },
     ],
     rows: [
-      [1, 'Calentamiento', 'Pulsador', 'El primero que pulse, responde.', 1, 'No', null],
-      [2, 'Cultura general', 'Test', 'Cuatro respuestas, solo una buena.', 2, null, null],
-      [3, '¿Verdad o mentira?', 'Verdad o mentira', '¿Te lo crees o no?', 1, null, null],
-      [4, '¿Quién es más probable…?', 'Votación', 'Votad sin piedad.', 1, null, null],
-      [5, 'Calcula', 'Estimación', 'El que más se acerque.', '3,2,1', null, null],
-      [6, 'Reloj interno', 'Parar el contador', 'Para el reloj lo más cerca posible del objetivo.', '3,2,1', null, null],
-      [7, 'Reflejos', 'Duelo de reflejos', 'Cuando se ponga en verde… ¡pulsa!', '3,2,1', null, null],
-      [8, 'Dos verdades y una mentira', 'Dos verdades y una mentira', '¿Cuál es la mentira?', 1, null, null],
-      [9, 'Fit o Fat', 'Libre', 'Pruebas físicas.', 3, 'Sí', TRACK],
+      [1, 'Calentamiento', 'Pulsador', 'El primero que pulse, responde.', 1, 'No'],
+      [2, 'Cultura general', 'Test', 'Cuatro respuestas, solo una buena.', 2, null],
+      [3, '¿Verdad o mentira?', 'Verdad o mentira', '¿Te lo crees o no?', 1, null],
+      [4, '¿Quién es más probable…?', 'Votación', 'Votad sin piedad.', 1, null],
+      [5, 'Calcula', 'Estimación', 'El que más se acerque.', '3,2,1', null],
+      [6, 'Reloj interno', 'Parar el contador', 'Para el reloj lo más cerca posible del objetivo.', '3,2,1', null],
+      [7, 'Reflejos', 'Duelo de reflejos', 'Cuando se ponga en verde… ¡pulsa!', '3,2,1', null],
+      [8, 'Dos verdades y una mentira', 'Dos verdades y una mentira', '¿Cuál es la mentira?', 1, null],
+      [9, 'Fit o Fat', 'Libre', 'Pruebas físicas.', 3, 'Sí'],
     ],
   },
   {
@@ -90,14 +88,12 @@ const SHEETS = [
       { title: 'Pregunta', width: 50 },
       { title: 'Respuesta', width: 30, note: 'Solo la ves tú, en tu móvil.' },
       { title: 'Mostrar en tele', width: 10, list: yesNo, note: 'Vacío = sí.' },
-      { title: 'Canción', width: 46, note: 'Opcional: enlace de Spotify. Se pausa sola cuando alguien pulsa.' },
-      { title: 'Desde segundo', width: 10 },
       { title: 'Notas', width: 30, note: 'Solo para ti.' },
     ],
     rows: [
-      ['Calentamiento', '¿Cuál es el río más largo de España?', 'El Tajo', 'Sí', null, null, null],
-      ['Calentamiento', '¿Cuántas patas tiene una araña?', 'Ocho', 'Sí', null, null, null],
-      ['Calentamiento', '¿Qué canción es?', 'Mr. Brightside', 'No', TRACK, 0, 'Suena 20 s'],
+      ['Calentamiento', '¿Cuál es el río más largo de España?', 'El Tajo', 'Sí', null],
+      ['Calentamiento', '¿Cuántas patas tiene una araña?', 'Ocho', 'Sí', null],
+      ['Calentamiento', '🎵 ¿Qué canción suena?', 'Mr. Brightside (The Killers)', 'Sí', 'Pon la canción tú desde tu música'],
     ],
   },
   {
@@ -226,7 +222,6 @@ const INSTRUCTIONS = [
   ['5. Las filas de ejemplo se pueden borrar o cambiar. Las columnas pueden ir en cualquier orden,'],
   ['   pero no cambies los títulos de la primera fila.'],
   ['6. Puntos: un número (por acierto) o una lista por puestos, como 3,2,1 (1º, 2º y 3º).'],
-  ['7. Canciones: copia el enlace de Spotify (Compartir → Copiar enlace de la canción).'],
   [''],
   ['Para cargarla: en el portátil, pantalla de preparación → "Cargar concurso" → elige este archivo.'],
   ['Desde Google Sheets: Archivo → Descargar → Microsoft Excel (.xlsx).'],

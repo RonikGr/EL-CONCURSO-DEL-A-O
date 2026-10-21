@@ -54,7 +54,9 @@ Jugador → tele: `hello {v, role:'player', playerId, name, color, icon, teamId}
 `joker {seq, roundId, kind}`, `sync {id, t0}`, `syncReport {offset, err, rtt, samples}`.
 
 Tele → jugador: `welcome {you, adjusted}`, `state {room, title, playerCount, minPlayers, taken, teams, teamsLocked, you,
-screen, section, game, winner, answer}` (foto completa y personalizada; `game` = `playerView()` solo en una pregunta de
+screen, section, game, winner, answer, free, standings}` (`section` = nombre, tipo, descripción, puntos, nº de sección y de
+pregunta, para la barra de sección del móvil; `standings` = equipos y jugadores con puntos, para el marcador que se abre
+sin salir del juego) (foto completa y personalizada; `game` = `playerView()` solo en una pregunta de
 pulsador; `answer` solo en una pregunta de respuestas), `hb {h0}` cada 2 s, `buzzAck {seq, result}`,
 `answerAck {seq, result, message?}` (respuestas y comodines), `syncReply {id, t0, t1, t2}`,
 `error {code, message}` (`room-full`, `version`, `removed`, `replaced`, `control-denied`).
@@ -119,6 +121,8 @@ V (mostrar respuesta), A (acierto), F (fallo), R (reiniciar pregunta), M (marcad
 Las pulsaciones solo cuentan en una pregunta de pulsador (`HostRoom.inBuzzerPlay`); fuera, `buzzAck closed` sin bloquear.
 Cada pregunta del runner (`runner.playKey`) reinicia el motor (`game.next()`).
 La tele repinta la pantalla solo si cambia algo visible (firma JSON sin latencias): así las animaciones no se repiten.
+Antes de cada repintado se llama a `stop()` de las tres pantallas de juego (`stage`, `answerStage`, `freeStage`): quita
+el ganador a pantalla completa, relojes y la luz de Reflejos de la pantalla anterior (si no, quedaban encima al saltar de sección).
 Los `<dialog>` se gestionan con el evento `submit` del formulario, no con `close`: Chrome no dispara `close`
 mientras la página no se pinta (ventana oculta o minimizada).
 
@@ -159,7 +163,8 @@ mientras la página no se pinta (ventana oculta o minimizada).
   dados al equipo entero.
 - **Contenido:** hoja de cálculo `.xlsx` (plantilla con una pestaña por tipo de sección + Concurso, Equipos,
   Ajustes, Instrucciones), importada en el portátil con validación por fila.
-- **Música:** Spotify Web Playback SDK (el usuario tiene Premium); en el Pulsador, la canción se pausa al pulsar.
+- **Música:** sin Spotify (descartado): la pone el presentador aparte. Las columnas "Música de entrada", "Canción" y
+  "Desde segundo" ya no están en la plantilla; si una hoja antigua las trae, se leen pero no se usan.
 - **Secciones:**
   - **Pulsador** (la actual) + la pregunta en grande en la tele cuando el presentador quiera.
   - **Test** (4 respuestas): solo puntúa acertar; respuesta definitiva; comodines 50 %, Doble y Público.
@@ -181,7 +186,7 @@ mientras la página no se pinta (ventana oculta o minimizada).
 5. Respuestas desde el móvil: Test (con comodines), Verdad o mentira, Dos verdades, ¿Quién es más probable…?, Estimación. ✔
 6. Secciones de tiempo: Parar el contador y Duelo de reflejos. ✔
 7. Sección Libre (cronómetro y contador). ✔ Pendiente de esta fase: que el presentador juegue desde el mando.
-8. Spotify.
+8. ~~Spotify~~ — descartado: la música la pone el presentador aparte.
 9. Espectáculo: transiciones, marcador animado, podios, sonidos, wake lock, tarjetas compactas para 20 jugadores.
 
 Hoja de ruta posterior: mandos físicos (Gamepad API), imagen pixelada, agitar el móvil, rosco, dibuja y adivina.

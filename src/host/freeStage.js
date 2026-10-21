@@ -78,7 +78,7 @@ export function createFreeStage() {
     tick();
   }
 
-  return { root, render };
+  return { root, render, stop: () => cancelAnimationFrame(raf) };
 }
 
 function chip(p) {

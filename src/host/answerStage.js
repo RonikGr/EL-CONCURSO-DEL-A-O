@@ -28,6 +28,7 @@ export function createAnswerStage() {
     const a = view.answer;
     stopCountdown();
     if (!a) return;
+    delete root.dataset.light; // la luz roja/verde es solo de Reflejos: que no se quede al cambiar de sección
     if (isTiming(a.kind)) return renderTiming(view);
     const started = a.phase !== APHASE.READY && performance.now() >= a.tOpen;
     root.dataset.phase = a.phase === APHASE.OPEN && !started ? 'ready' : a.phase;
@@ -130,7 +131,7 @@ export function createAnswerStage() {
     fill(root, header, who, big, h('div', { class: 'answer-footer' }, counter));
   }
 
-  return { root, render };
+  return { root, render, stop: stopCountdown };
 }
 
 const secs = (n, decimals) => `${Number(n).toFixed(decimals).replace('.', ',')} s`;
