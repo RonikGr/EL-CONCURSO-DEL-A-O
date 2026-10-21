@@ -253,3 +253,13 @@ describe('Duelo de reflejos', () => {
     expect(r.answer('cris', 0, at(5400))).toBe(ANSWER_RESULT.NOT_ELIGIBLE);
   });
 });
+
+describe('cuenta atrás antes de responder', () => {
+  it('retrasa la apertura y el plazo', () => {
+    const q = buildQuestion(section('test'), TEST, { settings: { testSeconds: 20 } });
+    const r = new AnswerRound(q, { roundId: 'r1' });
+    r.open({ now: 1000, eligibleIds: IDS, scheduledOpenMs: 300, countdownMs: 3000 });
+    expect(r.tOpen).toBe(4000);
+    expect(r.deadline).toBe(14000);
+  });
+});

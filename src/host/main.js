@@ -22,8 +22,9 @@ import { openSettingsDialog } from './settingsDialog.js';
 import { createDebugPanel } from './debugPanel.js';
 import { Backdrop } from './fx/backdrop.js';
 import { sound } from './fx/audio.js';
+import { TrackStore } from './fx/tracks.js';
 import { createDirector, envFor, screenKey } from './fx/director.js';
-import { enterScreen, odometer } from './fx/motion.js';
+import { enterScreen, kinetic, odometer } from './fx/motion.js';
 import { envGradient, HOME_ENV } from '../shared/environments.js';
 
 // Marca de esta pestaña: si se recarga, se recupera la sala sin preguntar.
@@ -40,6 +41,7 @@ let lastScreenSignature = null;
 const debug = createDebugPanel();
 const cards = new Map(); // playerId → elementos de su tarjeta
 let lastScreenKey = null;
+let lastMomentKey = null;
 
 // Fondo animado (WebGL) con el entorno de cada sección; sin WebGL, un degradado con los mismos colores.
 const backdropCanvas = h('canvas', { class: 'backdrop', 'aria-hidden': 'true' });
@@ -52,8 +54,17 @@ if (backdrop.ok) {
   backdropCanvas.remove();
 }
 const direct = createDirector({ backdrop: backdrop.ok ? backdrop : null });
-if (import.meta.env.DEV) window.__fx = { backdrop, sound }; // para probar entornos desde la consola
 sound.addEventListener('unlock', () => room && render());
+
+// Tus canciones, guardadas en este portátil
+const trackStore = new TrackStore();
+trackStore.addEventListener('change', () => {
+  sound.setTracks(trackStore.tracks);
+  lastScreenSignature = null; // repintar el panel de música
+  if (room) render();
+});
+trackStore.load();
+if (import.meta.env.DEV) window.__fx = { backdrop, sound, trackStore }; // para probar desde la consola
 
 /** Ejecuta una orden y avisa si no se pudo. */
 function run(action, args) {
@@ -115,11 +126,47 @@ function startRoom(saved) {
   const code = saved?.code ?? generateRoomCode();
   writeTabMark(code);
   room = new HostRoom({ code, saved });
+  if (import.meta.env.DEV) window.__room = room; // para probar desde la consola
   qrs = makeQrs();
   renderShell();
   room.addEventListener('change', render);
   room.start();
   render();
+  if (room.runner.screen === SCREEN.SETUP) showSplash(room.show.title);
+}
+
+// ---------- Presentación ----------
+
+// Al abrir la tele (no al recuperar un concurso a medias): el título en grande. Con una tecla o un clic se pasa a
+// la pantalla de preparación, donde se van conectando los jugadores. Ese mismo toque desbloquea el sonido.
+let splash = null;
+
+function showSplash(title) {
+  splash = h(
+    'div',
+    { class: 'splash', role: 'button', tabindex: '0', 'aria-label': `${title}. Pulsa para empezar` },
+    h('p', { class: 'splash-kicker' }, 'Esta noche…'),
+    kinetic('h1', 'splash-title display', title, { step: 70 }),
+    h('p', { class: 'splash-hint' }, 'Pulsa cualquier tecla o haz clic para empezar'),
+  );
+  splash.addEventListener('click', hideSplash);
+  document.body.append(splash);
+  document.body.classList.add('splash-on'); // debajo solo se ve el decorado
+}
+
+function hideSplash() {
+  if (!splash) return;
+  const el = splash;
+  splash = null;
+  // Tras el toque el sonido ya está desbloqueado (audio.js escucha el mismo gesto en la fase de captura).
+  setTimeout(() => {
+    sound.play('whoosh');
+    sound.play('gong', 150);
+  }, 60);
+  backdrop.ok && backdrop.flash(0.5);
+  el.classList.add('leaving');
+  document.body.classList.remove('splash-on');
+  setTimeout(() => el.remove(), 900);
 }
 
 function makeQrs() {
@@ -266,7 +313,10 @@ function renderScreen(view) {
   stage.stop();
   answerStage.stop();
   freeStage.stop();
-  sound.cancel();
+  // Los sonidos programados (suspense, podio) se anulan al cambiar de momento, no en cada repintado.
+  const momentKey = [screenKey(view), view.answer?.roundId, view.answer?.phase, view.game?.phase, view.free?.phase].join('|');
+  if (momentKey !== lastMomentKey) sound.cancel();
+  lastMomentKey = momentKey;
 
   const screen = $('#screen');
   // Al cambiar de pantalla (no en cada cambio dentro de ella), entrada con transición.
@@ -288,6 +338,9 @@ function renderScreen(view) {
           onStart: () => run('next'),
           onLockTeams: (locked) => run('lockTeams', { locked }),
           onMoveTeam: (playerId, teamId) => run('moveTeam', { playerId, teamId }),
+          tracks: trackStore.summary(),
+          onAddTracks: (slot, files) => trackStore.add(slot, files).then((n) => n || toast('Elige archivos de audio (.mp3).')),
+          onRemoveTrack: (id) => trackStore.remove(id),
         }),
       );
     case SCREEN.COVER:
@@ -466,6 +519,10 @@ addEventListener('drop', (e) => {
 // ---------- Teclado ----------
 
 document.addEventListener('keydown', (e) => {
+  if (splash) {
+    e.preventDefault();
+    return hideSplash();
+  }
   if (!room || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
   if (document.querySelector('dialog[open]') || e.target.closest?.('input, textarea, select')) return;
 

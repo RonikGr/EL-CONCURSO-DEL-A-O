@@ -27,6 +27,7 @@ import { sectionEnv } from '../shared/environments.js';
 export const DEFAULT_SETTINGS = {
   lockEarlyBuzz: true,
   scheduledOpenMs: 300,
+  countdownSec: 3, // cuenta atrás 3-2-1 antes de cada pregunta (pulsador y respuestas)
   decisionWindowMs: 150,
   nearTieMs: 30,
   musicOn: true,
@@ -91,6 +92,7 @@ export class HostRoom extends EventTarget {
         onBuzz: (playerId, msg) => this.#onBuzz(playerId, msg),
         onAnswer: (playerId, msg) => this.#onAnswer(playerId, msg),
         onJoker: (playerId, msg) => this.#onJoker(playerId, msg),
+        onFreeCount: (playerId, msg) => this.#onFreeCount(playerId, msg),
         onSyncReport: (playerId, report) => {
           this.sync.set(playerId, report);
           this.#changed({ persist: false });
@@ -196,6 +198,7 @@ export class HostRoom extends EventTarget {
     };
     const showCounts = revealed || forControl;
     return {
+      roundId: r.roundId, // la tele lo usa para no repetir el suspense de un revelado ya visto
       kind: q.kind,
       label: SECTION_TYPES[q.kind].label,
       phase: r.phase,
@@ -204,6 +207,7 @@ export class HostRoom extends EventTarget {
       unit: q.unit,
       noOver: q.noOver,
       options: q.options,
+      seconds: q.seconds ?? null,
       target: q.target ?? null,
       mode: q.mode ?? null,
       hideAfter: q.hideAfter ?? null,
@@ -281,6 +285,8 @@ export class HostRoom extends EventTarget {
       peekScoreboard: r.peekScoreboard,
       sectionIndex: r.sectionIndex,
       sectionCount: this.show.sections.length,
+      // Lista para la introducción del concurso en la tele
+      sections: this.show.sections.map((s, i) => ({ name: s.name, label: SECTION_TYPES[s.type].label, env: sectionEnv(s, i) })),
       section: r.section,
       sectionLabel: r.section ? SECTION_TYPES[r.section.type].label : '',
       playable: isPlayable(r.section),
@@ -442,7 +448,7 @@ export class HostRoom extends EventTarget {
         if (eligibleIds.length !== 2) return 'Elige a los dos jugadores del duelo (y que estén conectados).';
       }
       const greenDelayMs = GREEN_MIN_MS + Math.random() * (GREEN_MAX_MS - GREEN_MIN_MS);
-      if (!this.answerRound.open({ now: now(), eligibleIds, scheduledOpenMs: this.settings.scheduledOpenMs, greenDelayMs })) return false;
+      if (!this.answerRound.open({ now: now(), eligibleIds, scheduledOpenMs: this.settings.scheduledOpenMs, greenDelayMs, countdownMs: this.settings.countdownSec * 1000 })) return false;
       if (!this.answerRound.eligible.size) return 'No hay nadie que pueda responder a esta pregunta.';
       const r = this.answerRound;
       // Reflejos: repintar la tele justo al ponerse verde (los móviles cambian solos con su reloj sincronizado).
@@ -640,6 +646,18 @@ export class HostRoom extends EventTarget {
     this.#afterChange(); // se guarda: el comodín ya está gastado
   }
 
+  /** Libre con contador: el móvil del concursante (uno por equipo) suma o resta. */
+  #onFreeCount(playerId, msg) {
+    const r = this.freeRound;
+    const ack = (result, message) => this.source.sendTo(playerId, { t: MSG.ANSWER_ACK, seq: msg.seq, result, message });
+    if (!this.inFreePlay || msg.roundId !== r.roundId) return ack('closed', 'Ahora no se puede contar.');
+    const player = this.roster.get(playerId);
+    const result = r.countFrom(playerId, r.byTeams ? player?.teamId : playerId, msg.delta);
+    if (result === 'taken') return ack(result, 'Ya lleva la cuenta otro móvil de tu equipo.');
+    ack(result);
+    if (result === 'ok') this.#afterChange({ persist: false });
+  }
+
   #closeAnswers(round) {
     if (round !== this.answerRound || !round.close()) return;
     clearTimeout(this.#answerTimer);
@@ -835,6 +853,13 @@ export class HostRoom extends EventTarget {
       out: participating && me in r.out,
       won: r.phase === FPHASE.AWARDED && r.winners.includes(me),
       points: r.item.points,
+      roundId: r.roundId,
+      // Contador: lleva la cuenta este móvil (o nadie aún) → botones +1/−1; si la lleva otro, su nombre.
+      count: participating && r.tool === 'counter' ? (r.counts[me] ?? 0) : null,
+      counter:
+        participating && r.tool === 'counter'
+          ? { mine: !r.counters[me] || r.counters[me] === player.id, by: this.roster.get(r.counters[me])?.name ?? null }
+          : null,
     };
   }
 
@@ -880,6 +905,7 @@ export class HostRoom extends EventTarget {
       unit: q.unit,
       noOver: q.noOver,
       options: q.options,
+      seconds: q.seconds ?? null,
       target: q.target ?? null,
       mode: q.mode ?? null,
       hideAfter: q.hideAfter ?? null,

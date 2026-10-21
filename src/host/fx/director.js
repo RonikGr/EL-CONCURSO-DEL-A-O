@@ -47,6 +47,20 @@ function snapshot(view) {
   };
 }
 
+/** Estilo de música de cada momento (ver music.js). */
+function musicScene(n) {
+  if (n.screen === SCREEN.SETUP) return 'lobby';
+  if (n.screen === SCREEN.COVER || n.screen === SCREEN.INTRO) return 'organ';
+  if (n.screen === SCREEN.SCOREBOARD || n.screen === 'peek') return 'march';
+  if (n.screen === SCREEN.FINAL) return 'waltz';
+  const { game: g, answer: a, free: f } = n;
+  if (g?.phase === PHASE.OPEN || a?.phase === APHASE.OPEN || f?.phase === FPHASE.RUNNING) return 'tension';
+  // esperando veredicto → suspense; resuelto → revelado
+  if ((g?.phase === PHASE.RESULT && g.judged === 'correct') || a?.phase === APHASE.REVEALED || f?.phase === FPHASE.AWARDED) return 'reveal';
+  if (g?.phase === PHASE.RESULT || a?.phase === APHASE.CLOSED || f?.phase === FPHASE.STOPPED) return 'suspense';
+  return 'explore';
+}
+
 export function createDirector({ backdrop }) {
   let prev = null;
 
@@ -59,12 +73,7 @@ export function createDirector({ backdrop }) {
     const p = prev;
     prev = n;
 
-    // Tensión (música baja y latido): mientras se puede pulsar o responder.
-    const tense =
-      (n.game?.phase === PHASE.OPEN && n.game.started) ||
-      (n.answer?.phase === APHASE.OPEN && n.answer.started && !(n.answer.kind === 'reflejos' && n.answer.green)) ||
-      n.free?.phase === FPHASE.RUNNING;
-    sound.setTension(!!tense && !n.screen.startsWith('peek'));
+    sound.setScene(musicScene(n));
 
     if (!p) return;
     if (n.key !== p.key) {
@@ -111,15 +120,8 @@ export function createDirector({ backdrop }) {
       }
       if (pa && a.answered > pa.answered && a.phase === APHASE.OPEN) sound.play('blip');
       if (a.phase === APHASE.CLOSED && pa?.phase === APHASE.OPEN) sound.play('bell');
-      if (a.phase === APHASE.REVEALED && pa && pa.phase !== APHASE.REVEALED) {
-        if (isChoice(a.kind)) {
-          sound.play('hit');
-          sound.play('correct', 250);
-          backdrop?.flash(0.3);
-        } else {
-          sound.play('riser');
-        }
-      }
+      // El revelado (redoble, golpe, aciertos) lo programa answerStage, que sabe cuándo sale cada cosa: aquí, el destello.
+      if (a.phase === APHASE.REVEALED && pa && pa.phase !== APHASE.REVEALED) setTimeout(() => backdrop?.flash(0.45), isChoice(a.kind) ? 2800 : 0);
     }
 
     // Libre

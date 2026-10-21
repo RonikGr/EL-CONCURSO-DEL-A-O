@@ -865,3 +865,484 @@ body.host {
 .podium-step.empty {
   visibility: hidden;
 }
+
+/* ------------------------------------------------------------------ Presentación (al abrir la tele) */
+.splash {
+  position: fixed;
+  inset: 0;
+  z-index: 45;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 2rem;
+  padding: 2rem;
+  text-align: center;
+  cursor: pointer;
+  background: radial-gradient(ellipse at 50% 55%, transparent 30%, rgb(5 3 12 / 0.75) 100%);
+}
+
+.splash-kicker {
+  margin: 0;
+  color: var(--accent-2);
+  font-size: 2rem;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  animation: pop-in 1.2s var(--ease-out) both;
+}
+
+.splash-title {
+  margin: 0;
+  max-width: 90vw;
+  font-size: clamp(5rem, 11vw, 16rem);
+  color: var(--accent);
+  text-shadow:
+    0 0 0.25em rgb(255 138 31 / 0.65),
+    0 0 1em rgb(255 60 0 / 0.45),
+    0 0.05em 0 #5a1c00;
+  animation: candle 6s 3s infinite;
+}
+
+.splash-title .kl {
+  animation-duration: 1600ms;
+}
+
+.splash-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 1.6rem;
+  letter-spacing: 0.06em;
+  animation:
+    pop-in 1s var(--ease-out) 2.4s both,
+    hint-blink 2.2s ease-in-out 3.4s infinite;
+}
+
+@keyframes hint-blink {
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.splash.leaving {
+  pointer-events: none;
+  animation: splash-out 900ms var(--ease-out) forwards;
+}
+
+@keyframes splash-out {
+  to {
+    opacity: 0;
+    transform: scale(1.15);
+    filter: blur(14px);
+  }
+}
+
+/* ------------------------------------------------------------------ Introducción del concurso (portada) */
+.cover {
+  gap: 1.2rem;
+  padding: 0 1rem;
+}
+
+.cover .cover-title {
+  font-size: 6.5rem;
+}
+
+.cover-body {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 2rem;
+  width: min(92rem, 100%);
+  text-align: left;
+}
+
+.cover-block h2 {
+  margin: 0 0 0.8rem;
+  color: var(--accent-2);
+  font-size: 1.4rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.cover-sections,
+.cover-rules,
+.cover-teams {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.cover-sections li {
+  display: grid;
+  grid-template-columns: 2.4rem 1fr auto;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.45rem 1rem 0.45rem 0.5rem;
+  border-radius: 0.9rem;
+  background: var(--env);
+  box-shadow: inset 0 0 0 1px var(--border);
+  font-size: 1.5rem;
+  font-weight: 700;
+  animation: suspense-in 700ms var(--ease-spring) both;
+  animation-delay: var(--d);
+}
+
+.cs-num {
+  display: grid;
+  place-items: center;
+  height: 2.4rem;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 900;
+}
+
+.cs-type {
+  color: var(--muted);
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.cover-rules li {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.7rem 1rem;
+  border-radius: 0.9rem;
+  background: var(--surface);
+  backdrop-filter: blur(12px);
+  box-shadow: inset 0 0 0 1px var(--border);
+  font-size: 1.45rem;
+  animation: suspense-in 700ms var(--ease-spring) both;
+  animation-delay: var(--d);
+}
+
+.cover-rules .emoji {
+  font-size: 2rem;
+}
+
+.cover-teams {
+  grid-auto-flow: column;
+  justify-content: start;
+  margin-top: 1rem;
+}
+
+.cover-teams li {
+  padding: 0.35rem 1.1rem;
+  border-radius: 999px;
+  background: var(--tc);
+  color: var(--tc-fg);
+  font-size: 1.4rem;
+  font-weight: 800;
+  box-shadow: 0 0 1.4rem color-mix(in srgb, var(--tc) 60%, transparent);
+}
+
+/* ------------------------------------------------------------------ Revelado con tensión */
+/* Las barras van debajo de las opciones, con sitio para su número (antes se metían bajo las fichas). */
+.reveal .bars {
+  margin-top: 3.2rem;
+  height: 8rem;
+}
+
+.reveal .bar span {
+  margin-top: -2.4rem;
+}
+
+/* Durante el redoble: las barras crecen poco a poco y ninguna ficha dice si es la buena. */
+.reveal.tense .bar {
+  opacity: 0.85;
+  animation: grow-up 2000ms cubic-bezier(0.5, 0, 0.2, 1) both;
+  animation-delay: calc(var(--i) * 180ms);
+}
+
+.reveal.tense .bar:not(.correct) {
+  animation:
+    grow-up 2000ms cubic-bezier(0.5, 0, 0.2, 1) calc(var(--i) * 180ms) both,
+    fade-wrong 600ms ease var(--reveal) forwards;
+}
+
+.reveal.tense .option-count {
+  animation: pop-in 500ms var(--ease-spring) both;
+  animation-delay: calc(var(--reveal) - 600ms);
+}
+
+.reveal.tense .options.revealed .option.wrong {
+  animation: fade-wrong 700ms ease both;
+  animation-delay: var(--reveal);
+}
+
+.reveal.tense .options.revealed .option.correct {
+  animation:
+    correct-in 800ms var(--ease-spring) both,
+    correct-glow 1.6s ease-in-out infinite alternate;
+  animation-delay: var(--reveal), calc(var(--reveal) + 800ms);
+}
+
+@keyframes fade-wrong {
+  from {
+    opacity: 1;
+    filter: none;
+  }
+  to {
+    opacity: 0.25;
+    filter: grayscale(0.7);
+  }
+}
+
+@keyframes correct-in {
+  from {
+    outline-color: transparent;
+    transform: none;
+  }
+  40% {
+    transform: scale(1.08);
+  }
+  to {
+    transform: scale(1.03);
+  }
+}
+
+.reveal.tense .scorers li {
+  animation: suspense-in 600ms var(--ease-spring) both;
+  animation-delay: var(--d);
+}
+
+.reveal.tense .reveal-line {
+  animation: suspense-in 700ms var(--ease-out) both;
+  animation-delay: calc(var(--reveal) + 400ms);
+}
+
+/* Frase del redoble ("Y la respuesta correcta es…"): encima de todo y se va al revelar. */
+.reveal.tense,
+.suspense-wrap {
+  position: relative;
+}
+
+.suspense-wrap {
+  display: grid;
+  justify-items: center;
+  width: 100%;
+}
+
+.reveal-tease {
+  position: absolute;
+  left: 50%;
+  top: 45%;
+  z-index: 3;
+  margin: 0;
+  width: max-content;
+  max-width: 90vw;
+  color: var(--accent);
+  font-size: 5rem;
+  text-shadow:
+    0 0 0.3em rgb(255 138 31 / 0.7),
+    0 0.1em 0.5em rgb(0 0 0 / 0.8);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  animation:
+    tease-in 900ms var(--ease-out) both,
+    tease-out 400ms ease-in var(--reveal) forwards;
+}
+
+.suspense-wrap .reveal-tease {
+  top: 3rem;
+}
+
+@keyframes tease-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.7);
+    filter: blur(10px);
+  }
+}
+
+@keyframes tease-out {
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1.4);
+    filter: blur(12px);
+    visibility: hidden;
+  }
+}
+
+/* Marcador: la barra solo cambia de ancho con una transición (la animación de entrada se peleaba con ella). */
+.sb-fill {
+  animation: none;
+}
+
+/* ------------------------------------------------------------------ Explicación y cuenta atrás antes de abrir */
+.how {
+  margin: 0;
+  max-width: 60rem;
+  padding: 0.5rem 1.4rem;
+  border-radius: 999px;
+  background: rgb(7 5 13 / 0.55);
+  box-shadow: inset 0 0 0 1px var(--border);
+  color: var(--text);
+  font-size: 1.6rem;
+  font-weight: 600;
+}
+
+.countdown-big {
+  margin: 0;
+  font-size: 14rem;
+  line-height: 1;
+  color: var(--accent);
+  text-shadow:
+    0 0 0.25em rgb(255 138 31 / 0.7),
+    0 0 0.8em rgb(255 60 0 / 0.4);
+}
+
+.countdown-big.beat {
+  animation: count-beat 1000ms var(--ease-out) both;
+}
+
+@keyframes count-beat {
+  from {
+    opacity: 0.3;
+    transform: scale(1.8);
+    filter: blur(8px);
+  }
+  25% {
+    opacity: 1;
+    transform: scale(1);
+    filter: none;
+  }
+  85% {
+    opacity: 1;
+  }
+  to {
+    opacity: 0.2;
+    transform: scale(0.85);
+  }
+}
+
+.host-shell {
+  transition:
+    opacity 900ms var(--ease-out),
+    filter 900ms var(--ease-out);
+}
+
+.splash-on .host-shell {
+  opacity: 0;
+  filter: blur(12px);
+  pointer-events: none;
+}
+
+body.splash-on {
+  overflow: hidden;
+}
+
+/* Muchas secciones: en dos columnas, con el tipo debajo del nombre */
+.cover-sections.many {
+  grid-template-columns: 1fr 1fr;
+}
+
+.cover-sections.many li {
+  grid-template-columns: 2.2rem 1fr;
+  row-gap: 0;
+  font-size: 1.2rem;
+}
+
+.cover-sections.many .cs-num {
+  grid-row: span 2;
+  height: 2.2rem;
+}
+
+.cover-sections.many .cs-type {
+  font-size: 0.9rem;
+}
+
+.cover .cover-title {
+  font-size: 5.5rem;
+}
+
+/* ------------------------------------------------------------------ Panel «Música» (preparación) */
+.music-box summary {
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.music-box summary::-webkit-details-marker {
+  display: none;
+}
+
+.music-box summary::after {
+  content: '▾';
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.music-box[open] summary::after {
+  content: '▴';
+}
+
+.music-box h3 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.music-slots {
+  list-style: none;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.music-slots li {
+  display: grid;
+  grid-template-columns: 13rem 1fr auto;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 0.7rem;
+  background: rgb(7 5 13 / 0.35);
+}
+
+.ms-head {
+  display: grid;
+  line-height: 1.15;
+}
+
+.ms-head small {
+  font-size: 0.8rem;
+}
+
+.ms-tracks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.ms-track {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  max-width: 100%;
+  padding: 0.15rem 0.3rem 0.15rem 0.7rem;
+  border-radius: 999px;
+  background: rgb(255 138 31 / 0.16);
+  border: 1px solid rgb(255 138 31 / 0.4);
+  font-size: 0.9rem;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.ms-remove {
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0 0.3rem;
+}
+
+.ms-remove:hover {
+  color: var(--danger);
+}

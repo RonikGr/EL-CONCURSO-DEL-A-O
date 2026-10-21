@@ -53,7 +53,8 @@ Ojo con PowerShell 5.1: `Get-Content`/`Set-Content` sin `-Encoding` rompen los a
 Jugador → tele: `hello {v, role:'player', playerId, name, color, icon, teamId}`, `profile {name, color, icon, teamId}`,
 `hbAck {h0}`, `buzz {seq, epoch, tLocal?, offset?, err?}` (sin offset → cuenta la llegada),
 `answer {seq, roundId, value, tLocal?, offset?, err?}` (value = índice de opción, playerId votado o número),
-`joker {seq, roundId, kind}`, `sync {id, t0}`, `syncReport {offset, err, rtt, samples}`.
+`joker {seq, roundId, kind}`, `freeCount {seq, roundId, delta}` (Libre con contador: +1/−1 desde el móvil; responde
+`answerAck`), `sync {id, t0}`, `syncReport {offset, err, rtt, samples}`.
 
 Tele → jugador: `welcome {you, adjusted}`, `state {room, title, playerCount, minPlayers, taken, teams, teamsLocked, you,
 screen, section, game, winner, answer, free, standings}` (`section` = nombre, tipo, descripción, puntos, nº de sección y de
@@ -110,7 +111,9 @@ según la columna Participan) → `running` (cronómetro: "eliminado" guarda el 
 contador: ±1 por participante) → `stopped` → `awarded` (el mando propone ganador según la herramienta; se puede cambiar
 y marcar varios; cada ganador recibe los puntos de la fila; con equipos van al bonus del equipo). Sin herramienta se elige
 ganador directamente. Las pruebas puntuadas se guardan en `itemResults` (`{free, byTeams}`) y R las reinicia quitando
-los puntos. El móvil del jugador solo informa ("¡Te toca!", "¡Eliminado!", "¡Has ganado!").
+los puntos. El móvil del jugador informa ("¡Te toca!", "¡Eliminado!", "¡Has ganado!") y, con la herramienta contador,
+cuenta: `FreeRound.countFrom()` deja llevar la cuenta a un solo móvil por participante (con equipos, el primero del
+equipo que suma; los demás ven quién la lleva). El mando sigue pudiendo corregir.
 
 Comodines (solo Test, antes de responder): `JokerBank` por dueño (equipo, o jugador sin equipos), 50 % quita
 floor(n/2) incorrectas, Doble, Público (ve el recuento en directo). Preguntas reveladas se guardan en `itemResults`
@@ -167,11 +170,17 @@ mientras la página no se pinta (ventana oculta o minimizada).
   brasas, burbujas, lluvia, chispas, polvo), murciélagos y relámpagos con rayo. Al cambiar de entorno los colores se
   funden y las siluetas cambian a mitad de un oscurecimiento. Sin WebGL: degradado CSS. En desarrollo,
   `window.__fx` da acceso al fondo y al sonido desde la consola.
-- **Sonido** (`fx/audio.js`): todo generado con Web Audio, sin archivos (ni descargas ni licencias). Música ambiental
-  por entorno (colchón que cambia de acorde i·VI·VII·v, caja de música improvisando en su escala, bajo y ambiente:
-  viento, lluvia, fuego, burbujas, búhos; tambores en el Aquelarre) y efectos (whoosh, gong, ¡pulsad!, pulsación,
-  acierto, fallo, tictac, campana, revelado, trueno, redoble, fanfarria). Con el turno abierto la música baja y suena un
-  latido. Ajustes `musicOn`, `sfxOn`, `volume` (en Ajustes de la tele y en el mando, pestaña Secciones). El
+- **Música:** 8 estilos según el momento (`fx/music.js`, sobre los instrumentos de `fx/synth.js`): lobby
+  (preparación, swing), organ (portada e intros), explore (jugando: colchón y caja de música del entorno), tension
+  (pregunta abierta: ostinato que sube y latido), suspense (esperando veredicto: timbales y acorde disonante), reveal
+  (revelado: resolución en mayor), march (marcador) y waltz (final). El realizador elige el estilo (`musicScene`); la
+  tonalidad, escala y ambiente (viento, lluvia, fuego, burbujas, búhos) son del entorno. Las melodías son motivos que se
+  repiten y cambian cada 8 compases.
+- **Tus canciones** (`fx/tracks.js`): en preparación, panel «Música» para añadir .mp3 a cada momento (mismas claves que
+  los estilos). Se guardan en IndexedDB del portátil (no en el repositorio, que es público). Un momento con canciones
+  las alterna (al volver antes de 3 min, sigue donde iba); sin canciones, música generada.
+- **Efectos** (`fx/audio.js`, Web Audio): whoosh, gong, ¡pulsad!, pulsación, acierto, fallo, tictac, cuenta atrás,
+  campana, redoble, revelado, trueno, fanfarria. Ajustes `musicOn`, `sfxOn`, `volume` (en Ajustes de la tele y en el mando, pestaña Secciones). El
   navegador no deja sonar nada hasta un toque: la tele muestra «🔊 Activar sonido» hasta la primera tecla o clic.
 - **Realizador** (`fx/director.js`): compara cada vista con la anterior y lanza entorno, música, efectos y confeti
   (abrir turno, pulsar, acertar, fallar, respuestas que llegan, cerrar, revelar, eliminado, ganador de Libre).
@@ -182,7 +191,17 @@ mientras la página no se pinta (ventana oculta o minimizada).
 - **Marcador:** recuerda los puntos de la última vez que se enseñó; empieza en ese orden, los puntos ruedan y luego las
   filas se reordenan. **Final:** podio 3º → 2º → 1º con foco, redoble, fanfarria y confeti (`fx/confetti.js`).
 - En el marcador y el final la firma de repintado no incluye `connected` (que una desconexión no repita la animación);
-  un revelado ya animado (`roundId`) se repinta sin repetir el suspense.
+  un revelado ya pintado (`roundId`, que la vista de la tele incluye) no se vuelve a pintar: cortaría el suspense.
+  Los sonidos programados se anulan al cambiar de momento (`momentKey`), no en cada repintado.
+- **Presentación:** al abrir la tele en preparación, el título en grande (`.splash`); una tecla o un clic pasa a la
+  preparación (y desbloquea el sonido). La **portada** es la introducción: secciones de la noche, cómo se juega y equipos.
+- **Antes de cada pregunta:** explicación (`howTo`: tiempo, cómo se puntúa) y cuenta atrás 3-2-1 (`countdownSec`,
+  ajustable; 0 = sin ella) en tele y móviles. El motor del pulsador la aplica en la primera apertura (el rebote tras un
+  fallo abre enseguida) y `AnswerRound.open({countdownMs})` en Test, Verdad, Dos verdades, Votación y Estimación.
+- **Revelado con tensión** (`answerStage.js`): redoble de 2,4 s y «Y la respuesta correcta es…»; las barras crecen sin
+  decir cuál es la buena y a los 2,8 s (`REVEAL_AT`) se ilumina con golpe; luego los que suman. En las listas
+  (Votación, Estimación, Contador, Reflejos) primero el redoble y luego las filas del último al primero.
+- **Contador** con milisegundos (`12,345 s`; la distancia al objetivo en ms por debajo de 1 s, `formatGap`).
 - **Tarjetas de la tele:** compactas con 9–14 jugadores y diminutas con 15–20 (`#player-grid[data-density]`); al sumar
   puntos la tarjeta da un salto y sale «+N».
 - **Móviles:** fondo del entorno, pulsador como esfera de cristal del color del jugador, Wake Lock mientras la página

@@ -111,8 +111,9 @@ export class AnswerRound {
   /**
    * @param eligibleIds jugadores conectados al abrir (el protagonista de "Dos verdades" no responde; en un duelo, los dos)
    * @param greenDelayMs Reflejos: cuánto tarda en ponerse verde (al azar, lo elige quien llama)
+   * @param countdownMs cuenta atrás antes de poder responder (Contador tiene la suya; Reflejos, la luz roja)
    */
-  open({ now, eligibleIds, scheduledOpenMs = 300, greenDelayMs = GREEN_MIN_MS }) {
+  open({ now, eligibleIds, scheduledOpenMs = 300, greenDelayMs = GREEN_MIN_MS, countdownMs = 0 }) {
     if (this.phase !== APHASE.READY) return false;
     const kind = this.question.kind;
     this.eligible = new Set(eligibleIds.filter((id) => id !== this.question.subjectId));
@@ -125,7 +126,7 @@ export class AnswerRound {
       this.tGreen = this.tOpen + greenDelayMs;
       this.deadline = this.tGreen + REACTION_LIMIT_MS;
     } else {
-      this.tOpen = now + scheduledOpenMs;
+      this.tOpen = now + Math.max(scheduledOpenMs, countdownMs);
       this.deadline = this.tOpen + this.question.seconds * 1000;
     }
     this.phase = APHASE.OPEN;

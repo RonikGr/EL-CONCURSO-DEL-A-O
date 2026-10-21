@@ -5,6 +5,7 @@ const FIELDS = [
   { key: 'musicOn', type: 'checkbox', label: 'Música ambiental (cambia con cada sección)' },
   { key: 'sfxOn', type: 'checkbox', label: 'Efectos de sonido' },
   { key: 'volume', type: 'range', label: 'Volumen', min: 0, max: 100 },
+  { key: 'countdownSec', type: 'number', label: 'Cuenta atrás antes de cada pregunta (s)', min: 0, max: 10, help: '0 = sin cuenta atrás.' },
   { key: 'lockEarlyBuzz', type: 'checkbox', label: 'Bloquear durante la pregunta a quien pulse antes de abrir el turno' },
   { key: 'nearTieMs', type: 'number', label: 'Umbral de casi empate (ms)', min: 0, max: 500 },
   {

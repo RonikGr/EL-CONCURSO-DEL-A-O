@@ -46,7 +46,7 @@
         <button id="open-standings" class="me-score" type="button" aria-label="Ver el marcador">
           <span id="me-score">0</span><small>puntos ▾</small>
         </button>
-        <button id="edit-profile" class="btn small" type="button">Cambiar</button>
+        <button id="edit-profile" class="btn small icon-btn" type="button" aria-label="Cambiar nombre, icono o equipo" title="Cambiar">✏️</button>
       </header>
       <div id="section-bar" class="section-bar" hidden>
         <p id="section-top" class="section-top"></p>
@@ -58,6 +58,15 @@
         <span id="buzzer-label" class="buzzer-label">Espera</span>
         <span id="buzzer-sub" class="buzzer-sub"></span>
       </button>
+      <section id="free-pad" class="free-pad" hidden aria-live="polite">
+        <p id="free-title" class="ap-label"></p>
+        <p id="free-count" class="free-count">0</p>
+        <p id="free-hint" class="ap-sub"></p>
+        <div class="free-buttons">
+          <button id="free-minus" class="btn free-minus" type="button" aria-label="Restar uno">−1</button>
+          <button id="free-plus" class="btn primary free-plus" type="button" aria-label="Sumar uno">+1</button>
+        </div>
+      </section>
     </section>
 
     <section id="screen-message" class="screen center" hidden>

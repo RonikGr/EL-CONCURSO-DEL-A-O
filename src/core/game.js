@@ -15,7 +15,7 @@ export const BUZZ = { OK: 'ok', EARLY: 'early', LOCKED: 'locked', DUPLICATE: 'du
 export const LOCK = { EARLY: 'early', WRONG: 'wrong' };
 
 export class QuestionEngine {
-  /** @param settings objeto vivo: {scheduledOpenMs, decisionWindowMs, nearTieMs, lockEarlyBuzz} */
+  /** @param settings objeto vivo: {scheduledOpenMs, countdownSec, decisionWindowMs, nearTieMs, lockEarlyBuzz} */
   constructor(settings, { qid = 1 } = {}) {
     this.settings = settings;
     this.qid = qid;
@@ -38,17 +38,18 @@ export class QuestionEngine {
     this.judged = null; // null | 'correct' | 'wrong'
   }
 
-  #openRound(now) {
+  #openRound(now, delayMs) {
     this.epoch++;
     this.#clearRound();
     this.phase = PHASE.OPEN;
-    this.tOpen = now + this.settings.scheduledOpenMs;
+    this.tOpen = now + delayMs;
   }
 
   /** "Abrir turno". El turno empieza de verdad en `tOpen` (apertura programada). */
   open(now) {
     if (this.phase !== PHASE.IDLE) return false;
-    this.#openRound(now);
+    // Primera apertura: con la cuenta atrás 3-2-1 (si está activada); el rebote tras un fallo, enseguida.
+    this.#openRound(now, Math.max(this.settings.scheduledOpenMs, (this.settings.countdownSec ?? 0) * 1000));
     return true;
   }
 
@@ -111,7 +112,7 @@ export class QuestionEngine {
     const loserId = this.winnerId;
     this.lockouts.set(loserId, LOCK.WRONG);
     if (activeIds.some((id) => !this.lockouts.has(id))) {
-      this.#openRound(now);
+      this.#openRound(now, this.settings.scheduledOpenMs);
       return { loserId, reopened: true };
     }
     this.judged = 'wrong';

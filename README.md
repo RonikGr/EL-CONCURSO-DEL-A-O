@@ -210,12 +210,21 @@ Cubren la lógica que no depende de la red (`src/core`, `src/shared`).
 
 - Cada sección tiene su **entorno de Halloween** animado en la tele (y sus colores de fondo en los móviles); entre
   secciones el decorado se funde en otro.
-- **Sonido:** música ambiental distinta por entorno y efectos (abrir turno, pulsar, acierto, fallo, tictac, revelado,
-  trueno, fanfarria…). Todo se genera en el navegador: no hay archivos de audio ni licencias. El navegador no deja
-  sonar nada hasta que se toca la página: en la tele aparece **🔊 Activar sonido** hasta la primera tecla o clic en el
-  portátil. Música, efectos y volumen se cambian en **Ajustes** (tele) o en el mando, pestaña **Secciones**. Si pones
-  tu propia música, quita la música y deja los efectos.
-- **Revelados con suspense:** en Estimación, Votación, Contador y Reflejos los puestos aparecen del último al primero;
+- **Al abrir la tele**, el título del concurso en grande; con una tecla o un clic se pasa a la preparación (así además
+  se activa el sonido). Al empezar, una **introducción**: las secciones de la noche, cómo se juega y los equipos.
+- **Antes de cada pregunta**, una breve explicación (tiempo, puntos) y una **cuenta atrás 3-2-1** en la tele y en los
+  móviles. Se ajusta en **Ajustes** («Cuenta atrás antes de cada pregunta», 0 = sin ella).
+- **Música:** cambia según el momento (preparación, presentación, jugando, pregunta abierta, suspense, revelado,
+  marcador y final) y el entorno de la sección. **Tus canciones:** en la preparación, panel **🎵 Música** → «+ .mp3»
+  en cada momento (puedes poner varias: se alternan). Se guardan solo en ese portátil; donde no pongas ninguna suena la
+  música generada. Además hay efectos (pulsar, acierto, fallo, tictac, redoble, fanfarria…).
+- El navegador no deja sonar nada hasta que se toca la página: si la tele se recarga, aparece **🔊 Activar sonido**
+  hasta la primera tecla o clic en el portátil. Música, efectos y volumen: **Ajustes** (tele) o el mando, pestaña
+  **Secciones**.
+- **Libre con contador** (flexiones…): el móvil de quien participa muestra **+1 / −1** para ir sumando (con equipos,
+  lo lleva el primer móvil del equipo que suma). El presentador puede corregir desde el mando.
+- **Revelados con suspense:** en Test y Verdad o mentira, redoble y «Y la respuesta correcta es…» antes de iluminar la
+  buena. En Estimación, Votación, Contador y Reflejos, tras el redoble los puestos aparecen del último al primero;
   el ganador sale el último, con golpe y confeti. El marcador parte de cómo estaba la última vez, los puntos ruedan y
   las filas se reordenan. Al final, podio 3º → 2º → 1º con fanfarria.
 - Los móviles mantienen la pantalla encendida mientras la página está abierta (si el navegador lo permite).

@@ -6,15 +6,18 @@ import { formatDeltaMs, formatSeconds, ordinal } from '../shared/format.js';
 import { PHASE } from '../core/game.js';
 import { MIN_PLAYERS } from '../core/players.js';
 import { kinetic } from './fx/motion.js';
+import { startCountdown } from './fx/countdown.js';
 
 export function createStage() {
   const root = h('section', { class: 'stage', 'aria-live': 'polite' });
   const overlay = h('div', { class: 'result-overlay', hidden: true, role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Resultado' });
   let timerEl = null;
   let raf = 0;
+  let stopCountdown = () => {};
 
   function stopTimer() {
     cancelAnimationFrame(raf);
+    stopCountdown();
     timerEl = null;
   }
 
@@ -49,6 +52,7 @@ export function createStage() {
           root,
           questionBlock(view, true),
           view.shown.question ? null : h('p', { class: 'stage-title display' }, 'Pregunta en el aire'),
+          h('p', { class: 'how' }, 'Tras la cuenta atrás, el primero en pulsar responde. ¡Si pulsas antes, quedas bloqueado!'),
           view.canStart ? null : h('p', { class: 'stage-hint' }, `Hacen falta al menos ${MIN_PLAYERS} jugadores conectados.`),
         );
         break;
@@ -57,13 +61,18 @@ export function createStage() {
         const started = performance.now() >= game.tOpen;
         root.dataset.phase = started ? 'open' : 'ready';
         timerEl = started ? h('p', { class: 'stage-timer' }) : null;
+        // Antes de abrir, cuenta atrás 3-2-1 en grande (en un rebote es tan corta que solo se ve "Preparados…").
+        const counting = !started && game.tOpen - performance.now() > 900;
+        const big = counting ? h('p', { class: 'countdown-big display' }) : h('p', { class: 'stage-title display' }, started ? '¡Pulsad!' : 'Preparados…');
         fill(
           root,
           questionBlock(view, false),
           game.rebound ? h('p', { class: 'stage-rebound' }, '¡Rebote! Pueden pulsar los demás') : null,
-          h('p', { class: 'stage-title display' }, started ? '¡Pulsad!' : 'Preparados…'),
+          big,
+          counting ? h('p', { class: 'how' }, '¡No pulséis todavía!') : null,
           timerEl,
         );
+        if (counting) stopCountdown = startCountdown(big, game.tOpen);
         if (timerEl) tickTimer(game.tOpen);
         break;
       }

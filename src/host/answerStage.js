@@ -3,17 +3,19 @@
 import { fill, h } from '../shared/dom.js';
 import { getColor, getIcon } from '../shared/appearance.js';
 import { ANSWER_PROMPT, optionStyle } from '../shared/options.js';
-import { ordinal } from '../shared/format.js';
+import { formatGap, ordinal } from '../shared/format.js';
 import { APHASE, isTiming } from '../core/answers.js';
 import { later, suspense } from './fx/motion.js';
 import { sound } from './fx/audio.js';
 import { burst } from './fx/confetti.js';
+import { startCountdown } from './fx/countdown.js';
 
 export function createAnswerStage() {
   const root = h('section', { class: 'answer-stage' });
   let raf = 0;
   let countdownEl = null;
   let lastSecond = null;
+  let stopBig = () => {}; // cuenta atrás 3-2-1 antes de abrir
   // Ronda cuyo revelado ya se animó: si se repinta (alguien se desconecta…), se enseña sin repetir el suspense.
   let animatedReveal = null;
   const shouldAnimate = (a) => {
@@ -24,6 +26,7 @@ export function createAnswerStage() {
 
   function stopCountdown() {
     cancelAnimationFrame(raf);
+    stopBig();
     countdownEl = null;
   }
 
@@ -43,6 +46,10 @@ export function createAnswerStage() {
     const a = view.answer;
     stopCountdown();
     if (!a) return;
+    // Revelado ya pintado: no se vuelve a pintar (cortaría el suspense a medias; el resultado ya no cambia).
+    if (a.phase === APHASE.REVEALED && root.dataset.revealed === a.roundId) return;
+    if (a.phase === APHASE.REVEALED) root.dataset.revealed = a.roundId;
+    else delete root.dataset.revealed;
     delete root.dataset.light; // la luz roja/verde es solo de Reflejos: que no se quede al cambiar de sección
     if (isTiming(a.kind)) return renderTiming(view);
     const started = a.phase !== APHASE.READY && performance.now() >= a.tOpen;
@@ -56,8 +63,13 @@ export function createAnswerStage() {
 
     let body;
     let footer = null;
-    if (a.phase === APHASE.READY || !started) {
-      body = h('p', { class: 'answer-prompt' }, a.phase === APHASE.READY ? `Preparad los móviles · ${ANSWER_PROMPT[a.kind]}` : 'Preparados…');
+    let big = null;
+    if (a.phase === APHASE.READY) {
+      // Antes de abrir: qué va a pasar
+      body = [h('p', { class: 'answer-prompt' }, `Preparad los móviles · ${ANSWER_PROMPT[a.kind]}`), h('p', { class: 'how' }, howTo(a))];
+    } else if (!started) {
+      big = h('p', { class: 'countdown-big display' });
+      body = [big, h('p', { class: 'how' }, howTo(a))];
     } else if (a.phase === APHASE.REVEALED) {
       body = revealed(a, shouldAnimate(a));
     } else {
@@ -74,6 +86,7 @@ export function createAnswerStage() {
     fill(root, header, question, image, body, footer);
     lastSecond = null;
     if (countdownEl) tick(a);
+    if (big) stopBig = startCountdown(big, a.tOpen);
   }
 
   // ------------------------------------------------------------------ Contador y Reflejos
@@ -106,7 +119,7 @@ export function createAnswerStage() {
       }
       if (a.phase === APHASE.REVEALED) {
         root.dataset.phase = 'revealed';
-        return fill(root, header, target, rankingList(a, (e) => secs(e.value, 2), (e) => `a ${secs(e.diff, 2)}`, shouldAnimate(a)));
+        return fill(root, header, target, rankingList(a, (e) => secs(e.value, 3), (e) => `a ${formatGap(e.diff)}`, shouldAnimate(a)));
       }
       root.dataset.phase = a.phase;
       const clock = h('p', { class: 'big-clock' });
@@ -114,18 +127,21 @@ export function createAnswerStage() {
       if (a.phase === APHASE.OPEN) {
         loop(clock, (now) => {
           if (now < a.tOpen) {
-            clock.textContent = String(Math.ceil((a.tOpen - now) / 1000));
+            const n = String(Math.ceil((a.tOpen - now) / 1000));
+            if (clock.textContent !== n) sound.play('count');
+            clock.textContent = n;
             clock.classList.add('counting');
             return;
           }
           clock.classList.remove('counting');
           const elapsed = (now - a.tOpen) / 1000;
           const hidden = a.mode === 'blind' || (a.mode === 'hide' && elapsed >= a.hideAfter);
-          clock.textContent = hidden ? '??,??' : elapsed.toFixed(2).replace('.', ',');
+          // Con milisegundos: en esta prueba se gana por centésimas
+          clock.textContent = hidden ? '??,??? s' : `${elapsed.toFixed(3).replace('.', ',')} s`;
           clock.classList.toggle('hidden-clock', hidden);
         });
       } else {
-        clock.textContent = '??,??';
+        clock.textContent = '??,??? s';
       }
       return;
     }
@@ -148,6 +164,20 @@ export function createAnswerStage() {
   }
 
   return { root, render, stop: stopCountdown };
+}
+
+/** Explicación breve de la pregunta que va a empezar (se ve antes de abrir y durante la cuenta atrás). */
+function howTo(a) {
+  const t = a.seconds ? `Tenéis ${a.seconds} segundos` : '';
+  const pts = (n) => `${n} ${n === 1 ? 'punto' : 'puntos'}`;
+  const text = {
+    test: [t, 'la primera respuesta es la que vale', `${pts(a.points[0])} si aciertas`],
+    verdad: [t, '¿verdad o mentira?', `${pts(a.points[0])} si aciertas`],
+    dosVerdades: [t, a.subject?.name ? `${a.subject.name} no vota` : '', `${pts(a.points[0])} por pillar la mentira`],
+    votacion: [t, 'nadie se vota a sí mismo', `${pts(a.points[0])} si votas con la mayoría`],
+    estimacion: [t, a.noOver ? 'gana el más cercano sin pasarse' : 'gana el más cercano', a.points.length > 1 ? `${a.points.join(', ')} puntos` : pts(a.points[0])],
+  }[a.kind] ?? [t];
+  return text.filter(Boolean).join(' · ');
 }
 
 const secs = (n, decimals) => `${Number(n).toFixed(decimals).replace('.', ',')} s`;
@@ -179,18 +209,30 @@ function rankingList(a, valueText, diffText, animate) {
  * Revelado con suspense: las filas aparecen del último puesto al primero, cada una con su sonido; el ganador, tras
  * una pausa, con golpe y confeti. Devuelve la lista (para usarlo dentro de h()).
  */
-function dramatize(list, animate, { after = null } = {}) {
+function dramatize(list, animate, { after = null, teaseText = '¿Quién habrá ganado?' } = {}) {
   if (!animate) return list;
-  const times = suspense([...list.children]);
+  // Redoble antes de la primera fila; con muchas filas, más rápido (que no se haga eterno).
+  const n = list.children.length;
+  const times = suspense([...list.children], { start: DRUMROLL_MS, gap: Math.max(260, Math.min(700, 5000 / n)), finalPause: 1600 });
+  sound.play('drumroll');
   times.forEach((t, i) => sound.play(i === 0 ? 'hit' : 'pop', t));
+  if (n > 1) sound.play('riser', times[0] - 1500);
   const winnerAt = times[0] ?? 0;
   if (after) {
     after.classList.add('suspense');
     after.style.setProperty('--d', `${winnerAt}ms`);
   }
   later(list, winnerAt, () => burst({ y: 0.35, count: 60 }));
-  return list;
+  // Mientras suena el redoble, una frase encima de la lista (aún vacía).
+  return h('div', { class: 'suspense-wrap' }, tease(teaseText, DRUMROLL_MS), list);
 }
+
+// Revelado: primero un redoble (las barras crecen y nada dice cuál es la buena) y en REVEAL_AT, ¡la respuesta!
+const DRUMROLL_MS = 2400;
+const REVEAL_AT = 2800;
+
+/** Texto que se ve durante el redoble y desaparece al revelar. */
+const tease = (text, at) => h('p', { class: 'reveal-tease display', style: { '--reveal': `${at}ms` } }, text);
 
 // ---------------------------------------------------------------------------------------- Mientras se responde
 
@@ -232,9 +274,17 @@ function revealed(a, animate) {
 
   const total = Math.max(1, ...a.counts);
   const winners = res.entries.filter((e) => e.correct);
+  if (animate) {
+    sound.play('drumroll');
+    sound.play('hit', REVEAL_AT);
+    sound.play(winners.length ? 'correct' : 'wrong', REVEAL_AT + 200);
+    winners.forEach((_, i) => sound.play('pop', REVEAL_AT + 700 + i * 260));
+  }
   return h(
     'div',
-    { class: 'reveal' },
+    // .tense: las animaciones del CSS esperan a --reveal para decir cuál es la buena
+    { class: `reveal ${animate ? 'tense' : ''}`, style: { '--reveal': `${REVEAL_AT}ms` } },
+    animate ? tease(a.kind === 'dosVerdades' ? 'Y la mentira es…' : 'Y la respuesta correcta es…', REVEAL_AT) : null,
     h(
       'ol',
       { class: `options n${a.options.length} revealed` },
@@ -251,7 +301,10 @@ function revealed(a, animate) {
       a.options.map((_, i) =>
         h(
           'span',
-          { class: `bar ${i === a.correct ? 'correct' : ''}`, style: { '--ob': optionStyle(a.kind, i).bg, '--h': `${(a.counts[i] / total) * 100}%` } },
+          {
+            class: `bar ${i === a.correct ? 'correct' : ''}`,
+            style: { '--ob': optionStyle(a.kind, i).bg, '--h': `${(a.counts[i] / total) * 100}%`, '--i': i },
+          },
           h('span', {}, String(a.counts[i])),
         ),
       ),
@@ -264,7 +317,15 @@ function revealed(a, animate) {
       ? h(
           'ul',
           { class: 'scorers' },
-          winners.map((e) => h('li', { style: { '--pc': getColor(e.player.color).bg } }, avatar(e.player), e.player.name, h('strong', {}, `+${e.points}${e.doubled ? ' (×2)' : ''}`))),
+          winners.map((e, i) =>
+            h(
+              'li',
+              { style: { '--pc': getColor(e.player.color).bg, '--d': `${REVEAL_AT + 700 + i * 260}ms` } },
+              avatar(e.player),
+              e.player.name,
+              h('strong', {}, `+${e.points}${e.doubled ? ' (×2)' : ''}`),
+            ),
+          ),
         )
       : h('p', { class: 'reveal-line' }, 'Nadie ha acertado'),
   );
@@ -292,12 +353,12 @@ function revealVote(a, res, animate) {
       ),
     ),
   );
-  dramatize(bars, animate, { after: res.winners.length ? winnerLine : null });
+  const barsBlock = dramatize(bars, animate, { after: res.winners.length ? winnerLine : null, teaseText: '¿Quién es el más votado?' });
   return h(
     'div',
     { class: 'reveal' },
     winnerLine,
-    bars,
+    barsBlock,
     res.winners.length ? h('p', { class: 'reveal-line' }, `Suman ${a.points[0]} quienes votaron con la mayoría`) : null,
   );
 }

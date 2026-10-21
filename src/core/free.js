@@ -21,6 +21,7 @@ export class FreeRound {
     this.tStop = null;
     this.out = {}; // cronómetro: id → ms aguantados al caer
     this.counts = {}; // contador: id → número
+    this.counters = {}; // contador desde el móvil: participante → playerId que lleva su cuenta (uno por equipo)
     this.winners = [];
     this.points = {}; // id → puntos dados
   }
@@ -73,6 +74,22 @@ export class FreeRound {
     if (this.phase !== FPHASE.RUNNING || this.tool !== TOOL.COUNTER || !this.participants.includes(id)) return false;
     this.counts[id] = Math.max(0, (this.counts[id] ?? 0) + delta);
     return true;
+  }
+
+  /**
+   * Cuenta desde el móvil de un concursante (+1/−1; delta 0 = solo pedir llevar la cuenta). Con equipos lleva la cuenta
+   * un único móvil por equipo: el primero que lo pide.
+   * @returns 'ok' | 'taken' (otro lleva la cuenta) | 'closed'
+   */
+  countFrom(playerId, participantId, delta) {
+    const open = this.phase === FPHASE.SETUP || this.phase === FPHASE.RUNNING;
+    if (!open || this.tool !== TOOL.COUNTER || !this.participants.includes(participantId)) return 'closed';
+    const owner = this.counters[participantId];
+    if (owner && owner !== playerId) return 'taken';
+    if (delta && this.phase !== FPHASE.RUNNING) return 'closed';
+    this.counters[participantId] = playerId;
+    if (delta) this.count(participantId, delta);
+    return 'ok';
   }
 
   stop(now) {
@@ -130,8 +147,8 @@ export class FreeRound {
   }
 
   toJSON() {
-    const { roundId, phase, participants, tStart, tStop, out, counts, winners, points } = this;
-    return { roundId, phase, participants, tStart, tStop, out, counts, winners, points };
+    const { roundId, phase, participants, tStart, tStop, out, counts, counters, winners, points } = this;
+    return { roundId, phase, participants, tStart, tStop, out, counts, counters, winners, points };
   }
 
   static fromJSON(item, data) {

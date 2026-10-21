@@ -242,8 +242,12 @@ function handleMessage(msg, tRecv) {
         pad.render(msg.answer, { stateReceivedAt });
       } else {
         pad.hide();
-        $('#buzzer').hidden = false;
-        renderBuzzer();
+        // Libre con contador: si participas, el móvil cuenta (+1/−1) en vez del botón grande.
+        const counting = !!msg.free?.counter && ['setup', 'running'].includes(msg.free.phase);
+        $('#free-pad').hidden = !counting;
+        $('#buzzer').hidden = counting;
+        if (counting) renderFreePad(msg.free);
+        else renderBuzzer();
       }
       // Con equipos, quien aún no tiene uno tiene que elegirlo antes de nada.
       if (msg.teams?.length && !me.teamId && !teamRequested) showTeamPicker(msg.teams);
@@ -315,6 +319,50 @@ function displayedStatus() {
   return g.status;
 }
 
+// ---------- Sección Libre: contador desde el móvil ----------
+
+function renderFreePad(free) {
+  const c = free.counter;
+  const running = free.phase === 'running';
+  $('#free-title').textContent = free.title;
+  $('#free-count').textContent = free.count;
+  $('#free-hint').textContent = !c.mine
+    ? `Lleva la cuenta ${c.by} desde su móvil`
+    : running
+      ? free.byTeams
+        ? 'Suma uno por cada repetición de tu equipo'
+        : 'Suma uno por cada repetición'
+      : 'Cuando empiece la prueba, cuenta aquí';
+  for (const id of ['#free-plus', '#free-minus']) {
+    $(id).hidden = !c.mine;
+    $(id).disabled = !running;
+  }
+}
+
+function sendFreeCount(delta) {
+  const free = lastState?.free;
+  if (!free?.counter?.mine || free.phase !== 'running' || !connection?.connected) return;
+  const seq = ++buzzSeq;
+  ackKinds.set(seq, 'free');
+  connection.send({ t: MSG.FREE_COUNT, seq, roundId: free.roundId, delta });
+  // Se ve al momento; el siguiente estado del portátil lo confirma.
+  free.count = Math.max(0, free.count + delta);
+  renderFreePad(free);
+  vibrate(20);
+}
+
+// pointerdown: que cuente al tocar, aunque se toque muy seguido
+for (const [id, delta] of [
+  ['#free-plus', 1],
+  ['#free-minus', -1],
+]) {
+  $(id).addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    sendFreeCount(delta);
+  });
+  $(id).addEventListener('click', (e) => e.detail === 0 && sendFreeCount(delta)); // con teclado
+}
+
 /** Fuera de una pregunta de pulsador el botón solo informa de lo que pasa en la tele. */
 function renderInfo(state) {
   const section = state.section;
@@ -345,17 +393,16 @@ function renderBuzzer() {
   if (!state) return;
   if (!g) return renderInfo(state);
   const status = displayedStatus();
-  if (status === 'ready') {
-    // Cambiar a "¡PULSA!" justo cuando empieza el turno.
-    goTimer = setTimeout(renderBuzzer, localOpenTime(g) - performance.now());
-  }
+  // Cuenta atrás: repintar en cada cambio de segundo y, al llegar a 0, cambiar a "¡PULSA!" justo a tiempo.
+  const left = localOpenTime(g) - performance.now();
+  if (status === 'ready') goTimer = setTimeout(renderBuzzer, left > 1000 ? (left % 1000) + 5 : left);
   if (status === 'first' && lastShownStatus !== 'first') vibrate([80, 60, 80]);
   lastShownStatus = status;
 
   const winnerName = state.winner?.name ?? '';
   const [label, sub] = {
     wait: ['Espera', state.playerCount < state.minPlayers ? `Esperando jugadores (mínimo ${state.minPlayers})` : 'Pregunta en el aire'],
-    ready: ['Espera', 'Preparados…'],
+    ready: left > 900 ? [String(Math.ceil(left / 1000)), '¡No pulses todavía!'] : ['Espera', 'Preparados…'],
     go: ['¡PULSA!', ''],
     pressed: ['¡Pulsado!', 'Esperando resultado…'],
     first: g.judged === 'correct' ? ['¡Has acertado!', '¡Bien hecho!'] : ['¡Has sido el primero!', formatSeconds(g.reactionMs ?? 0)],

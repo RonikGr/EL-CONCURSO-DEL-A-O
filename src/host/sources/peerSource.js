@@ -28,6 +28,7 @@ export class PeerSource {
    * @param handlers.onBuzz(playerId, {seq, epoch, tPress, tArrival, meta}) — tiempos en el reloj del presentador
    * @param handlers.onAnswer(playerId, {seq, roundId, value, tPress, tArrival})
    * @param handlers.onJoker(playerId, {seq, roundId, kind})
+   * @param handlers.onFreeCount(playerId, {seq, roundId, delta})
    * @param handlers.onSyncReport(playerId, {offset, err, rtt, samples})
    * @param handlers.onLeave(playerId)
    * @param handlers.onRtt(playerId, ms)
@@ -142,6 +143,9 @@ export class PeerSource {
       }
       case MSG.JOKER:
         this.handlers.onJoker?.(entry.id, msg);
+        break;
+      case MSG.FREE_COUNT:
+        this.handlers.onFreeCount?.(entry.id, msg);
         break;
       case MSG.SYNC_REPORT:
         this.handlers.onSyncReport?.(entry.id, msg);

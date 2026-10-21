@@ -589,7 +589,7 @@ function duelPicker(a) {
 function liveCounts(a) {
   if (a.kind === 'contador' || a.kind === 'reflejos') {
     if (!a.answers?.length) return null;
-    const text = (x) => (x.value == null ? 'en rojo' : a.kind === 'contador' ? `${x.value.toFixed(2).replace('.', ',')} s` : `${Math.round(x.value)} ms`);
+    const text = (x) => (x.value == null ? 'en rojo' : a.kind === 'contador' ? `${x.value.toFixed(3).replace('.', ',')} s` : `${Math.round(x.value)} ms`);
     return h('p', { class: 'small muted' }, a.answers.map((x) => `${x.player.name}: ${text(x)}`).join(' · '));
   }
   if (!a.counts) return null;

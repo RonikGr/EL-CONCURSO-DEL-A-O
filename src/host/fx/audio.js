@@ -1,39 +1,26 @@
 // Sonido del espectáculo, generado al momento con Web Audio (sin archivos: nada que descargar ni licencias).
-//  - Música ambiental distinta por entorno: un colchón grave que cambia de acorde, una caja de música que improvisa
-//    sobre una escala menor, bajo, y ambiente (viento, lluvia, fuego, burbujas, búhos).
-//  - Efectos: entrada de pantalla, gong, ¡pulsad!, pulsación, acierto, fallo, tictac, campana, trueno, redoble…
-//  - Tensión: con el turno abierto, la música baja y suena un latido.
+//  - Música (music.js): 7 estilos según el momento (preparación, portada, juego, tensión, revelado, marcador, final),
+//    en la tonalidad y con el ambiente (viento, lluvia, fuego, burbujas, búhos) del entorno de la sección.
+//  - Efectos: entrada de pantalla, gong, ¡pulsad!, pulsación, acierto, fallo, tictac, campana, redoble, trueno…
 // El navegador no deja sonar nada hasta que alguien toca la página: se activa con la primera tecla o clic.
+import { bell, bubble, crackle, mtof, noiseHit, owl, snare, thump, tone } from './synth.js';
+import { MOODS, STYLES } from './music.js';
 
-const MOODS = {
-  luna: { root: 45, scale: [0, 2, 3, 5, 7, 8, 10], bpm: 64, bells: 0.5, wave: 'sawtooth', cutoff: 700, amb: ['wind'] },
-  cementerio: { root: 38, scale: [0, 1, 3, 5, 7, 8, 10], bpm: 56, bells: 0.35, wave: 'sawtooth', cutoff: 520, amb: ['wind', 'owl'] },
-  bosque: { root: 40, scale: [0, 2, 3, 5, 7, 9, 10], bpm: 60, bells: 0.45, wave: 'triangle', cutoff: 900, amb: ['wind', 'owl'] },
-  calabazas: { root: 43, scale: [0, 2, 3, 5, 7, 8, 11], bpm: 84, bells: 0.6, wave: 'sawtooth', cutoff: 800, amb: ['fire'] },
-  laboratorio: { root: 36, scale: [0, 2, 4, 6, 8, 10], bpm: 72, bells: 0.5, wave: 'square', cutoff: 600, amb: ['bubbles'] },
-  mansion: { root: 35, scale: [0, 2, 3, 5, 7, 8, 11], bpm: 58, bells: 0.4, wave: 'square', cutoff: 650, amb: ['rain'] },
-  telarana: { root: 42, scale: [0, 1, 3, 6, 7, 9], bpm: 66, bells: 0.55, wave: 'triangle', cutoff: 750, amb: ['wind'] },
-  aquelarre: { root: 38, scale: [0, 1, 4, 5, 7, 8, 10], bpm: 92, bells: 0.45, wave: 'sawtooth', cutoff: 900, amb: ['fire'], drums: true },
-  cripta: { root: 37, scale: [0, 2, 3, 5, 7, 8, 10], bpm: 50, bells: 0.3, wave: 'sine', cutoff: 1200, amb: ['wind'] },
-  tormenta: { root: 33, scale: [0, 1, 3, 5, 7, 8, 10], bpm: 54, bells: 0.3, wave: 'sawtooth', cutoff: 480, amb: ['rain', 'wind'] },
-};
-// Acordes del colchón (desplazamiento sobre la tónica): i · VI · VII · v
-const PROGRESSION = [0, -4, -2, -5];
-
-const mtof = (m) => 440 * 2 ** ((m - 69) / 12);
+const CROSSFADE = 0.7; // s (constante de tiempo del fundido entre estilos)
 
 class SoundEngine extends EventTarget {
   ctx = null;
   settings = { musicOn: true, sfxOn: true, volume: 70 };
-  mood = null;
-  #moodId = null;
-  #tension = false;
+  #moodId = 'luna';
+  #scene = 'lobby';
+  #layer = null; // música generada que suena ahora
+  #tracks = new Map(); // tus canciones: slot → [{url, name}]
+  #players = new Map(); // slot → reproductor de canciones
+  #slot = null; // reproductor que suena ahora
+  #amb = null; // ambiente del entorno
   #timers = new Set();
   #noise = null;
   #schedule = 0;
-  #beat = 0;
-  #nextBeat = 0;
-  #melody = 0;
 
   constructor() {
     super();
@@ -67,21 +54,23 @@ class SoundEngine extends EventTarget {
     const t = this.ctx.currentTime;
     this.master.gain.setTargetAtTime((this.settings.volume / 100) * 0.9, t, 0.1);
     this.sfxBus.gain.setTargetAtTime(this.settings.sfxOn ? 1 : 0, t, 0.05);
-    this.#applyMusicLevel();
+    this.musicBus.gain.setTargetAtTime(this.settings.musicOn ? 0.6 : 0, t, 0.4);
   }
 
-  /** Entorno actual: cambia la música con un fundido. */
+  /** Entorno actual: cambia la tonalidad y el ambiente. */
   setMood(id) {
-    if (this.#moodId === id) return;
+    if (this.#moodId === id || !MOODS[id]) return;
     this.#moodId = id;
-    if (this.unlocked) this.#switchMood();
+    if (!this.unlocked) return;
+    this.#switchAmbience();
+    this.#switchLayer();
   }
 
-  /** Turno abierto: la música baja y suena un latido. */
-  setTension(on) {
-    if (this.#tension === on) return;
-    this.#tension = on;
-    this.#applyMusicLevel();
+  /** Momento del concurso → estilo de música (ver music.js). */
+  setScene(scene) {
+    if (this.#scene === scene || !STYLES[scene]) return;
+    this.#scene = scene;
+    if (this.unlocked) this.#switchLayer();
   }
 
   /** Efecto de sonido, opcionalmente con retraso (ms). */
@@ -124,16 +113,16 @@ class SoundEngine extends EventTarget {
     this.musicBus = c.createGain();
     this.musicBus.gain.value = 0;
     this.musicBus.connect(this.master);
-    this.musicSend = c.createGain();
-    this.musicSend.gain.value = 0.8;
-    this.musicBus.connect(this.musicSend).connect(this.reverb);
+    const musicSend = c.createGain();
+    musicSend.gain.value = 0.7;
+    this.musicBus.connect(musicSend).connect(this.reverb);
 
     this.sfxBus = c.createGain();
     this.sfxBus.gain.value = this.settings.sfxOn ? 1 : 0;
     this.sfxBus.connect(this.master);
-    this.sfxSend = c.createGain();
-    this.sfxSend.gain.value = 0.35;
-    this.sfxBus.connect(this.sfxSend).connect(this.reverb);
+    const sfxSend = c.createGain();
+    sfxSend.gain.value = 0.35;
+    this.sfxBus.connect(sfxSend).connect(this.reverb);
   }
 
   #impulse(seconds) {
@@ -156,39 +145,126 @@ class SoundEngine extends EventTarget {
     return (this.#noise = buf);
   }
 
-  #applyMusicLevel() {
-    if (!this.ctx) return;
-    const level = this.settings.musicOn ? (this.#tension ? 0.22 : 0.6) : 0;
-    this.musicBus.gain.setTargetAtTime(level, this.ctx.currentTime, 0.6);
-  }
-
   // ------------------------------------------------------------------------------------------ música
 
   #startMusic() {
-    this.#applyMusicLevel();
-    this.#switchMood();
+    this.configure({});
+    this.#switchAmbience();
+    this.#switchLayer();
     if (this.#schedule) return;
-    this.#nextBeat = this.ctx.currentTime + 0.2;
     // Planificador con margen: se programan las notas un poco antes de que toquen.
     this.#schedule = setInterval(() => this.#tick(), 90);
   }
 
-  #switchMood() {
-    const c = this.ctx;
-    const t = c.currentTime;
-    if (this.mood) {
-      const old = this.mood;
-      old.out.gain.setTargetAtTime(0, t, 0.8);
-      setTimeout(() => old.nodes.forEach((n) => n.stop?.()), 5000);
-    }
-    const m = MOODS[this.#moodId] ?? MOODS.luna;
-    const out = c.createGain();
-    out.gain.value = 0;
-    out.gain.setTargetAtTime(1, t + 0.4, 1.2);
-    out.connect(this.musicBus);
-    const nodes = [];
+  /** Apaga una capa (música o ambiente) con un fundido y libera sus osciladores. */
+  #fadeOut(layer) {
+    if (!layer) return;
+    layer.out.gain.setTargetAtTime(0, this.ctx.currentTime, CROSSFADE * 0.6);
+    setTimeout(() => {
+      layer.nodes.forEach((n) => n.stop?.());
+      layer.out.disconnect();
+    }, 5000);
+  }
 
-    // Colchón: tónica, quinta y octava, cada una con dos osciladores desafinados, por un filtro que respira.
+  #newOut(level = 1) {
+    const out = this.ctx.createGain();
+    out.gain.value = 0;
+    out.gain.setTargetAtTime(level, this.ctx.currentTime + 0.1, CROSSFADE);
+    out.connect(this.musicBus);
+    return out;
+  }
+
+  /** Qué suena ahora (para depurar desde la consola). */
+  state() {
+    const p = this.#slot;
+    return { scene: this.#scene, mood: this.#moodId, generated: !!this.#layer, track: p && { slot: p.slot, paused: p.audio.paused, time: p.audio.currentTime } };
+  }
+
+  /** Tus canciones por momento: slot → [{url, name}] (ver tracks.js). */
+  setTracks(map) {
+    this.#tracks = map;
+    if (this.unlocked) this.#switchLayer(true);
+  }
+
+  #switchLayer(force = false) {
+    const c = this.ctx;
+    // Si hay canciones tuyas para este momento, suenan ellas; si no, la música generada.
+    if (this.#tracks.get(this.#scene)?.length) {
+      this.#fadeOut(this.#layer);
+      this.#layer = null;
+      return this.#playSlot(this.#scene, force);
+    }
+    this.#stopSlot();
+    this.#fadeOut(this.#layer);
+    const mood = MOODS[this.#moodId];
+    const style = STYLES[this.#scene];
+    const out = this.#newOut();
+    // filtro para los sonidos de sierra (ostinatos, trémolos): que no chirríen
+    const soft = c.createBiquadFilter();
+    soft.type = 'lowpass';
+    soft.frequency.value = 1800;
+    soft.connect(out);
+    const layer = { style, mood, out, soft, nodes: [], voices: [], st: {}, beat: 0, nextBeat: c.currentTime + 0.15 };
+    if (style.pad) this.#buildPad(layer);
+    style.start?.(layer.st, mood);
+    this.#layer = layer;
+  }
+
+  // ------------------------------------------------------------------------------------------ canciones (.mp3)
+
+  /**
+   * Un reproductor por momento. Al volver a un momento en menos de 3 min, la canción sigue donde iba; si no, empieza
+   * otra (al azar entre las de ese momento). Al acabar una, suena la siguiente.
+   */
+  #playSlot(slot, force) {
+    const list = this.#tracks.get(slot);
+    let p = this.#players.get(slot);
+    if (p && (force || !list.some((t) => t.url === p.audio.src))) {
+      p.audio.pause();
+      this.#players.delete(slot);
+      p = null;
+    }
+    if (!p) {
+      const audio = new Audio();
+      audio.preload = 'auto';
+      const gain = this.ctx.createGain();
+      gain.gain.value = 0;
+      this.ctx.createMediaElementSource(audio).connect(gain).connect(this.musicBus);
+      p = { audio, gain, pausedAt: 0, slot };
+      audio.addEventListener('ended', () => this.#nextTrack(p));
+      this.#players.set(slot, p);
+      this.#nextTrack(p, false);
+    } else if (performance.now() - p.pausedAt > 180_000) {
+      this.#nextTrack(p, false);
+    }
+    if (this.#slot && this.#slot !== p) this.#stopSlot();
+    this.#slot = p;
+    p.audio.play().catch(() => {});
+    p.gain.gain.setTargetAtTime(1, this.ctx.currentTime, CROSSFADE * 0.8);
+  }
+
+  #nextTrack(p, play = true) {
+    const list = this.#tracks.get(p.slot) ?? [];
+    if (!list.length) return;
+    const others = list.length > 1 ? list.filter((t) => t.url !== p.audio.src) : list;
+    p.audio.src = others[(Math.random() * others.length) | 0].url;
+    if (play) p.audio.play().catch(() => {});
+  }
+
+  /** Funde y pausa la canción que suena (se recuerda dónde iba). */
+  #stopSlot() {
+    const p = this.#slot;
+    if (!p) return;
+    this.#slot = null;
+    p.gain.gain.setTargetAtTime(0, this.ctx.currentTime, CROSSFADE * 0.6);
+    p.pausedAt = performance.now();
+    setTimeout(() => this.#slot !== p && p.audio.pause(), 3000);
+  }
+
+  /** Colchón del estilo explore: tónica, quinta y octava desafinadas por un filtro que respira. */
+  #buildPad(layer) {
+    const c = this.ctx;
+    const m = layer.mood;
     const filter = c.createBiquadFilter();
     filter.type = 'lowpass';
     filter.frequency.value = m.cutoff;
@@ -199,11 +275,10 @@ class SoundEngine extends EventTarget {
     lfoGain.gain.value = m.cutoff * 0.45;
     lfo.connect(lfoGain).connect(filter.frequency);
     lfo.start();
-    nodes.push(lfo);
+    layer.nodes.push(lfo);
     const padGain = c.createGain();
     padGain.gain.value = m.wave === 'square' ? 0.028 : m.wave === 'sine' ? 0.09 : 0.045;
-    filter.connect(padGain).connect(out);
-    const voices = [];
+    filter.connect(padGain).connect(layer.out);
     for (const interval of [0, 7, 12, -12]) {
       for (const detune of interval === -12 ? [0] : [-8, 8]) {
         const o = c.createOscillator();
@@ -214,164 +289,71 @@ class SoundEngine extends EventTarget {
         g.gain.value = interval === -12 ? 2.2 : 1;
         o.connect(g).connect(filter);
         o.start();
-        nodes.push(o);
-        voices.push({ o, interval });
+        layer.nodes.push(o);
+        layer.voices.push({ o, interval });
       }
     }
+  }
 
-    // Ambiente continuo
-    if (m.amb.includes('wind') || m.amb.includes('rain')) {
+  /** Ambiente continuo del entorno (viento, lluvia); lo puntual (fuego, burbujas, búhos) va en #tick. */
+  #switchAmbience() {
+    const c = this.ctx;
+    this.#fadeOut(this.#amb);
+    const m = MOODS[this.#moodId];
+    const out = this.#newOut(0.8);
+    const amb = { m, out, nodes: [], nextBeat: c.currentTime };
+    const loop = (filterType, freq, gain, q = 1, offset = 0) => {
       const src = c.createBufferSource();
       src.buffer = this.noise();
       src.loop = true;
-      const bp = c.createBiquadFilter();
+      const f = c.createBiquadFilter();
+      f.type = filterType;
+      f.frequency.value = freq;
+      f.Q.value = q;
       const g = c.createGain();
-      if (m.amb.includes('rain')) {
-        bp.type = 'highpass';
-        bp.frequency.value = 2500;
-        g.gain.value = 0.05;
-      } else {
-        bp.type = 'bandpass';
-        bp.frequency.value = 500;
-        bp.Q.value = 3;
-        g.gain.value = 0.07;
-        // Ráfagas de viento: el filtro y el volumen suben y bajan despacio.
-        const wl = c.createOscillator();
-        const wg = c.createGain();
-        wl.frequency.value = 0.09;
-        wg.gain.value = 300;
-        wl.connect(wg).connect(bp.frequency);
-        wl.start();
-        nodes.push(wl);
-      }
-      src.connect(bp).connect(g).connect(out);
-      src.start();
-      nodes.push(src);
-      if (m.amb.includes('rain') && m.amb.includes('wind')) {
-        // tormenta: además, viento grave
-        const src2 = c.createBufferSource();
-        src2.buffer = this.noise();
-        src2.loop = true;
-        const lp = c.createBiquadFilter();
-        lp.type = 'lowpass';
-        lp.frequency.value = 350;
-        const g2 = c.createGain();
-        g2.gain.value = 0.12;
-        src2.connect(lp).connect(g2).connect(out);
-        src2.start(0, 0.7);
-        nodes.push(src2);
-      }
+      g.gain.value = gain;
+      src.connect(f).connect(g).connect(out);
+      src.start(0, offset);
+      amb.nodes.push(src);
+      return f;
+    };
+    if (m.amb.includes('rain')) loop('highpass', 2500, 0.05);
+    if (m.amb.includes('wind')) {
+      const bp = loop('bandpass', 500, m.amb.includes('rain') ? 0.05 : 0.07, 3, 0.3);
+      // Ráfagas: el filtro sube y baja despacio
+      const wl = c.createOscillator();
+      const wg = c.createGain();
+      wl.frequency.value = 0.09;
+      wg.gain.value = 300;
+      wl.connect(wg).connect(bp.frequency);
+      wl.start();
+      amb.nodes.push(wl);
     }
-
-    this.mood = { m, out, nodes, voices };
-    this.#beat = 0;
+    if (m.amb.includes('rain') && m.amb.includes('wind')) loop('lowpass', 350, 0.12, 1, 0.7); // tormenta: retumbo grave
+    this.#amb = amb;
   }
 
   #tick() {
     const c = this.ctx;
-    if (!this.mood || c.state !== 'running') return;
-    const { m } = this.mood;
-    const spb = 60 / m.bpm;
-    while (this.#nextBeat < c.currentTime + 0.35) {
-      this.#playBeat(this.#nextBeat, this.#beat, spb);
-      this.#nextBeat += spb;
-      this.#beat++;
+    if (c.state !== 'running') return;
+    const horizon = c.currentTime + 0.35;
+    const L = this.#layer; // null mientras suena una canción tuya
+    const spb = L ? 60 / (L.style.bpm * (L.style === STYLES.explore ? L.mood.tempo : 1)) : 0;
+    while (L && L.nextBeat < horizon) {
+      const meter = L.style.meter;
+      L.style.beat({ s: this, out: L.out, soft: L.soft, t: L.nextBeat, beat: L.beat, bar: Math.floor(L.beat / meter), inBar: L.beat % meter, spb, mood: L.mood, st: L.st, layer: L });
+      L.nextBeat += spb;
+      L.beat++;
     }
-  }
-
-  #playBeat(t, beat, spb) {
-    const { m, out, voices } = this.mood;
-    const bar = Math.floor(beat / 4);
-    const inBar = beat % 4;
-    // Cambio de acorde cada 2 compases
-    if (inBar === 0 && bar % 2 === 0) {
-      const shift = PROGRESSION[(bar / 2) % PROGRESSION.length];
-      for (const v of voices) v.o.frequency.setTargetAtTime(mtof(m.root + shift + v.interval), t, 0.5);
-      // bajo pulsado
-      pluck(this, out, mtof(m.root + shift), t, { type: 'triangle', gain: 0.16, decay: 2.2 });
+    // Ambiente puntual, cada medio segundo
+    const A = this.#amb;
+    while (A && A.nextBeat < horizon) {
+      const t = A.nextBeat;
+      if (A.m.amb.includes('fire')) for (let i = 0; i < 2; i++) if (Math.random() < 0.6) crackle(this, A.out, t + Math.random() * 0.5);
+      if (A.m.amb.includes('bubbles') && Math.random() < 0.5) bubble(this, A.out, t + Math.random() * 0.5);
+      if (A.m.amb.includes('owl') && Math.random() < 0.012) owl(this, A.out, t);
+      A.nextBeat += 0.5;
     }
-    // Caja de música: paseo aleatorio por la escala
-    if (Math.random() < m.bells) {
-      this.#melody = Math.max(-3, Math.min(9, this.#melody + [-2, -1, -1, 1, 1, 2, 3][(Math.random() * 7) | 0]));
-      const n = m.scale.length;
-      const deg = ((this.#melody % n) + n) % n;
-      const oct = Math.floor(this.#melody / n);
-      const midi = m.root + 24 + 12 * oct + m.scale[deg];
-      bell(this, out, mtof(midi), t, { gain: 0.07 });
-      if (Math.random() < 0.3) bell(this, out, mtof(midi + 12), t + spb / 2, { gain: 0.04 });
-    }
-    if (m.drums && (inBar === 0 || inBar === 2)) tom(this, out, t, inBar === 0 ? 0.22 : 0.14);
-    if (m.drums && inBar === 3 && Math.random() < 0.5) tom(this, out, t + spb / 2, 0.1, 120);
-    // Ambiente
-    if (m.amb.includes('fire')) for (let i = 0; i < 3; i++) if (Math.random() < 0.6) crackle(this, out, t + Math.random() * spb);
-    if (m.amb.includes('bubbles') && Math.random() < 0.7) bubble(this, out, t + Math.random() * spb);
-    if (m.amb.includes('owl') && beat % 24 === 11 && Math.random() < 0.6) owl(this, out, t);
-    // Latido mientras hay tensión (va por el bus de efectos: suena aunque la música esté apagada)
-    if (this.#tension && this.settings.sfxOn) {
-      thump(this, this.sfxBus, t, 0.5);
-      thump(this, this.sfxBus, t + 0.22, 0.32);
-    }
-  }
-}
-
-// ------------------------------------------------------------------------------------------ instrumentos
-
-function tone(s, dest, { type = 'sine', freq, t, attack = 0.005, peak = 0.2, decay = 0.5, slideTo = null, slideTime = 0.2, detune = 0 }) {
-  const c = s.ctx;
-  const o = c.createOscillator();
-  o.type = type;
-  o.frequency.setValueAtTime(freq, t);
-  if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + slideTime);
-  o.detune.value = detune;
-  const g = c.createGain();
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(peak, t + attack);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + attack + decay);
-  o.connect(g).connect(dest);
-  o.start(t);
-  o.stop(t + attack + decay + 0.05);
-  return o;
-}
-
-function noiseHit(s, dest, t, { type = 'bandpass', freq = 1000, q = 1, peak = 0.3, attack = 0.005, decay = 0.3, sweepTo = null }) {
-  const c = s.ctx;
-  const src = c.createBufferSource();
-  src.buffer = s.noise();
-  const f = c.createBiquadFilter();
-  f.type = type;
-  f.frequency.setValueAtTime(freq, t);
-  if (sweepTo) f.frequency.exponentialRampToValueAtTime(sweepTo, t + attack + decay);
-  f.Q.value = q;
-  const g = c.createGain();
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(peak, t + attack);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + attack + decay);
-  src.connect(f).connect(g).connect(dest);
-  src.start(t, Math.random());
-  src.stop(t + attack + decay + 0.05);
-}
-
-const bell = (s, dest, f, t, { gain = 0.1, decay = 1.8 } = {}) => {
-  tone(s, dest, { freq: f, t, peak: gain, decay });
-  tone(s, dest, { freq: f * 2.01, t, peak: gain * 0.35, decay: decay * 0.5 });
-  tone(s, dest, { freq: f * 3.98, t, peak: gain * 0.12, decay: decay * 0.25 });
-};
-const pluck = (s, dest, f, t, { type = 'triangle', gain = 0.15, decay = 0.6 } = {}) => tone(s, dest, { type, freq: f, t, peak: gain, decay });
-const thump = (s, dest, t, gain = 0.4) => tone(s, dest, { freq: 90, slideTo: 40, slideTime: 0.12, t, peak: gain, decay: 0.18 });
-const tom = (s, dest, t, gain, f = 95) => {
-  tone(s, dest, { freq: f, slideTo: f * 0.55, slideTime: 0.25, t, peak: gain, decay: 0.35 });
-  noiseHit(s, dest, t, { type: 'lowpass', freq: 600, peak: gain * 0.25, decay: 0.08 });
-};
-const crackle = (s, dest, t) => noiseHit(s, dest, t, { freq: 1800 + Math.random() * 3000, q: 4, peak: 0.04 + Math.random() * 0.05, decay: 0.015 });
-const bubble = (s, dest, t) =>
-  tone(s, dest, { freq: 250 + Math.random() * 300, slideTo: 900 + Math.random() * 600, slideTime: 0.07, t, peak: 0.05, decay: 0.08 });
-function owl(s, dest, t) {
-  for (const [dt, f] of [
-    [0, 440],
-    [0.45, 415],
-    [0.75, 415],
-  ]) {
-    tone(s, dest, { freq: f, slideTo: f * 0.92, slideTime: 0.35, t: t + dt, attack: 0.08, peak: 0.035, decay: 0.32 });
   }
 }
 
@@ -459,6 +441,10 @@ const SFX = {
   thunder(s, t) {
     noiseHit(s, s.sfxBus, t, { type: 'lowpass', freq: 1400, sweepTo: 120, peak: 0.35, attack: 0.02, decay: 2.8 });
     noiseHit(s, s.sfxBus, t + 0.25, { type: 'lowpass', freq: 300, peak: 0.25, attack: 0.1, decay: 2.2 });
+  },
+  /** Redoble de caja antes de un revelado (2,4 s, crece hasta el golpe). */
+  drumroll(s, t) {
+    for (let i = 0; i < 40; i++) snare(s, s.sfxBus, t + i * 0.06, 0.015 + i * 0.0028);
   },
   /** Marcador: redoble corto. */
   roll(s, t) {

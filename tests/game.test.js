@@ -204,3 +204,15 @@ describe('vista del jugador', () => {
     expect(playerView(g, 'x', 20)).toMatchObject({ status: 'blocked', reason: LOCK.EARLY });
   });
 });
+
+describe('cuenta atrás', () => {
+  it('la primera apertura espera la cuenta atrás; el rebote tras un fallo, no', () => {
+    const g = new QuestionEngine({ ...SETTINGS, countdownSec: 3 });
+    g.open(1000);
+    expect(g.tOpen).toBe(4000);
+    g.buzz({ playerId: 'a', tPress: 4100, tArrival: 4110, epoch: g.epoch });
+    g.closeWindow(4300);
+    g.wrong(5000, ['a', 'b']);
+    expect(g.tOpen).toBe(5300);
+  });
+});

@@ -5,6 +5,7 @@ import { getColor, getIcon } from '../shared/appearance.js';
 import { ANSWER_PROMPT, optionStyle } from '../shared/options.js';
 import { parseNumber } from '../core/show.js';
 import { isTiming } from '../core/answers.js';
+import { formatGap } from '../shared/format.js';
 
 const JOKER_INFO = {
   fifty: { label: '50 %', help: 'Quita la mitad de las respuestas incorrectas' },
@@ -41,10 +42,12 @@ export function createAnswerPad({ onAnswer, onJoker, toLocal }) {
     const started = a.phase !== 'ready' && now >= local(a.tOpen, a.opensInMs);
     const tGreen = a.tGreen != null ? local(a.tGreen, a.greenInMs) : null;
     const green = tGreen != null && now >= tGreen;
-    const sig = JSON.stringify([a.roundId, a.phase, started, green, a.you, a.removed, a.jokers, a.audience, a.result, a.canAnswer, pending, selected]);
+    const left = a.phase === 'open' && !started ? local(a.tOpen, a.opensInMs) - now : 0;
+    const count = left > 900 ? Math.ceil(left / 1000) : null; // cuenta atrás 3-2-1
+    const sig = JSON.stringify([a.roundId, a.phase, started, green, count, a.you, a.removed, a.jokers, a.audience, a.result, a.canAnswer, pending, selected]);
     clearTimeout(timer);
     const again = () => current && render(current, { stateReceivedAt: receivedAt });
-    if (a.phase === 'open' && !started) timer = setTimeout(again, local(a.tOpen, a.opensInMs) - now);
+    if (a.phase === 'open' && !started) timer = setTimeout(again, left > 1000 ? (left % 1000) + 5 : left);
     else if (a.phase === 'open' && tGreen != null && !green) timer = setTimeout(again, tGreen - now); // Reflejos: a verde
     if (sig === signature) return;
     signature = sig;
@@ -59,7 +62,10 @@ export function createAnswerPad({ onAnswer, onJoker, toLocal }) {
     const chosen = a.you.answered ? a.you.value : pending?.value;
     let body;
     if (a.phase === 'ready' || !started) {
-      body = [h('p', { class: 'ap-big' }, a.phase === 'ready' ? 'Prepárate' : 'Preparados…'), h('p', { class: 'ap-sub' }, ANSWER_PROMPT[a.kind])];
+      body = [
+        h('p', { class: `ap-big ${count ? 'ap-count' : ''}` }, a.phase === 'ready' ? 'Prepárate' : count ? String(count) : 'Preparados…'),
+        h('p', { class: 'ap-sub' }, ANSWER_PROMPT[a.kind]),
+      ];
     } else if (a.phase === 'revealed') {
       body = resultView(a);
     } else if (!a.canAnswer) {
@@ -108,7 +114,7 @@ export function createAnswerPad({ onAnswer, onJoker, toLocal }) {
           // Tras pulsar no se enseña el tiempo: se descubre al revelar.
           const hidden = pressed || a.mode === 'blind' || (a.mode === 'hide' && elapsed >= a.hideAfter);
           clock.classList.remove('counting');
-          clock.textContent = hidden ? '??,??' : elapsed.toFixed(2).replace('.', ',');
+          clock.textContent = hidden ? '??,??? s' : `${elapsed.toFixed(3).replace('.', ',')} s`;
         }
         raf = requestAnimationFrame(tick);
       };
@@ -294,7 +300,7 @@ function resultView(a) {
   }
   const pts = h('p', { class: `ap-points ${r.points ? 'plus' : ''}` }, r.points ? `+${r.points}` : 'Sin puntos');
   if (a.kind === 'contador') {
-    return [h('p', { class: 'ap-big' }, `Has quedado ${r.place}º`), h('p', { class: 'ap-sub' }, `Paraste en ${secs(r.value, 2)} · a ${secs(r.diff, 2)} del objetivo`), pts];
+    return [h('p', { class: 'ap-big' }, `Has quedado ${r.place}º`), h('p', { class: 'ap-sub' }, `Paraste en ${secs(r.value, 3)} · a ${formatGap(r.diff)} del objetivo`), pts];
   }
   if (a.kind === 'reflejos') {
     if (r.early) return [h('p', { class: 'ap-big' }, '¡Pulsaste en rojo!'), h('p', { class: 'ap-sub' }, 'Fuera de esta ronda'), pts];

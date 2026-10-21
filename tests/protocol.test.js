@@ -48,6 +48,8 @@ describe('protocolo', () => {
     expect(parsePlayerMessage({ t: MSG.ANSWER, seq: 1, value: 1 })).toBeNull();
     expect(parsePlayerMessage({ t: MSG.JOKER, seq: 1, roundId: 'r', kind: 'fifty' })).toEqual({ t: 'joker', seq: 1, roundId: 'r', kind: 'fifty' });
     expect(parseHostMessage({ t: MSG.ANSWER_ACK, seq: 1, result: 'ok' })).not.toBeNull();
+    expect(parsePlayerMessage({ t: MSG.FREE_COUNT, seq: 2, roundId: 'f', delta: -1 })).toEqual({ t: 'freeCount', seq: 2, roundId: 'f', delta: -1 });
+    expect(parsePlayerMessage({ t: MSG.FREE_COUNT, seq: 2, roundId: 'f', delta: 5 })).toBeNull();
   });
 
   it('valida la sincronización', () => {

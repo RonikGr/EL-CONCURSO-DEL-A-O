@@ -18,3 +18,9 @@ export function formatDeltaMs(ms) {
 }
 
 export const ordinal = (n) => `${n}º`;
+
+/** Distancia al objetivo en Parar el contador (en segundos): por debajo de 1 s, en milisegundos. 0.0234 → "23 ms" */
+export function formatGap(seconds) {
+  const ms = Math.round(Math.abs(seconds) * 1000);
+  return ms < 1000 ? `${ms} ms` : formatSeconds(ms);
+}

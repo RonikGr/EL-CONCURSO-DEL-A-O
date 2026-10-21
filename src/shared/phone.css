@@ -162,3 +162,131 @@ button.me-score,
   font-weight: 700;
   font-variant-numeric: tabular-nums;
 }
+
+/* Cuenta atrás 3-2-1 en el móvil antes de abrir */
+.ap-count,
+.buzzer[data-state='ready'] .buzzer-label {
+  font-family: var(--display);
+  font-weight: 400;
+  font-size: clamp(5rem, 30vw, 9rem);
+  line-height: 1;
+  color: var(--accent);
+  text-shadow: 0 0 0.3em rgb(255 138 31 / 0.6);
+}
+
+/* Libre con contador: el concursante suma desde su móvil */
+.free-pad {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto 1fr auto auto;
+  justify-items: center;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1rem;
+  border-radius: 2rem;
+  background: var(--surface);
+  backdrop-filter: blur(10px);
+  box-shadow: inset 0 0 0 1px var(--border);
+  text-align: center;
+}
+
+.free-pad .free-count {
+  margin: 0;
+  font-family: var(--display);
+  font-size: clamp(6rem, 38vw, 12rem);
+  line-height: 1;
+  color: var(--accent);
+  text-shadow: 0 0 0.3em rgb(255 138 31 / 0.6);
+  font-variant-numeric: tabular-nums;
+}
+
+.free-buttons {
+  display: grid;
+  grid-template-columns: 1fr 2.4fr;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+.free-buttons .btn {
+  min-height: 5.5rem;
+  font-size: 2.2rem;
+  font-weight: 900;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Cabecera del jugador: nombre y sala en una línea cada uno (con «…» si no caben), puntos y lápiz compactos.
+   Así no se parte el nombre aunque el móvil tenga la letra grande. */
+.me {
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 0.6rem;
+}
+
+.me .avatar {
+  width: 2.8rem;
+  height: 2.8rem;
+  font-size: 1.6rem;
+}
+
+.me-name,
+.room-line {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow-wrap: normal;
+}
+
+.me-name {
+  font-size: 1.2rem;
+}
+
+.room-line {
+  font-size: 0.8rem;
+}
+
+button.me-score {
+  padding: 0.25rem 0.6rem;
+}
+
+.me-score span {
+  font-size: 1.6rem;
+}
+
+.me-score small {
+  font-size: 0.7rem;
+  white-space: nowrap;
+}
+
+.icon-btn {
+  min-width: 2.6rem;
+  padding: 0.3em;
+  font-size: 1.1rem;
+}
+
+/* Reloj del Contador con milisegundos: que «10,234 s» quepa en un móvil estrecho */
+.ap-clock {
+  font-size: clamp(2.5rem, 16vw, 6rem);
+  white-space: nowrap;
+}
+
+/* Iconos y colores del perfil: que la rejilla encoja en móviles estrechos en vez de salirse por la derecha */
+.icons {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.icon-choice {
+  min-width: 0;
+  padding: 0;
+  font-size: clamp(1.4rem, 7vw, 1.9rem);
+}
+
+.sheet {
+  overflow-x: hidden;
+}
+
+.swatches {
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}

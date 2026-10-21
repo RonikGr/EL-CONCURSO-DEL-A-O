@@ -3,10 +3,11 @@
 import { h } from '../shared/dom.js';
 import { getColor, getIcon } from '../shared/appearance.js';
 import { MAX_PLAYERS, MIN_PLAYERS } from '../core/players.js';
-import { getEnv, sectionEnv } from '../shared/environments.js';
+import { envGradient, getEnv, sectionEnv } from '../shared/environments.js';
 import { flipReorder, kinetic, later, odometer } from './fx/motion.js';
 import { celebrate } from './fx/confetti.js';
 import { sound } from './fx/audio.js';
+import { MUSIC_SLOTS } from './fx/tracks.js';
 
 const kbd = (key) => h('kbd', {}, key);
 const avatar = (p, cls = 'avatar') =>
@@ -22,7 +23,7 @@ function pointsText(points, ranked) {
 // ---------------------------------------------------------------------------------------- Preparación
 
 /**
- * @param ctx {joinQr, controlQr, joinUrlText, onFile, onStart, onLockTeams, onMoveTeam}
+ * @param ctx {joinQr, controlQr, joinUrlText, onFile, onStart, onLockTeams, onMoveTeam, tracks, onAddTracks, onRemoveTrack}
  */
 export function setupScreen(view, ctx) {
   const connected = view.players.filter((p) => p.connected).length;
@@ -69,6 +70,7 @@ export function setupScreen(view, ctx) {
       'section',
       { class: 'setup-main' },
       importBox,
+      musicBox(ctx),
       h(
         'div',
         { class: 'setup-players' },
@@ -103,6 +105,63 @@ export function setupScreen(view, ctx) {
         ? h('p', { class: 'control-ok' }, `✓ ${view.controlsConnected === 1 ? 'Mando conectado' : `${view.controlsConnected} mandos conectados`}`)
         : h('p', { class: 'muted small' }, 'Escanéalo con tu móvil (no lo enseñes a los jugadores).'),
       view.controlsConnected ? null : ctx.controlQr,
+    ),
+  );
+}
+
+// Panel «Música»: tus .mp3 para cada momento (se guardan en este portátil). Plegado por defecto; se recuerda si se abrió.
+let musicOpen = false;
+
+function musicBox(ctx) {
+  const tracks = ctx.tracks ?? {};
+  const total = Object.values(tracks).reduce((n, list) => n + list.length, 0);
+  return h(
+    'details',
+    { class: 'import-box music-box', open: musicOpen, ontoggle: (e) => (musicOpen = e.target.open) },
+    h(
+      'summary',
+      {},
+      h('h3', {}, '🎵 Música'),
+      h('span', { class: 'muted small' }, total ? `${total} ${total === 1 ? 'canción tuya' : 'canciones tuyas'}` : 'Música generada en todos los momentos'),
+    ),
+    h('p', { class: 'muted small' }, 'Añade tus .mp3 a cada momento (puedes poner varias: van alternándose). Se guardan solo en este portátil.'),
+    h(
+      'ul',
+      { class: 'music-slots' },
+      MUSIC_SLOTS.map((slot) => {
+        const list = tracks[slot.id] ?? [];
+        const input = h('input', {
+          type: 'file',
+          accept: 'audio/*,.mp3',
+          multiple: true,
+          hidden: true,
+          onchange: (e) => {
+            ctx.onAddTracks(slot.id, e.target.files);
+            e.target.value = '';
+          },
+        });
+        return h(
+          'li',
+          {},
+          h('div', { class: 'ms-head' }, h('strong', {}, slot.label), h('small', { class: 'muted' }, slot.help)),
+          h(
+            'div',
+            { class: 'ms-tracks' },
+            list.length
+              ? list.map((t) =>
+                  h(
+                    'span',
+                    { class: 'ms-track' },
+                    t.name,
+                    h('button', { class: 'ms-remove', type: 'button', title: 'Quitar', 'aria-label': `Quitar ${t.name}`, onclick: () => ctx.onRemoveTrack(t.id) }, '×'),
+                  ),
+                )
+              : h('span', { class: 'muted small' }, 'Generada'),
+          ),
+          h('button', { class: 'btn small', type: 'button', onclick: () => input.click() }, '+ .mp3'),
+          input,
+        );
+      }),
     ),
   );
 }
@@ -183,13 +242,58 @@ function playersBoardView(view) {
 
 // ---------------------------------------------------------------------------------------- Portada e intro
 
+// Introducción del concurso: título, qué secciones habrá esta noche, equipos y cómo se juega.
 export function coverScreen(view) {
+  const teams = view.standings.map((s) => s.team);
   return h(
     'div',
-    { class: 'cover anim-in' },
+    { class: 'cover' },
     h('p', { class: 'cover-kicker' }, '¡Bienvenidos a…'),
     kinetic('h1', 'cover-title display', view.title),
-    h('p', { class: 'cover-sub' }, `${view.sectionCount} ${view.sectionCount === 1 ? 'sección' : 'secciones'} · ${view.players.length} concursantes`),
+    h(
+      'div',
+      { class: 'cover-body' },
+      h(
+        'section',
+        { class: 'cover-block' },
+        h('h2', {}, `Esta noche · ${view.sectionCount} ${view.sectionCount === 1 ? 'sección' : 'secciones'}`),
+        h(
+          'ol',
+          { class: `cover-sections ${view.sections.length > 5 ? 'many' : ''}` },
+          view.sections.map((s, i) =>
+            h(
+              'li',
+              { style: { '--d': `${900 + i * 140}ms`, '--env': envGradient(s.env) } },
+              h('span', { class: 'cs-num' }, String(i + 1)),
+              h('span', { class: 'cs-name' }, s.name),
+              h('span', { class: 'cs-type' }, s.label),
+            ),
+          ),
+        ),
+      ),
+      h(
+        'section',
+        { class: 'cover-block' },
+        h('h2', {}, 'Cómo se juega'),
+        h(
+          'ul',
+          { class: 'cover-rules' },
+          [
+            ['📱', 'Tu móvil es tu pulsador: respondes desde él.'],
+            ['⏱️', 'Antes de cada pregunta, una cuenta atrás. ¡No pulses antes de tiempo!'],
+            ['🔒', 'La primera respuesta es la que vale: tócala dos veces para confirmar.'],
+            teams.length ? ['🏆', `Juegan ${teams.length} equipos: cada punto tuyo suma para el tuyo.`] : ['🏆', 'Gana quien más puntos tenga al final.'],
+          ].map(([icon, text], i) => h('li', { style: { '--d': `${1300 + i * 220}ms` } }, h('span', { class: 'emoji' }, icon), h('span', {}, text))),
+        ),
+        teams.length
+          ? h(
+              'ul',
+              { class: 'cover-teams' },
+              teams.map((t) => h('li', { style: { '--tc': getColor(t.color).bg, '--tc-fg': getColor(t.color).fg } }, t.name)),
+            )
+          : h('p', { class: 'cover-sub' }, `${view.players.length} concursantes`),
+      ),
+    ),
   );
 }
 

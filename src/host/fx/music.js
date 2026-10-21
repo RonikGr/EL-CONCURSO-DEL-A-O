@@ -1,0 +1,248 @@
+// Música del espectáculo, compuesta al vuelo. Hay 8 estilos según el momento del concurso y la tonalidad, escala y
+// ambiente cambian con el entorno de la sección, así que no suena siempre lo mismo:
+//   lobby    preparación: swing tétrico (contrabajo andando, escobillas, vibráfono)
+//   organ    portada e intros: órgano de iglesia con fanfarria de tocata
+//   explore  jugando: colchón del entorno + caja de música que improvisa
+//   tension  turno abierto / respondiendo: ostinato grave que sube, trémolo y latido
+//   suspense esperando el veredicto: redoble de timbales sobre un acorde disonante
+//   reveal   revelado: golpe y resolución en mayor, alegre
+//   march    marcador: marcha macabra en pizzicato
+//   waltz    final: vals de caja de música
+// Las melodías son motivos que se repiten y varían cada 8 compases (como una canción), no notas sueltas al azar.
+import { bell, brush, hat, held, mtof, organ, pizz, pluck, snare, thump, timpani, tom, tone, vibes } from './synth.js';
+
+/** Tonalidad y ambiente de cada entorno. */
+export const MOODS = {
+  luna: { root: 45, scale: [0, 2, 3, 5, 7, 8, 10], tempo: 1, wave: 'sawtooth', cutoff: 700, amb: ['wind'] },
+  cementerio: { root: 38, scale: [0, 1, 3, 5, 7, 8, 10], tempo: 0.9, wave: 'sawtooth', cutoff: 520, amb: ['wind', 'owl'] },
+  bosque: { root: 40, scale: [0, 2, 3, 5, 7, 9, 10], tempo: 0.95, wave: 'triangle', cutoff: 900, amb: ['wind', 'owl'] },
+  calabazas: { root: 43, scale: [0, 2, 3, 5, 7, 8, 11], tempo: 1.15, wave: 'sawtooth', cutoff: 800, amb: ['fire'] },
+  laboratorio: { root: 36, scale: [0, 2, 4, 6, 8, 10], tempo: 1.05, wave: 'square', cutoff: 600, amb: ['bubbles'] },
+  mansion: { root: 35, scale: [0, 2, 3, 5, 7, 8, 11], tempo: 0.9, wave: 'square', cutoff: 650, amb: ['rain'] },
+  telarana: { root: 42, scale: [0, 1, 3, 6, 7, 9], tempo: 1, wave: 'triangle', cutoff: 750, amb: ['wind'] },
+  aquelarre: { root: 38, scale: [0, 1, 4, 5, 7, 8, 10], tempo: 1.2, wave: 'sawtooth', cutoff: 900, amb: ['fire'], drums: true },
+  cripta: { root: 37, scale: [0, 2, 3, 5, 7, 8, 10], tempo: 0.85, wave: 'sine', cutoff: 1200, amb: ['wind'] },
+  tormenta: { root: 33, scale: [0, 1, 3, 5, 7, 8, 10], tempo: 0.9, wave: 'sawtooth', cutoff: 480, amb: ['rain', 'wind'] },
+};
+
+const MAJOR = [0, 2, 4, 5, 7, 9, 11];
+const HARMONIC_MINOR = [0, 2, 3, 5, 7, 8, 11];
+
+/** Grado de escala → nota MIDI (los grados pueden pasar de la octava o ser negativos). */
+function degree(root, scale, d) {
+  const n = scale.length;
+  return root + scale[((d % n) + n) % n] + 12 * Math.floor(d / n);
+}
+
+/** Motivo melódico: `len` pasos de grados (o silencios), por saltos cortos como una melodía cantable. */
+function motif(len, { rest = 0.3, start = 0, low = -2, high = 9 } = {}) {
+  const out = [];
+  let d = start;
+  for (let i = 0; i < len; i++) {
+    if (i > 0 && Math.random() < rest) {
+      out.push(null);
+      continue;
+    }
+    d = Math.max(low, Math.min(high, d + [-2, -1, -1, 0, 1, 1, 2, 3, -3][(Math.random() * 9) | 0]));
+    out.push(d);
+  }
+  return out;
+}
+
+/** Acorde triada sobre un grado de la escala. */
+const triad = (root, scale, d) => [degree(root, scale, d), degree(root, scale, d + 2), degree(root, scale, d + 4)];
+
+// ------------------------------------------------------------------------------------------ estilos
+// beat(p): p = {s, out, soft, t, beat, bar, inBar, spb, mood, st}; st = estado del estilo (motivos, etc.)
+
+export const STYLES = {
+  explore: {
+    bpm: 62,
+    meter: 4,
+    pad: true,
+    start(st) {
+      st.melody = 0;
+    },
+    beat({ s, out, t, bar, inBar, spb, mood, st, layer }) {
+      const PROG = [0, -4, -2, -5]; // i · VI · VII · v
+      if (inBar === 0 && bar % 2 === 0) {
+        const shift = PROG[(bar / 2) % PROG.length];
+        for (const v of layer.voices) v.o.frequency.setTargetAtTime(mtof(mood.root + shift + v.interval), t, 0.5);
+        pluck(s, out, mtof(mood.root + shift), t, { gain: 0.16, decay: 2.2 });
+      }
+      if (Math.random() < 0.45) {
+        st.melody = Math.max(-3, Math.min(9, st.melody + [-2, -1, -1, 1, 1, 2, 3][(Math.random() * 7) | 0]));
+        const m = degree(mood.root + 24, mood.scale, st.melody);
+        bell(s, out, mtof(m), t, { gain: 0.07 });
+        if (Math.random() < 0.3) bell(s, out, mtof(m + 12), t + spb / 2, { gain: 0.04 });
+      }
+      if (mood.drums && (inBar === 0 || inBar === 2)) tom(s, out, t, inBar === 0 ? 0.22 : 0.14);
+    },
+  },
+
+  lobby: {
+    bpm: 108,
+    meter: 4,
+    start(st, mood) {
+      st.tune = motif(16, { rest: 0.45 });
+      st.root = mood.root + 12;
+    },
+    beat({ s, out, t, bar, inBar, spb, mood, st }) {
+      const scale = HARMONIC_MINOR;
+      const PROG = [0, 3, 4, 0]; // i · iv · V · i
+      const chord = PROG[bar % 4];
+      const next = PROG[(bar + 1) % 4];
+      // contrabajo andando: tónica, tercera, quinta y nota de paso hacia el acorde siguiente
+      const walk = [degree(st.root - 12, scale, chord), degree(st.root - 12, scale, chord + 2), degree(st.root - 12, scale, chord + 4), degree(st.root - 12, scale, next) - 1];
+      pluck(s, out, mtof(walk[inBar]), t, { gain: 0.2, decay: 0.35 });
+      // escobillas con swing
+      brush(s, out, t, inBar % 2 ? 0.06 : 0.035);
+      hat(s, out, t + spb * 0.66, 0.03);
+      if (inBar === 0) for (const m of triad(st.root + 12, scale, chord)) vibes(s, out, mtof(m), t + 0.01, 0.035);
+      // melodía con swing (corcheas largas-cortas)
+      if (bar % 8 === 0 && inBar === 0 && bar) st.tune = motif(16, { rest: 0.45 });
+      for (const half of [0, 1]) {
+        const step = (bar % 2) * 8 + inBar * 2 + half;
+        const d = st.tune[step];
+        if (d != null) vibes(s, out, mtof(degree(st.root + 24, scale, d)), t + (half ? spb * 0.66 : 0), 0.05);
+      }
+    },
+  },
+
+  organ: {
+    bpm: 66,
+    meter: 4,
+    start(st, mood) {
+      st.root = mood.root;
+    },
+    beat({ s, out, soft, t, bar, inBar, spb, st }) {
+      const scale = HARMONIC_MINOR;
+      const PROG = [0, 3, 4, 0, 5, 3, 4, 4]; // i iv V i VI iv V V
+      const chord = PROG[bar % PROG.length];
+      if (inBar === 0) {
+        organ(s, out, triad(st.root + 12, scale, chord), t, spb * 4 - 0.1, 0.03);
+        held(s, out, { freq: mtof(degree(st.root - 12, scale, chord)), t, dur: spb * 4, peak: 0.12 });
+        // tocata: arpegio rápido que baja, cada dos compases
+        if (bar % 2 === 0) {
+          for (let i = 0; i < 8; i++) {
+            const m = degree(st.root + 36, scale, chord + 4 - i);
+            tone(s, soft, { type: 'square', freq: mtof(m), t: t + i * (spb / 4), peak: 0.03, decay: 0.18 });
+          }
+        }
+      }
+      if (inBar === 2) timpani(s, out, mtof(degree(st.root - 12, scale, chord)), t, 0.12);
+    },
+  },
+
+  tension: {
+    bpm: 126,
+    meter: 4,
+    start(st, mood) {
+      st.root = mood.root - 12;
+    },
+    beat({ s, out, soft, t, bar, inBar, spb, st }) {
+      // ostinato de semicorcheas que sube un semitono cada 4 compases (tipo Tiburón)
+      const lift = Math.floor(bar / 4) % 4;
+      for (let i = 0; i < 4; i++) {
+        const m = st.root + lift + (i === 2 ? 1 : 0);
+        tone(s, soft, { type: 'sawtooth', freq: mtof(m), t: t + (i * spb) / 4, peak: i === 0 ? 0.14 : 0.08, decay: 0.09 });
+      }
+      // trémolo agudo disonante (segunda menor)
+      if (inBar === 0) {
+        for (const iv of [24, 25]) {
+          for (let k = 0; k < 16; k++) tone(s, soft, { type: 'sawtooth', freq: mtof(st.root + 24 + iv + lift), t: t + (k * spb) / 4, peak: 0.012, decay: 0.07 });
+        }
+      }
+      // latido
+      if (inBar === 0 || inBar === 2) {
+        thump(s, out, t, 0.45);
+        thump(s, out, t + 0.2, 0.3);
+      }
+      if (inBar === 3 && bar % 2) snare(s, out, t + spb / 2, 0.05);
+    },
+  },
+
+  suspense: {
+    bpm: 84,
+    meter: 4,
+    start(st, mood) {
+      st.root = mood.root;
+    },
+    beat({ s, out, soft, t, bar, inBar, spb, st }) {
+      // redoble de timbal que crece en ciclos de 2 compases sobre un acorde disonante; cada ciclo, medio tono más arriba
+      const cycle = bar % 2;
+      const lift = Math.floor(bar / 2) % 3;
+      for (let i = 0; i < 4; i++) timpani(s, out, mtof(st.root - 12 + lift), t + (i * spb) / 4, 0.03 + 0.02 * (cycle * 4 + inBar) * 0.3);
+      if (inBar === 0 && cycle === 0) {
+        for (const iv of [0, 6, 11, 13]) held(s, soft, { type: 'sawtooth', freq: mtof(st.root + 12 + iv + lift), t, dur: spb * 7, attack: spb * 5, peak: 0.022 });
+      }
+      if (inBar === 3 && cycle === 1) tone(s, out, { type: 'triangle', freq: mtof(st.root + 31 + lift), t: t + spb / 2, peak: 0.05, decay: 0.5 });
+    },
+  },
+
+  reveal: {
+    bpm: 96,
+    meter: 4,
+    start(st, mood) {
+      st.root = mood.root;
+    },
+    beat({ s, out, t, bar, inBar, spb, st }) {
+      // resolución en mayor: golpe al empezar y luego arpegios brillantes con un ritmo ligero
+      const PROG = [0, 5, 3, 4]; // I vi IV V
+      const chord = PROG[bar % 4];
+      if (inBar === 0) {
+        if (bar === 0) {
+          timpani(s, out, mtof(st.root - 12), t, 0.35);
+          organ(s, out, triad(st.root + 12, MAJOR, 0), t, spb * 2, 0.03);
+        }
+        pluck(s, out, mtof(degree(st.root - 12, MAJOR, chord)), t, { gain: 0.2, decay: 1 });
+      }
+      const ch = triad(st.root + 24, MAJOR, chord);
+      for (let i = 0; i < 2; i++) bell(s, out, mtof(ch[(inBar * 2 + i) % 3] + (i ? 12 : 0)), t + (i * spb) / 2, { gain: 0.045, decay: 0.8 });
+      hat(s, out, t + spb / 2, 0.03);
+    },
+  },
+
+  march: {
+    bpm: 112,
+    meter: 4,
+    start(st, mood) {
+      st.root = mood.root + 12;
+      st.tune = motif(16, { rest: 0.25, start: 4 });
+    },
+    beat({ s, out, t, bar, inBar, spb, st }) {
+      const scale = HARMONIC_MINOR;
+      const PROG = [0, 4, 0, 4, 3, 0, 4, 0];
+      const chord = PROG[bar % PROG.length];
+      if (bar % 8 === 0 && inBar === 0 && bar) st.tune = motif(16, { rest: 0.25, start: 4 });
+      // chunda-chunda: bajo en 1 y 3 (tónica y quinta), acorde en pizzicato en 2 y 4
+      if (inBar % 2 === 0) pizz(s, out, mtof(degree(st.root - 24, scale, chord + (inBar === 2 ? 4 : 0))), t, 0.2);
+      else for (const m of triad(st.root, scale, chord)) pizz(s, out, mtof(m), t, 0.05);
+      for (const half of [0, 1]) {
+        const d = st.tune[(bar % 2) * 8 + inBar * 2 + half];
+        if (d != null) pizz(s, out, mtof(degree(st.root + 12, scale, d)), t + (half * spb) / 2, 0.1);
+      }
+      if (inBar === 3) snare(s, out, t, 0.06);
+      if (inBar === 0 && bar % 4 === 0) tone(s, out, { freq: mtof(st.root + 36), t, peak: 0.02, decay: 0.6 }); // xilófono
+    },
+  },
+
+  waltz: {
+    bpm: 168,
+    meter: 3,
+    start(st, mood) {
+      st.root = mood.root + 12;
+      st.tune = motif(12, { rest: 0.2, start: 2 });
+    },
+    beat({ s, out, t, bar, inBar, st }) {
+      const scale = HARMONIC_MINOR;
+      const PROG = [0, 3, 4, 0, 5, 3, 4, 0];
+      const chord = PROG[bar % PROG.length];
+      if (bar % 8 === 0 && inBar === 0 && bar) st.tune = motif(12, { rest: 0.2, start: 2 });
+      if (inBar === 0) pluck(s, out, mtof(degree(st.root - 24, scale, chord)), t, { gain: 0.22, decay: 0.9 });
+      else for (const m of triad(st.root, scale, chord)) vibes(s, out, mtof(m), t, 0.025);
+      const d = st.tune[(bar % 4) * 3 + inBar];
+      if (d != null) bell(s, out, mtof(degree(st.root + 12, scale, d)), t, { gain: 0.07, decay: 1.2 });
+    },
+  },
+};

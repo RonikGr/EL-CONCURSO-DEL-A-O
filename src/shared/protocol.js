@@ -14,6 +14,7 @@ export const MSG = {
   SYNC_REPORT: 'syncReport',
   ANSWER: 'answer', // respuesta en secciones de respuestas
   JOKER: 'joker', // usar un comodín
+  FREE_COUNT: 'freeCount', // sección Libre: +1/−1 desde el móvil (0 = pedir llevar la cuenta)
   CMD: 'cmd', // solo el mando
   // portátil → móvil
   WELCOME: 'welcome',
@@ -115,6 +116,8 @@ export function parsePlayerMessage(msg) {
     }
     case MSG.JOKER:
       return isNum(msg.seq) && isStr(msg.roundId, 80) && isStr(msg.kind, 20) ? { t: msg.t, seq: msg.seq, roundId: msg.roundId, kind: msg.kind } : null;
+    case MSG.FREE_COUNT:
+      return isNum(msg.seq) && isStr(msg.roundId, 80) && [-1, 0, 1].includes(msg.delta) ? { t: msg.t, seq: msg.seq, roundId: msg.roundId, delta: msg.delta } : null;
     case MSG.SYNC:
       return isNum(msg.id) && isNum(msg.t0) ? { t: msg.t, id: msg.id, t0: msg.t0 } : null;
     case MSG.SYNC_REPORT:
