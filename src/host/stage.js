@@ -1,16 +1,12 @@
 // Pantalla de juego del Pulsador en la tele: pregunta en grande, estado del turno y ganador a pantalla completa.
+// La tele es solo espectáculo: no tiene botones. Se maneja desde el mando del presentador (o el teclado).
 import { fill, h } from '../shared/dom.js';
 import { getColor, getIcon } from '../shared/appearance.js';
 import { formatDeltaMs, formatSeconds, ordinal } from '../shared/format.js';
 import { PHASE } from '../core/game.js';
 import { MIN_PLAYERS } from '../core/players.js';
 
-const kbd = (key) => h('kbd', {}, key);
-
-/**
- * @param actions {open, correct, wrong, nextItem, restart, showQuestion, showAnswer}
- */
-export function createStage(actions) {
+export function createStage() {
   const root = h('section', { class: 'stage', 'aria-live': 'polite' });
   const overlay = h('div', { class: 'result-overlay', hidden: true, role: 'dialog', 'aria-modal': 'true', 'aria-label': 'Resultado' });
   let timerEl = null;
@@ -52,14 +48,6 @@ export function createStage(actions) {
           root,
           questionBlock(view, true),
           view.shown.question ? null : h('p', { class: 'stage-title' }, 'Pregunta en el aire'),
-          h(
-            'div',
-            { class: 'stage-actions' },
-            h('button', { class: 'btn primary huge', disabled: !view.canStart, onclick: actions.open }, 'Abrir turno ', kbd('Espacio')),
-            view.item?.showOnTv && !view.shown.question && view.item.question
-              ? h('button', { class: 'btn', onclick: actions.showQuestion }, 'Mostrar pregunta ', kbd('P'))
-              : null,
-          ),
           view.canStart ? null : h('p', { class: 'stage-hint' }, `Hacen falta al menos ${MIN_PLAYERS} jugadores conectados.`),
         );
         break;
@@ -71,14 +59,9 @@ export function createStage(actions) {
         fill(
           root,
           questionBlock(view, false),
+          game.rebound ? h('p', { class: 'stage-rebound' }, '¡Rebote! Pueden pulsar los demás') : null,
           h('p', { class: 'stage-title' }, started ? '¡Pulsad!' : 'Preparados…'),
           timerEl,
-          h(
-            'div',
-            { class: 'stage-actions' },
-            h('button', { class: 'btn', onclick: actions.restart }, 'Reiniciar pregunta ', kbd('R')),
-            h('button', { class: 'btn', onclick: actions.nextItem }, 'Saltar pregunta'),
-          ),
         );
         if (timerEl) tickTimer(game.tOpen);
         break;
@@ -93,18 +76,7 @@ export function createStage(actions) {
 
       case PHASE.CLOSED:
         root.dataset.phase = 'closed';
-        fill(
-          root,
-          questionBlock(view, false),
-          h('p', { class: 'stage-title' }, 'Nadie más puede responder'),
-          h(
-            'div',
-            { class: 'stage-actions' },
-            view.item?.answer && !view.shown.answer ? h('button', { class: 'btn', onclick: actions.showAnswer }, 'Mostrar respuesta ', kbd('V')) : null,
-            h('button', { class: 'btn primary huge', onclick: actions.nextItem }, 'Siguiente pregunta ', kbd('Espacio')),
-            h('button', { class: 'btn', onclick: actions.restart }, 'Reiniciar ', kbd('R')),
-          ),
-        );
+        fill(root, questionBlock(view, false), h('p', { class: 'stage-title' }, 'Nadie más puede responder'));
         break;
     }
   }
@@ -131,44 +103,53 @@ export function createStage(actions) {
       h('p', { class: 'result-time' }, first ? formatSeconds(first.reactionMs) : ''),
       judgedCorrect ? h('p', { class: 'result-verdict' }, `¡Correcto! +${view.pointsForCorrect}`) : null,
       view.shown.answer && view.item?.answer ? h('p', { class: 'result-answer' }, view.item.answer) : null,
-      followers.length
-        ? h(
-            'ol',
-            { class: 'followers' },
-            followers.map((r) =>
-              h(
-                'li',
-                { class: r.nearTie ? 'near-tie' : '', style: { '--fc': getColor(r.player.color).bg } },
-                h('span', { class: 'f-place' }, ordinal(r.place)),
-                h('span', { class: 'f-icon emoji' }, getIcon(r.player.icon).glyph),
-                h('span', { class: 'f-name' }, r.player.name),
-                h('span', { class: 'f-delta' }, formatDeltaMs(r.deltaMs)),
-                r.nearTie ? h('span', { class: 'f-tie' }, 'casi empate') : null,
-              ),
-            ),
-          )
-        : null,
-      h(
-        'div',
-        { class: 'result-actions' },
-        judgedCorrect
-          ? null
-          : [
-              h('button', { class: 'btn ok huge', onclick: actions.correct }, `Acierto +${view.pointsForCorrect} `, kbd('A')),
-              h(
-                'button',
-                { class: 'btn bad huge', onclick: actions.wrong },
-                'Fallo: rebote al resto ',
-                view.pointsForWrong ? `(${view.pointsForWrong > 0 ? '+' : ''}${view.pointsForWrong}) ` : '',
-                kbd('F'),
-              ),
-            ],
-        view.item?.answer && !view.shown.answer ? h('button', { class: 'btn', onclick: actions.showAnswer }, 'Mostrar respuesta ', kbd('V')) : null,
-        h('button', { class: `btn huge ${judgedCorrect ? 'primary' : ''}`, onclick: actions.nextItem }, 'Siguiente pregunta ', kbd('Espacio')),
-        h('button', { class: 'btn', onclick: actions.restart }, 'Reiniciar ', kbd('R')),
-      ),
+      // Antes de decidir: el orden de los demás. Tras el acierto: cómo va el marcador.
+      judgedCorrect ? miniStandings(view, winner) : followersList(followers),
     );
   }
 
   return { root, overlay, render };
+}
+
+function followersList(followers) {
+  if (!followers.length) return null;
+  return h(
+    'ol',
+    { class: 'followers' },
+    followers.map((r) =>
+      h(
+        'li',
+        { class: r.nearTie ? 'near-tie' : '', style: { '--fc': getColor(r.player.color).bg } },
+        h('span', { class: 'f-place' }, ordinal(r.place)),
+        h('span', { class: 'f-icon emoji' }, getIcon(r.player.icon).glyph),
+        h('span', { class: 'f-name' }, r.player.name),
+        h('span', { class: 'f-delta' }, formatDeltaMs(r.deltaMs)),
+        r.nearTie ? h('span', { class: 'f-tie' }, 'casi empate') : null,
+      ),
+    ),
+  );
+}
+
+/** Marcador general tras un acierto: equipos si los hay; si no, los jugadores. Se resalta al que acaba de puntuar. */
+function miniStandings(view, winner) {
+  const rows = view.standings.length
+    ? view.standings.map((s) => ({ key: s.team.id, name: s.team.name, color: s.team.color, score: s.score, mine: s.team.id === winner.teamId }))
+    : [...view.players]
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 8)
+        .map((p) => ({ key: p.id, name: p.name, color: p.color, icon: p.icon, score: p.score, mine: p.id === winner.id }));
+  return h(
+    'ol',
+    { class: 'mini-standings' },
+    rows.map((r, i) =>
+      h(
+        'li',
+        { class: r.mine ? 'mine' : '', style: { '--fc': getColor(r.color).bg } },
+        h('span', { class: 'f-place' }, ordinal(i + 1)),
+        r.icon ? h('span', { class: 'f-icon emoji' }, getIcon(r.icon).glyph) : null,
+        h('span', { class: 'f-name' }, r.name),
+        h('span', { class: 'f-score' }, `${r.score} pts`),
+      ),
+    ),
+  );
 }

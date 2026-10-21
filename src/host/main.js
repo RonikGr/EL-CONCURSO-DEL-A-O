@@ -116,7 +116,7 @@ function makeQrs() {
 function renderShell() {
   cards.clear();
   lastScreenSignature = null;
-  stage = createStage(actions);
+  stage = createStage();
 
   clear(app).append(
     h(
@@ -161,6 +161,8 @@ function render() {
   const view = room.view();
   $('#show-title').textContent = view.title;
   $('#join-chip').hidden = view.screen === SCREEN.SETUP;
+  // Durante el espectáculo la tele no enseña controles (ver CSS .show-mode); en preparación, sí.
+  document.body.classList.toggle('show-mode', view.screen !== SCREEN.SETUP);
   renderNetwork(view);
   renderScreen(view);
   renderPlayers(view);
@@ -183,7 +185,7 @@ function renderNetwork() {
   pill.textContent = `Sala ${room.code} · ${NET_LABEL[state] ?? state}`;
 
   const banners = [];
-  if (LOCAL_HOSTS.includes(location.hostname)) {
+  if (LOCAL_HOSTS.includes(location.hostname) && room.runner.screen === SCREEN.SETUP) {
     banners.push(
       h(
         'div',
@@ -262,7 +264,7 @@ function renderPlayers(view) {
     seen.add(p.id);
     let card = cards.get(p.id);
     if (!card) {
-      card = createCard(p.id);
+      card = createCard();
       cards.set(p.id, card);
     }
     updateCard(card, p, places.get(p.id));
@@ -276,29 +278,25 @@ function renderPlayers(view) {
   }
 }
 
-function createCard(playerId) {
+// Tarjetas de la tele: solo información. Puntos, desbloquear y quitar se hacen desde el mando.
+function createCard() {
   const avatar = h('div', { class: 'avatar emoji', 'aria-hidden': 'true' });
   const name = h('div', { class: 'pc-name' });
   const meta = h('span', {});
   const place = h('span', { class: 'pc-place' });
   const score = h('span', { class: 'score', 'aria-live': 'polite' });
-  const minus = h('button', { class: 'score-btn', onclick: () => run('adjustScore', { playerId, delta: -1 }) }, '−');
-  const plus = h('button', { class: 'score-btn', onclick: () => run('adjustScore', { playerId, delta: +1 }) }, '+');
-  const unlock = h('button', { class: 'pc-unlock', onclick: () => run('unlock', { playerId }) }, 'Desbloquear');
-  const remove = h('button', { class: 'pc-remove', onclick: () => confirmRemove(playerId) }, '✕');
   // Rejilla: avatar | nombre (todo el ancho que necesite) | puntos
-  //          avatar | estado · Desbloquear · ✕             | − +
+  //          avatar | estado                               |
   const root = h(
     'li',
     { class: 'player-card' },
     avatar,
     name,
-    h('div', { class: 'pc-meta' }, h('span', { class: 'dot' }), meta, unlock, remove),
+    h('div', { class: 'pc-meta' }, h('span', { class: 'dot' }), meta),
     score,
-    h('div', { class: 'pc-controls' }, minus, plus),
     place,
   );
-  return { root, avatar, name, meta, place, score, minus, plus, unlock, remove };
+  return { root, avatar, name, meta, place, score };
 }
 
 const LOCK_TEXT = { [LOCK.EARLY]: 'Bloqueado · pulsó antes', [LOCK.WRONG]: 'Bloqueado · falló' };
@@ -314,14 +312,9 @@ function updateCard(card, p, place) {
   let status = p.connected ? `Conectado${p.rtt != null ? ` · ${Math.round(p.rtt)} ms` : ''}` : 'Desconectado';
   if (p.lock) status = LOCK_TEXT[p.lock] + (p.connected ? '' : ' · desconectado');
   card.meta.textContent = status;
-  card.unlock.hidden = !p.lock;
   card.place.textContent = place ? `${place}º` : '';
   card.place.hidden = !place;
   card.score.textContent = p.score;
-  card.minus.setAttribute('aria-label', `Restar un punto a ${p.name}`);
-  card.plus.setAttribute('aria-label', `Sumar un punto a ${p.name}`);
-  card.remove.setAttribute('aria-label', `Quitar a ${p.name} de la sala`);
-  card.remove.title = `Quitar a ${p.name}`;
 }
 
 /** Un móvil pide ser el mando: se confirma aquí (Enter) o se rechaza (Esc). */
@@ -428,12 +421,17 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-// ---------- Acciones ----------
+// ---------- Ratón durante el espectáculo ----------
 
-function confirmRemove(playerId) {
-  const p = room.roster.get(playerId);
-  if (p && confirm(`¿Quitar a ${p.name} de la sala? Perderá sus puntos.`)) run('removePlayer', { playerId });
-}
+// La barra de herramientas y el cursor aparecen solo si se mueve el ratón (como en un reproductor de vídeo).
+let mouseTimer = null;
+addEventListener('mousemove', () => {
+  document.body.classList.add('mouse-active');
+  clearTimeout(mouseTimer);
+  mouseTimer = setTimeout(() => document.body.classList.remove('mouse-active'), 3000);
+});
+
+// ---------- Acciones ----------
 
 function confirmResetScores() {
   if (confirm('¿Poner todos los marcadores a 0?')) run('resetScores');

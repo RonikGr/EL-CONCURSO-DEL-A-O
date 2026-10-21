@@ -221,6 +221,16 @@ kbd {
   font-size: 4rem;
 }
 
+.stage-rebound {
+  margin: 0;
+  padding: 0.2em 0.9em;
+  border-radius: 999px;
+  background: var(--warn);
+  color: #111111;
+  font-size: 2rem;
+  font-weight: 900;
+}
+
 .stage-answer {
   margin: 0;
   padding: 0.2em 0.8em;
@@ -321,7 +331,7 @@ kbd {
   grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-areas:
     'avatar name score'
-    'avatar meta controls';
+    'avatar meta score';
   column-gap: 0.9rem;
   row-gap: 0.25rem;
   padding: 0.8rem 1rem;
@@ -395,14 +405,6 @@ kbd {
   font-weight: 700;
 }
 
-.pc-unlock {
-  border: 1px solid var(--border);
-  background: var(--surface-2);
-  border-radius: 0.5em;
-  font-size: 0.85rem;
-  padding: 0.1em 0.5em;
-}
-
 .pc-place {
   position: absolute;
   top: -0.6rem;
@@ -420,7 +422,7 @@ kbd {
 
 .score {
   grid-area: score;
-  align-self: end;
+  align-self: center;
   justify-self: center;
   min-width: 2.2ch;
   text-align: center;
@@ -428,40 +430,6 @@ kbd {
   font-weight: 900;
   line-height: 1;
   font-variant-numeric: tabular-nums;
-}
-
-.pc-controls {
-  grid-area: controls;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-}
-
-.score-btn {
-  width: 1.9rem;
-  height: 1.9rem;
-  border-radius: 50%;
-  border: 2px solid var(--border);
-  background: var(--surface-2);
-  font-size: 1.1rem;
-  font-weight: 900;
-  line-height: 1;
-}
-
-.pc-remove {
-  margin-left: auto;
-  border: 0;
-  background: none;
-  color: var(--muted);
-  font-size: 0.9rem;
-  padding: 0.2rem 0.3rem;
-  opacity: 0;
-}
-
-.player-card:hover .pc-remove,
-.pc-remove:focus-visible {
-  opacity: 1;
 }
 
 .toolbar {
@@ -475,6 +443,30 @@ kbd {
 .toolbar .hint {
   margin-right: auto;
   color: var(--muted);
+}
+
+/* Durante el espectáculo la tele no enseña controles: la barra y el cursor solo aparecen al mover el ratón. */
+.show-mode .toolbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 25;
+  padding: 0.8rem 2rem;
+  background: rgb(11 13 23 / 0.92);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 200ms;
+}
+
+.show-mode.mouse-active .toolbar {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.show-mode:not(.mouse-active),
+.show-mode:not(.mouse-active) * {
+  cursor: none;
 }
 
 /* --- Preparación --- */
@@ -1239,6 +1231,44 @@ a.btn {
 .code-inline {
   color: var(--accent);
   letter-spacing: 0.08em;
+}
+
+.mini-standings {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius);
+  background: rgb(0 0 0 / 0.55);
+  color: #ffffff;
+  display: grid;
+  gap: 0.35rem;
+  min-width: min(36rem, 100%);
+  font-size: 1.6rem;
+}
+
+.mini-standings li {
+  display: grid;
+  grid-template-columns: 2.5em auto 1fr auto;
+  align-items: center;
+  gap: 0.6rem;
+  text-align: left;
+  border-left: 0.35em solid var(--fc);
+  padding: 0.1rem 0.5rem;
+  border-radius: 0.3rem;
+}
+
+.mini-standings li:not(:has(.f-icon)) {
+  grid-template-columns: 2.5em 1fr auto;
+}
+
+.mini-standings li.mine {
+  background: rgb(255 255 255 / 0.18);
+  font-weight: 900;
+}
+
+.f-score {
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
 }
 
 .result-team {

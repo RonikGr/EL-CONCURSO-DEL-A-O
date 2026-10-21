@@ -2,7 +2,7 @@
 // los mandos del presentador, las conexiones y la persistencia. La tele escucha 'change' (repintar) y
 // 'decided' (hay ganador); el mando recibe `controlState` y manda órdenes que acaban en `run()`.
 import { MAX_PLAYERS, MIN_PLAYERS, Roster } from '../core/players.js';
-import { PHASE, QuestionEngine, playerView } from '../core/game.js';
+import { LOCK, PHASE, QuestionEngine, playerView } from '../core/game.js';
 import { SCREEN, ShowRunner, isPlayable } from '../core/runner.js';
 import { SECTION_TYPES, defaultShow } from '../core/show.js';
 import { ERROR_CODE, MSG } from '../shared/protocol.js';
@@ -136,6 +136,7 @@ export class HostRoom extends EventTarget {
       phase: g.phase,
       tOpen: g.tOpen,
       judged: g.judged,
+      rebound: [...g.lockouts.values()].includes(LOCK.WRONG), // alguien ya falló: el turno es para los demás
       winner: g.winnerId ? this.roster.get(g.winnerId) : null,
       ranking: ranking.map((r) => ({ ...r, player: this.roster.get(r.playerId) })).filter((r) => r.player),
     };
