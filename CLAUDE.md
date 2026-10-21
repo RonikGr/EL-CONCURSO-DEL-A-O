@@ -62,7 +62,7 @@ pulsador; `answer` solo en una pregunta de respuestas), `hb {h0}` cada 2 s, `buz
 Mando ↔ tele: `hello {v, role:'control', controlId, token, deviceName}` → `controlStatus {status: pending|approved}`;
 luego `controlState {view}` (vista completa con respuestas, agrupada cada 150 ms) y `cmd {id, action, args}` →
 `cmdResult {id, ok, error}`. Las órdenes son las de `HostRoom.run()`: next, prev, nextItem, gotoSection, endSection,
-scoreboard, toSetup, showQuestion, showAnswer, open, correct, wrong, restart, unlock, openAnswers, closeAnswers, reveal,
+scoreboard, toSetup, showQuestion, showAnswer, open, correct, wrong, restart, unlock, openAnswers, closeAnswers, reveal, setDuel,
 lockTeams, moveTeam, adjustScore, adjustTeamBonus, resetScores, removePlayer, approveControl, denyControl, updateSettings.
 
 - Emparejar mando: la tele (preparación) enseña un QR a `control.html?sala=CÓDIGO#k=CLAVE` (la clave tras `#` no sale del
@@ -89,6 +89,17 @@ vale si `tPress` (sincronizado, `resolvePressTime`) ≤ plazo. Cada pregunta tie
 ronda → `closed`. Puntos: acierto = `points[0]` (×2 con Doble); Votación: quien vota a un más votado (empates incluidos;
 nadie se vota a sí mismo); Estimación: por cercanía, puestos densos con `points[puesto-1]`, "sin pasarse" excluye a quien
 se pasa; Dos verdades: el protagonista (jugador cuyo nombre coincide con "Sobre quién") no vota y suma 1 por engañado.
+En el móvil, opciones y votos se eligen con un toque y se confirman tocando otra vez la misma.
+
+**Secciones de tiempo** (mismo `AnswerRound`; la "respuesta" es el instante del toque, `pointerdown` + `event.timeStamp`):
+- **Contador**: `tOpen = ahora + 3 s` (cuenta atrás 3-2-1); valor = segundos desde `tOpen`; pulsar en la cuenta atrás → `early`
+  sin registrar (se puede volver a pulsar); plazo = objetivo + max(5 s, objetivo); puntúa por cercanía al objetivo (como
+  Estimación). Modos: visible, a ciegas, desaparece a los N s (tele y móvil); tras pulsar no se enseña el tiempo hasta revelar.
+- **Reflejos**: cada fila de la hoja (N rondas) se convierte en N preguntas. Rojo en `tOpen`, verde en `tGreen` = `tOpen`
+  + 2–6 s al azar (lo elige el portátil); el móvil cambia a verde con su reloj sincronizado. Pulsar en rojo → eliminado de
+  la ronda (cuenta como respondido). Valor = ms de reacción; plazo = verde + 3 s; puntos por puestos. Duelo: el presentador
+  fija a los dos con `setDuel` (se mantiene entre rondas).
+
 Comodines (solo Test, antes de responder): `JokerBank` por dueño (equipo, o jugador sin equipos), 50 % quita
 floor(n/2) incorrectas, Doble, Público (ve el recuento en directo). Preguntas reveladas se guardan en `itemResults`
 (persistido): al volver a ellas se ven reveladas; R las reinicia quitando sus puntos y devolviendo comodines. Salir de una
@@ -127,7 +138,7 @@ mientras la página no se pinta (ventana oculta o minimizada).
 - Modo depuración (D): por jugador RTT del latido, offset, error y muestras; por ronda pulsó / llegó / red / origen.
 - Límites y trampas: ver README, "Justicia en los tiempos".
 
-## Diseño del concurso (acordado; hecho hasta la fase 5)
+## Diseño del concurso (acordado; hecho hasta la fase 6)
 
 - **Tres papeles:** `host.html` = espectáculo en la tele (sigue siendo la autoridad: estado, puntos, conexiones,
   música); `control.html` = mando del presentador en su móvil (ve preguntas y respuestas en privado, lo controla
@@ -160,7 +171,7 @@ mientras la página no se pinta (ventana oculta o minimizada).
    comprobación, importación de la hoja + plantilla, Pulsador como sección. ✔
    (Los demás tipos ya se leen y validan desde la hoja; en el juego muestran su intro y se saltan hasta su fase.)
 5. Respuestas desde el móvil: Test (con comodines), Verdad o mentira, Dos verdades, ¿Quién es más probable…?, Estimación. ✔
-6. Secciones de tiempo: Parar el contador y Duelo de reflejos.
+6. Secciones de tiempo: Parar el contador y Duelo de reflejos. ✔
 7. Sección Libre (cronómetro y contador).
 8. Spotify.
 9. Espectáculo: transiciones, marcador animado, podios, sonidos, wake lock, tarjetas compactas para 20 jugadores.

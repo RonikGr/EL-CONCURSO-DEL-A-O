@@ -679,3 +679,86 @@ body.offline .buzzer {
   font-weight: 600;
   box-shadow: 0 0.5rem 2rem rgb(0 0 0 / 0.5);
 }
+
+/* Elegida pero sin confirmar: se resalta y se pide un segundo toque. */
+.ap-option.selected,
+.ap-candidate.selected {
+  outline: 0.35rem solid var(--text);
+  outline-offset: 2px;
+  transform: scale(1.03);
+}
+
+.ap-confirm {
+  margin: 0;
+  color: var(--accent);
+  font-weight: 800;
+  font-size: 1.15rem;
+  animation: blink 1s ease-in-out infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* --- Contador y Reflejos --- */
+.ap-clock {
+  margin: 0;
+  font-size: clamp(4rem, 24vw, 8rem);
+  font-weight: 900;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.ap-clock.counting {
+  color: var(--warn);
+}
+
+.ap-stop,
+.ap-light {
+  flex: 1;
+  min-height: 12rem;
+  border: 0;
+  border-radius: 2rem;
+  font-size: clamp(2.5rem, 14vw, 5rem);
+  font-weight: 900;
+  touch-action: none;
+}
+
+.ap-stop {
+  background: var(--danger);
+  color: #ffffff;
+  box-shadow: 0 0.5rem 0 rgb(0 0 0 / 0.35);
+}
+
+.ap-stop.done {
+  background: var(--surface-2);
+  color: var(--text);
+  box-shadow: none;
+}
+
+.ap-light.wait {
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.ap-light.red {
+  background: #b71c1c;
+  color: #ffffff;
+}
+
+.ap-light.green {
+  background: #1b8a2f;
+  color: #ffffff;
+}
+
+.ap-light.out {
+  background: var(--surface-2);
+  color: var(--danger);
+  font-size: clamp(2rem, 9vw, 3.2rem);
+}
+
+.ap-light.done:not(.out) {
+  opacity: 0.85;
+}

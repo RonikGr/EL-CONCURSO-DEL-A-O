@@ -1,12 +1,13 @@
 // Secciones en las que todos responden a la vez desde el móvil: Test, Verdad o mentira, Dos verdades y una
-// mentira, ¿Quién es más probable…? y Estimación. Lógica pura: el tiempo y el azar entran como parámetros.
+// mentira, ¿Quién es más probable…?, Estimación y las de tiempo (Parar el contador, Duelo de reflejos), en las que
+// la "respuesta" es el instante de la pulsación. Lógica pura: el tiempo y el azar entran como parámetros.
 //
 //   ready ──open──▶ open ──(tiempo o todos han respondido)──▶ closed ──reveal──▶ revealed
 //
 // La primera respuesta es la definitiva. Una respuesta vale si se dio (reloj sincronizado) antes del final.
 import { norm } from './show.js';
 
-export const ANSWER_TYPES = new Set(['test', 'verdad', 'dosVerdades', 'votacion', 'estimacion']);
+export const ANSWER_TYPES = new Set(['test', 'verdad', 'dosVerdades', 'votacion', 'estimacion', 'contador', 'reflejos']);
 export const APHASE = { READY: 'ready', OPEN: 'open', CLOSED: 'closed', REVEALED: 'revealed' };
 export const ANSWER_RESULT = {
   OK: 'ok',
@@ -15,11 +16,23 @@ export const ANSWER_RESULT = {
   NOT_ELIGIBLE: 'not-eligible',
   INVALID: 'invalid',
   LATE: 'late',
+  EARLY: 'early', // Contador: aún no ha empezado (no cuenta). Reflejos: pulsó en rojo (eliminado de la ronda).
 };
 export const JOKERS = ['fifty', 'double', 'audience'];
 
 const CHOICE_KINDS = new Set(['test', 'verdad', 'dosVerdades']);
 export const isChoice = (kind) => CHOICE_KINDS.has(kind);
+const TIMING_KINDS = new Set(['contador', 'reflejos']);
+/** Secciones en las que se responde pulsando: cuenta el instante, no lo que se elige. */
+export const isTiming = (kind) => TIMING_KINDS.has(kind);
+
+/** Contador: cuenta atrás 3-2-1 antes de que empiece a correr el reloj. */
+export const COUNTDOWN_MS = 3000;
+/** Reflejos: el verde llega entre 2 y 6 s después de ponerse en rojo. */
+export const GREEN_MIN_MS = 2000;
+export const GREEN_MAX_MS = 6000;
+/** Reflejos: tras el verde, cuánto se espera a que pulsen. */
+export const REACTION_LIMIT_MS = 3000;
 
 /**
  * Pregunta lista para jugar a partir de una fila de la hoja.
@@ -49,6 +62,30 @@ export function buildQuestion(section, item, { players = [], settings = {} } = {
       return { ...base, text: item.question, options: null, correct: null, seconds };
     case 'estimacion':
       return { ...base, text: item.question, options: null, correct: item.answer, seconds: seconds + 10, unit: item.unit ?? '', noOver: !!item.noOver };
+    case 'contador':
+      // El reloj corre hasta el objetivo y otro tanto (mínimo 5 s) por si alguien se pasa.
+      return {
+        ...base,
+        text: `Para el reloj en ${String(item.target).replace('.', ',')} s`,
+        options: null,
+        correct: item.target,
+        target: item.target,
+        mode: item.mode,
+        hideAfter: item.hideAfter,
+        seconds: item.target + Math.max(5, item.target),
+        unit: 's',
+      };
+    case 'reflejos':
+      return {
+        ...base,
+        text: 'Cuando se ponga verde, ¡pulsa!',
+        options: null,
+        correct: null,
+        round: item.round ?? 1,
+        rounds: item.rounds ?? 1,
+        duel: !!item.duel,
+        seconds: null,
+      };
     default:
       throw new Error(`No es una sección de respuestas: ${section.type}`);
   }
@@ -62,6 +99,7 @@ export class AnswerRound {
     this.phase = APHASE.READY;
     this.tOpen = null;
     this.deadline = null;
+    this.tGreen = null; // Reflejos: cuándo se pone verde
     this.eligible = new Set();
     this.candidates = []; // votación: a quién se puede votar
     this.answers = new Map(); // playerId → {value, tPress, tArrival}
@@ -71,14 +109,25 @@ export class AnswerRound {
   }
 
   /**
-   * @param eligibleIds jugadores conectados al abrir (el protagonista de "Dos verdades" no responde)
+   * @param eligibleIds jugadores conectados al abrir (el protagonista de "Dos verdades" no responde; en un duelo, los dos)
+   * @param greenDelayMs Reflejos: cuánto tarda en ponerse verde (al azar, lo elige quien llama)
    */
-  open({ now, eligibleIds, scheduledOpenMs = 300 }) {
+  open({ now, eligibleIds, scheduledOpenMs = 300, greenDelayMs = GREEN_MIN_MS }) {
     if (this.phase !== APHASE.READY) return false;
+    const kind = this.question.kind;
     this.eligible = new Set(eligibleIds.filter((id) => id !== this.question.subjectId));
-    if (this.question.kind === 'votacion') this.candidates = [...eligibleIds];
-    this.tOpen = now + scheduledOpenMs;
-    this.deadline = this.tOpen + this.question.seconds * 1000;
+    if (kind === 'votacion') this.candidates = [...eligibleIds];
+    if (kind === 'contador') {
+      this.tOpen = now + COUNTDOWN_MS; // el reloj empieza a correr tras la cuenta atrás
+      this.deadline = this.tOpen + this.question.seconds * 1000;
+    } else if (kind === 'reflejos') {
+      this.tOpen = now + scheduledOpenMs; // se pone en rojo
+      this.tGreen = this.tOpen + greenDelayMs;
+      this.deadline = this.tGreen + REACTION_LIMIT_MS;
+    } else {
+      this.tOpen = now + scheduledOpenMs;
+      this.deadline = this.tOpen + this.question.seconds * 1000;
+    }
     this.phase = APHASE.OPEN;
     return true;
   }
@@ -88,8 +137,25 @@ export class AnswerRound {
     if (!this.eligible.has(playerId)) return ANSWER_RESULT.NOT_ELIGIBLE;
     if (this.answers.has(playerId)) return ANSWER_RESULT.DUPLICATE;
     if (tPress > this.deadline) return ANSWER_RESULT.LATE;
+    if (isTiming(this.question.kind)) return this.#press(playerId, tPress);
     if (!this.#valid(playerId, value)) return ANSWER_RESULT.INVALID;
     this.answers.set(playerId, { value, tPress });
+    return ANSWER_RESULT.OK;
+  }
+
+  /** Secciones de tiempo: lo que cuenta es cuándo se pulsó (el valor que mande el móvil se ignora). */
+  #press(playerId, tPress) {
+    if (this.question.kind === 'contador') {
+      if (tPress < this.tOpen) return ANSWER_RESULT.EARLY; // durante la cuenta atrás: no cuenta, puede volver a pulsar
+      this.answers.set(playerId, { value: (tPress - this.tOpen) / 1000, tPress });
+      return ANSWER_RESULT.OK;
+    }
+    // Reflejos: en rojo queda eliminado de la ronda (cuenta como respondido).
+    if (tPress < this.tGreen) {
+      this.answers.set(playerId, { value: null, early: true, tPress });
+      return ANSWER_RESULT.EARLY;
+    }
+    this.answers.set(playerId, { value: tPress - this.tGreen, tPress });
     return ANSWER_RESULT.OK;
   }
 
@@ -226,27 +292,48 @@ export function scoreRound(question, answers, { doubled = new Set(), candidates 
     return { points, entries, counts, winners };
   }
 
-  // Estimación: por cercanía. "Sin pasarse": quien se pasa queda fuera. Empates comparten puesto y puntos.
+  // Reflejos: gana el tiempo de reacción más corto; quien pulsó en rojo queda fuera.
+  if (question.kind === 'reflejos') {
+    const list = [...answers].map(([id, a]) => ({ playerId: id, value: a.value, early: !!a.early, diff: a.early ? null : a.value }));
+    const ranked = rankByDiff(
+      list.filter((e) => !e.early),
+      question.points,
+      add,
+    );
+    return { points, entries: [...ranked, ...list.filter((e) => e.early).map((e) => ({ ...e, place: null, points: 0 }))] };
+  }
+
+  // Estimación y Contador: por cercanía al número (o al objetivo en segundos).
+  // "Sin pasarse": quien se pasa queda fuera.
   const list = [...answers].map(([id, { value }]) => ({
     playerId: id,
     value,
     diff: Math.abs(value - question.correct),
     over: question.noOver && value > question.correct,
   }));
-  const valid = list.filter((e) => !e.over).sort((a, b) => a.diff - b.diff);
+  const ranked = rankByDiff(
+    list.filter((e) => !e.over),
+    question.points,
+    add,
+  );
+  return { points, entries: [...ranked, ...list.filter((e) => e.over).map((e) => ({ ...e, place: null, points: 0 }))] };
+}
+
+/** Ordena por `diff` (menor = mejor) y reparte puestos y puntos. Empates comparten puesto y puntos. */
+function rankByDiff(entries, pointsList, add) {
+  const sorted = [...entries].sort((a, b) => a.diff - b.diff);
   let place = 0;
   let lastDiff = null;
-  for (const e of valid) {
+  for (const e of sorted) {
     if (e.diff !== lastDiff) {
       place++;
       lastDiff = e.diff;
     }
     e.place = place;
-    e.points = question.points?.[place - 1] ?? 0;
+    e.points = pointsList?.[place - 1] ?? 0;
     add(e.playerId, e.points);
   }
-  const entries = [...valid, ...list.filter((e) => e.over).map((e) => ({ ...e, place: null, points: 0 }))];
-  return { points, entries };
+  return sorted;
 }
 
 /**

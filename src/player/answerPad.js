@@ -1,8 +1,10 @@
 // Pantalla del móvil en las secciones de respuestas: opciones, votar a un jugador, escribir un número y comodines.
+// También las de tiempo: el botón de STOP del Contador y la luz roja/verde de Reflejos.
 import { fill, h } from '../shared/dom.js';
 import { getColor, getIcon } from '../shared/appearance.js';
 import { ANSWER_PROMPT, optionStyle } from '../shared/options.js';
 import { parseNumber } from '../core/show.js';
+import { isTiming } from '../core/answers.js';
 
 const JOKER_INFO = {
   fifty: { label: '50 %', help: 'Quita la mitad de las respuestas incorrectas' },
@@ -11,7 +13,7 @@ const JOKER_INFO = {
 };
 
 /**
- * @param onAnswer(value)  envía la respuesta
+ * @param onAnswer(roundId, value, tLocal?)  envía la respuesta (tLocal: instante del toque, en las de tiempo)
  * @param onJoker(kind)    usa un comodín
  * @param toLocal(tHost)   instante del presentador → reloj local (o null sin sincronizar)
  */
@@ -19,9 +21,11 @@ export function createAnswerPad({ onAnswer, onJoker, toLocal }) {
   const root = h('section', { class: 'answer-pad', hidden: true });
   let signature = null;
   let pending = null; // respuesta enviada que el presentador aún no ha confirmado: {roundId, value}
+  let selected = null; // primera pulsación: elegida pero sin confirmar {roundId, value}
   let timer = null;
   let current = null;
   let receivedAt = 0;
+  let raf = 0;
 
   /** Instante local de un momento del presentador; sin sincronizar, cuenta desde que llegó el estado. */
   function local(hostT, msFromReceipt) {
@@ -32,12 +36,24 @@ export function createAnswerPad({ onAnswer, onJoker, toLocal }) {
     current = a;
     receivedAt = stateReceivedAt;
     if (pending && (pending.roundId !== a.roundId || a.you.answered)) pending = null;
-    const started = a.phase !== 'ready' && performance.now() >= local(a.tOpen, a.opensInMs);
-    const sig = JSON.stringify([a.roundId, a.phase, started, a.you, a.removed, a.jokers, a.audience, a.result, a.canAnswer, pending]);
+    if (selected && (selected.roundId !== a.roundId || a.you.answered || a.phase !== 'open')) selected = null;
+    const now = performance.now();
+    const started = a.phase !== 'ready' && now >= local(a.tOpen, a.opensInMs);
+    const tGreen = a.tGreen != null ? local(a.tGreen, a.greenInMs) : null;
+    const green = tGreen != null && now >= tGreen;
+    const sig = JSON.stringify([a.roundId, a.phase, started, green, a.you, a.removed, a.jokers, a.audience, a.result, a.canAnswer, pending, selected]);
     clearTimeout(timer);
-    if (a.phase === 'open' && !started) timer = setTimeout(() => current && render(current, { stateReceivedAt: receivedAt }), local(a.tOpen, a.opensInMs) - performance.now());
+    const again = () => current && render(current, { stateReceivedAt: receivedAt });
+    if (a.phase === 'open' && !started) timer = setTimeout(again, local(a.tOpen, a.opensInMs) - now);
+    else if (a.phase === 'open' && tGreen != null && !green) timer = setTimeout(again, tGreen - now); // Reflejos: a verde
     if (sig === signature) return;
     signature = sig;
+    cancelAnimationFrame(raf);
+
+    if (isTiming(a.kind)) {
+      fill(root, h('p', { class: 'ap-label' }, a.label), timingBody(a, started, green));
+      return;
+    }
 
     const answered = a.you.answered || !!pending;
     const chosen = a.you.answered ? a.you.value : pending?.value;
@@ -54,12 +70,69 @@ export function createAnswerPad({ onAnswer, onJoker, toLocal }) {
       body = [
         h('div', { class: 'ap-top' }, h('span', { class: 'ap-countdown', id: 'ap-countdown' }), h('p', { class: 'ap-question' }, a.text)),
         answerInputs(a, answered, chosen),
-        answered ? h('p', { class: 'ap-sent' }, '✓ Respuesta enviada') : null,
+        answered
+          ? h('p', { class: 'ap-sent' }, '✓ Respuesta enviada')
+          : selected
+            ? h('p', { class: 'ap-confirm' }, 'Toca otra vez la misma para confirmar')
+            : null,
         a.jokers && !answered ? jokerBar(a) : null,
       ];
     }
     fill(root, h('p', { class: 'ap-label' }, a.label), body);
     startCountdown(a);
+  }
+
+  // ------------------------------------------------------------------ Contador y Reflejos
+
+  function timingBody(a, started, green) {
+    const pressed = a.you.answered || !!pending;
+    const prep = a.kind === 'contador' ? `🎯 ${secs(a.target, 2)} · ${MODE_TEXT[a.mode](a)}` : `Ronda ${a.round} de ${a.rounds} · Si pulsas en rojo, quedas fuera`;
+    if (a.phase === 'ready') return [h('p', { class: 'ap-big' }, 'Prepárate'), h('p', { class: 'ap-sub' }, prep)];
+    if (a.phase === 'revealed') return resultView(a);
+    if (!a.canAnswer) return [h('p', { class: 'ap-big' }, 'Espera'), h('p', { class: 'ap-sub' }, a.kind === 'reflejos' ? 'Esta ronda no es para ti: ¡mira la tele!' : 'Esta ronda empezó antes de que entraras.')];
+    if (a.phase === 'closed') return [h('p', { class: 'ap-big' }, '¡Tiempo!'), h('p', { class: 'ap-sub' }, pressed ? 'Mira la tele para el resultado' : 'No has pulsado')];
+
+    if (a.kind === 'contador') {
+      const clock = h('p', { class: 'ap-clock' });
+      const button = h('button', { type: 'button', class: `ap-stop ${pressed ? 'done' : ''}`, disabled: pressed }, pressed ? '¡Parado!' : 'STOP');
+      button.addEventListener('pointerdown', press);
+      const startAt = local(a.tOpen, a.opensInMs);
+      const tick = () => {
+        if (!clock.isConnected) return;
+        const now = performance.now();
+        if (now < startAt) {
+          clock.textContent = String(Math.ceil((startAt - now) / 1000));
+          clock.classList.add('counting');
+        } else {
+          const elapsed = (now - startAt) / 1000;
+          // Tras pulsar no se enseña el tiempo: se descubre al revelar.
+          const hidden = pressed || a.mode === 'blind' || (a.mode === 'hide' && elapsed >= a.hideAfter);
+          clock.classList.remove('counting');
+          clock.textContent = hidden ? '??,??' : elapsed.toFixed(2).replace('.', ',');
+        }
+        raf = requestAnimationFrame(tick);
+      };
+      queueMicrotask(tick);
+      return [h('p', { class: 'ap-sub' }, `🎯 ${secs(a.target, 2)}`), clock, button];
+    }
+
+    // Reflejos: el botón entero es la luz.
+    const light = !started ? 'wait' : a.you.early ? 'out' : green ? 'green' : 'red';
+    const label = { wait: 'Preparados…', red: 'Espera…', green: '¡YA!', out: '¡Demasiado pronto!' }[light];
+    const button = h('button', { type: 'button', class: `ap-light ${light} ${pressed ? 'done' : ''}`, disabled: pressed }, pressed && !a.you.early ? '¡Pulsado!' : label);
+    button.addEventListener('pointerdown', press);
+    return [button];
+  }
+
+  /** Pulsación en una sección de tiempo: cuenta el instante del toque (event.timeStamp), como en el pulsador. */
+  function press(e) {
+    e.preventDefault();
+    if (!current || pending || current.you.answered) return;
+    const now = performance.now();
+    const tLocal = Math.abs(now - e.timeStamp) < 1000 ? e.timeStamp : now;
+    pending = { roundId: current.roundId, value: 0 };
+    onAnswer(current.roundId, 0, tLocal);
+    render(current, { stateReceivedAt: receivedAt });
   }
 
   function startCountdown(a) {
@@ -76,9 +149,18 @@ export function createAnswerPad({ onAnswer, onJoker, toLocal }) {
     tick();
   }
 
+  /** Primera pulsación: elegir. Segunda en la misma: confirmar y enviar. Otra distinta: cambiar la elección. */
+  function select(value) {
+    if (!current || pending) return;
+    if (selected?.roundId === current.roundId && selected.value === value) return send(value);
+    selected = { roundId: current.roundId, value };
+    render(current, { stateReceivedAt: receivedAt });
+  }
+
   function send(value) {
     if (!current || pending) return;
     pending = { roundId: current.roundId, value };
+    selected = null;
     onAnswer(current.roundId, value);
     render(current, { stateReceivedAt: receivedAt });
   }
@@ -99,10 +181,10 @@ export function createAnswerPad({ onAnswer, onJoker, toLocal }) {
             'button',
             {
               type: 'button',
-              class: `ap-candidate ${chosen === p.id ? 'chosen' : ''}`,
+              class: `ap-candidate ${chosen === p.id ? 'chosen' : ''} ${selected?.value === p.id ? 'selected' : ''}`,
               disabled: answered,
               style: { '--pc': getColor(p.color).bg, '--pc-fg': getColor(p.color).fg },
-              onclick: () => send(p.id),
+              onclick: () => select(p.id),
             },
             h('span', { class: 'ap-avatar emoji' }, getIcon(p.icon).glyph),
             h('span', {}, p.name),
@@ -135,10 +217,10 @@ export function createAnswerPad({ onAnswer, onJoker, toLocal }) {
           'button',
           {
             type: 'button',
-            class: `ap-option ${chosen === i ? 'chosen' : ''} ${removed ? 'removed' : ''}`,
+            class: `ap-option ${chosen === i ? 'chosen' : ''} ${selected?.value === i ? 'selected' : ''} ${removed ? 'removed' : ''}`,
             disabled: answered || removed,
             style: { '--ob': s.bg, '--of': s.fg },
-            onclick: () => send(i),
+            onclick: () => select(i),
           },
           h('span', { class: 'ap-shape' }, s.shape),
           h('span', { class: 'ap-option-label' }, label),
@@ -188,6 +270,13 @@ export function createAnswerPad({ onAnswer, onJoker, toLocal }) {
   };
 }
 
+const secs = (n, decimals) => `${Number(n).toFixed(decimals).replace('.', ',')} s`;
+const MODE_TEXT = {
+  visible: () => 'verás el reloj',
+  blind: () => '¡a ciegas!',
+  hide: (a) => `el reloj desaparece a los ${secs(a.hideAfter, 0)}`,
+};
+
 function describe(a, value) {
   if (value == null) return '—';
   if (a.kind === 'votacion') return a.candidates.find((p) => p.id === value)?.name ?? '¿?';
@@ -201,7 +290,15 @@ function resultView(a) {
     return [h('p', { class: 'ap-big' }, `Has engañado a ${r.fooled}`), h('p', { class: `ap-points ${r.points ? 'plus' : ''}` }, r.points ? `+${r.points}` : 'Sin puntos')];
   }
   if (!a.you.answered) {
-    return [h('p', { class: 'ap-big' }, 'No respondiste'), r.correctLabel ? h('p', { class: 'ap-sub' }, `Era: ${r.correctLabel}`) : null];
+    return [h('p', { class: 'ap-big' }, isTiming(a.kind) ? 'No pulsaste' : 'No respondiste'), r.correctLabel ? h('p', { class: 'ap-sub' }, `Era: ${r.correctLabel}`) : null];
+  }
+  const pts = h('p', { class: `ap-points ${r.points ? 'plus' : ''}` }, r.points ? `+${r.points}` : 'Sin puntos');
+  if (a.kind === 'contador') {
+    return [h('p', { class: 'ap-big' }, `Has quedado ${r.place}º`), h('p', { class: 'ap-sub' }, `Paraste en ${secs(r.value, 2)} · a ${secs(r.diff, 2)} del objetivo`), pts];
+  }
+  if (a.kind === 'reflejos') {
+    if (r.early) return [h('p', { class: 'ap-big' }, '¡Pulsaste en rojo!'), h('p', { class: 'ap-sub' }, 'Fuera de esta ronda'), pts];
+    return [h('p', { class: 'ap-big' }, `Has quedado ${r.place}º`), h('p', { class: 'ap-sub' }, `Reacción: ${Math.round(r.value)} ms`), pts];
   }
   if (a.kind === 'votacion') {
     const who = r.winners.join(' y ');

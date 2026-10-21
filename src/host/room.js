@@ -5,7 +5,18 @@ import { MAX_PLAYERS, MIN_PLAYERS, Roster } from '../core/players.js';
 import { LOCK, PHASE, QuestionEngine, playerView } from '../core/game.js';
 import { SCREEN, ShowRunner, isPlayable } from '../core/runner.js';
 import { DEFAULT_SETTINGS as SHOW_DEFAULTS, SECTION_TYPES, defaultShow } from '../core/show.js';
-import { ANSWER_RESULT, ANSWER_TYPES, APHASE, AnswerRound, JokerBank, buildQuestion, isChoice } from '../core/answers.js';
+import {
+  ANSWER_RESULT,
+  ANSWER_TYPES,
+  APHASE,
+  AnswerRound,
+  GREEN_MAX_MS,
+  GREEN_MIN_MS,
+  JokerBank,
+  buildQuestion,
+  isChoice,
+  isTiming,
+} from '../core/answers.js';
 import { ERROR_CODE, MSG } from '../shared/protocol.js';
 import { PeerSource } from './sources/peerSource.js';
 import { saveRoom } from './persistence.js';
@@ -26,6 +37,7 @@ export class HostRoom extends EventTarget {
   #windowTimer = null;
   #openTimer = null;
   #answerTimer = null;
+  #greenTimer = null;
   #controlPush = null;
   #playKey = null;
   #roundSeq = 0;
@@ -50,6 +62,7 @@ export class HostRoom extends EventTarget {
     this.jokers = new JokerBank(this.show.settings?.jokers ?? SHOW_DEFAULTS.jokers, saved?.jokersUsed ?? {});
     this.itemResults = saved?.itemResults ?? {}; // playKey → resultado ya puntuado de una pregunta de respuestas
     this.answerRound = null;
+    this.duelPick = []; // Duelo de reflejos: los dos que juegan (se mantiene entre rondas)
     this.#playKey = this.runner.playKey;
     this.#syncAnswerRound();
     this.lastImport = null;
@@ -179,6 +192,14 @@ export class HostRoom extends EventTarget {
       unit: q.unit,
       noOver: q.noOver,
       options: q.options,
+      target: q.target ?? null,
+      mode: q.mode ?? null,
+      hideAfter: q.hideAfter ?? null,
+      round: q.round ?? null,
+      rounds: q.rounds ?? null,
+      duel: !!q.duel,
+      duelPick: q.duel ? this.duelPick.map(pub) : [],
+      tGreen: r.tGreen,
       candidates: r.candidates.map(pub),
       subject: q.subjectId ? pub(q.subjectId) : q.subjectName ? { name: q.subjectName } : null,
       tOpen: r.tOpen,
@@ -356,15 +377,30 @@ export class HostRoom extends EventTarget {
     openAnswers: () => {
       if (!this.inAnswerPlay) return false;
       if (!this.canStart) return `Hacen falta al menos ${MIN_PLAYERS} jugadores conectados.`;
-      const eligibleIds = this.roster.list().filter((p) => p.connected).map((p) => p.id);
-      if (!this.answerRound.open({ now: now(), eligibleIds, scheduledOpenMs: this.settings.scheduledOpenMs })) return false;
+      const q = this.answerRound.question;
+      let eligibleIds = this.roster.list().filter((p) => p.connected).map((p) => p.id);
+      if (q.duel) {
+        eligibleIds = this.duelPick.filter((id) => eligibleIds.includes(id));
+        if (eligibleIds.length !== 2) return 'Elige a los dos jugadores del duelo (y que estén conectados).';
+      }
+      const greenDelayMs = GREEN_MIN_MS + Math.random() * (GREEN_MAX_MS - GREEN_MIN_MS);
+      if (!this.answerRound.open({ now: now(), eligibleIds, scheduledOpenMs: this.settings.scheduledOpenMs, greenDelayMs })) return false;
       if (!this.answerRound.eligible.size) return 'No hay nadie que pueda responder a esta pregunta.';
       const r = this.answerRound;
+      // Reflejos: repintar la tele justo al ponerse verde (los móviles cambian solos con su reloj sincronizado).
+      clearTimeout(this.#greenTimer);
+      if (r.tGreen != null) this.#greenTimer = setTimeout(() => this.#changed({ persist: false }), Math.max(0, r.tGreen - now()));
       clearTimeout(this.#answerTimer);
       this.#answerTimer = setTimeout(() => this.#closeAnswers(r), r.deadline + ANSWER_GRACE_MS - now());
       // Repintar la tele al empezar (para que salgan las opciones a la vez que en los móviles).
       clearTimeout(this.#openTimer);
       this.#openTimer = setTimeout(() => this.#changed({ persist: false }), Math.max(0, r.tOpen - now()));
+      return true;
+    },
+    setDuel: ({ a, b }) => {
+      if (!this.inAnswerPlay || !this.answerRound.question.duel) return false;
+      if (!a || !b || a === b || !this.roster.get(a) || !this.roster.get(b)) return 'Elige a dos jugadores distintos.';
+      this.duelPick = [a, b];
       return true;
     },
     closeAnswers: () => {
@@ -506,7 +542,8 @@ export class HostRoom extends EventTarget {
     if (!this.inAnswerPlay || msg.roundId !== r.roundId) return ack(ANSWER_RESULT.CLOSED);
     const result = r.answer(playerId, msg.value, { tPress: msg.tPress });
     ack(result);
-    if (result !== ANSWER_RESULT.OK) return;
+    // En Reflejos, pulsar en rojo queda registrado (eliminado); en el Contador, pulsar en la cuenta atrás no.
+    if (!r.answers.has(playerId) || (result !== ANSWER_RESULT.OK && result !== ANSWER_RESULT.EARLY)) return;
     // En cuanto han respondido todos, se cierra (no hace falta esperar al reloj).
     const connected = new Set(this.roster.list().filter((p) => p.connected).map((p) => p.id));
     if (r.allAnswered(connected)) this.#closeAnswers(r);
@@ -559,6 +596,7 @@ export class HostRoom extends EventTarget {
   #leaveAnswerRound() {
     const r = this.answerRound;
     clearTimeout(this.#answerTimer);
+    clearTimeout(this.#greenTimer);
     if (r && r.phase !== APHASE.REVEALED) {
       for (const [owner, kinds] of r.jokers) for (const kind of kinds) this.jokers.refund(owner, kind);
     }
@@ -677,7 +715,13 @@ export class HostRoom extends EventTarget {
         place: entry?.place ?? null,
         diff: entry?.diff ?? null,
         over: !!entry?.over,
-        correctLabel: isChoice(q.kind) ? q.options[q.correct] : q.kind === 'estimacion' ? `${q.correct}${q.unit ? ` ${q.unit}` : ''}` : null,
+        correctLabel: isChoice(q.kind)
+          ? q.options[q.correct]
+          : q.kind === 'estimacion' || q.kind === 'contador'
+            ? `${String(q.correct).replace('.', ',')}${q.unit ? ` ${q.unit}` : ''}`
+            : null,
+        value: own?.value ?? null,
+        early: !!entry?.early,
         winners: (r.results.winners ?? []).map(name),
         fooled: q.subjectId === player.id ? (r.results.fooled ?? 0) : null,
       };
@@ -692,6 +736,13 @@ export class HostRoom extends EventTarget {
       unit: q.unit,
       noOver: q.noOver,
       options: q.options,
+      target: q.target ?? null,
+      mode: q.mode ?? null,
+      hideAfter: q.hideAfter ?? null,
+      round: q.round ?? null,
+      rounds: q.rounds ?? null,
+      tGreen: r.tGreen,
+      greenInMs: r.tGreen != null ? Math.max(0, r.tGreen - t) : null,
       removed: r.removedFor(player.id, this.ownerOf),
       candidates: r.candidates.filter((id) => id !== player.id).map((id) => publicPlayer(this.roster.get(id) ?? { id, name: '¿?' })),
       tOpen: r.tOpen,
@@ -700,7 +751,8 @@ export class HostRoom extends EventTarget {
       remainingMs: r.deadline != null ? Math.max(0, r.deadline - t) : null,
       canAnswer: opened && r.eligible.has(player.id),
       isSubject: q.subjectId === player.id,
-      you: { answered: !!own, value: own?.value ?? null },
+      // En las de tiempo, el tiempo propio no se enseña hasta revelar (suspense).
+      you: { answered: !!own, early: !!own?.early, value: own && (!isTiming(q.kind) || revealed) ? own.value : null },
       jokers: q.kind === 'test' ? { remaining: this.jokers.remaining(owner), active } : null,
       audience: active.includes('audience') && r.phase === APHASE.OPEN ? r.counts() : null,
       result,

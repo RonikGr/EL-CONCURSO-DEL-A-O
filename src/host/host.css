@@ -1627,3 +1627,50 @@ a.btn {
     grid-template-columns: 1fr;
   }
 }
+
+/* --- Secciones de tiempo: Contador y Reflejos --- */
+.target {
+  margin: 0;
+  font-size: 3rem;
+  font-weight: 900;
+  color: var(--accent);
+}
+
+.big-clock {
+  margin: 0;
+  font-size: 11rem;
+  font-weight: 900;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.big-clock.counting {
+  color: var(--warn);
+}
+
+.big-clock.hidden-clock {
+  color: var(--muted);
+}
+
+/* Reflejos: toda la zona de juego se pone roja y luego verde. */
+.answer-stage[data-light='red'],
+.answer-stage[data-light='green'] {
+  border-radius: calc(var(--radius) * 2);
+  min-height: 60vh;
+  align-content: center;
+}
+
+.answer-stage[data-light='red'] {
+  background: #b71c1c;
+}
+
+.answer-stage[data-light='green'] {
+  background: #1b8a2f;
+}
+
+.light-text {
+  margin: 0;
+  font-size: 9rem;
+  font-weight: 900;
+  line-height: 1;
+}

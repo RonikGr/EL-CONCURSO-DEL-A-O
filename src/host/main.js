@@ -217,7 +217,11 @@ function renderScreen(view) {
     players: view.players.map(({ rtt, ...p }) => p),
     settings: null,
     // La apertura programada no cambia ningún dato: hay que repintar igualmente cuando llega.
-    started: [view.game && t >= view.game.tOpen, view.answer && view.answer.tOpen != null && t >= view.answer.tOpen],
+    started: [
+      view.game && t >= view.game.tOpen,
+      view.answer && view.answer.tOpen != null && t >= view.answer.tOpen,
+      view.answer && view.answer.tGreen != null && t >= view.answer.tGreen, // Reflejos: rojo → verde
+    ],
   };
   const signature = JSON.stringify(visible);
   if (signature === lastScreenSignature) return;

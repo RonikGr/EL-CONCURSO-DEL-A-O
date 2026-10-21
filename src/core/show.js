@@ -17,7 +17,7 @@ export const SECTION_TYPES = {
 };
 
 /** Tipos que ya se pueden jugar (el resto se muestra como "próximamente"). */
-export const PLAYABLE_TYPES = new Set(['pulsador', 'test', 'verdad', 'dosVerdades', 'votacion', 'estimacion']);
+export const PLAYABLE_TYPES = new Set(['pulsador', 'test', 'verdad', 'dosVerdades', 'votacion', 'estimacion', 'contador', 'reflejos']);
 
 export const DEFAULT_SETTINGS = {
   title: 'Concurso del año',
@@ -371,7 +371,11 @@ export function parseShowWorkbook(sheets) {
     if (SECTION_TYPES[s.type].needsItems && !s.items.length) {
       warn(SECTION_TYPES[s.type].sheet, null, `La sección "${s.name}" no tiene ninguna fila: se saltará.`);
     }
-    if (s.type === 'reflejos' && !s.items.length) s.items.push({ rounds: 3, duel: false });
+    if (s.type === 'reflejos') {
+      // Cada fila (N rondas) se convierte en N preguntas: así el recorrido avanza ronda a ronda.
+      const rows = s.items.length ? s.items : [{ rounds: 3, duel: false }];
+      s.items = rows.flatMap((row) => Array.from({ length: row.rounds }, (_, i) => ({ round: i + 1, rounds: row.rounds, duel: row.duel })));
+    }
   }
 
   const show = { title: settings.title, settings, teams: teams.length > 1 ? teams : [], sections };

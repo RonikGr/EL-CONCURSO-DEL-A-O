@@ -4,7 +4,7 @@ import { fill, h } from '../shared/dom.js';
 import { getColor, getIcon } from '../shared/appearance.js';
 import { ANSWER_PROMPT, optionStyle } from '../shared/options.js';
 import { ordinal } from '../shared/format.js';
-import { APHASE } from '../core/answers.js';
+import { APHASE, isTiming } from '../core/answers.js';
 
 export function createAnswerStage() {
   const root = h('section', { class: 'answer-stage' });
@@ -28,6 +28,7 @@ export function createAnswerStage() {
     const a = view.answer;
     stopCountdown();
     if (!a) return;
+    if (isTiming(a.kind)) return renderTiming(view);
     const started = a.phase !== APHASE.READY && performance.now() >= a.tOpen;
     root.dataset.phase = a.phase === APHASE.OPEN && !started ? 'ready' : a.phase;
     root.dataset.kind = a.kind;
@@ -58,7 +59,102 @@ export function createAnswerStage() {
     if (countdownEl) tick(a);
   }
 
+  // ------------------------------------------------------------------ Contador y Reflejos
+
+  /** Bucle de pintado (reloj, cuenta atrás) que se para solo al repintar. */
+  function loop(el, fn) {
+    countdownEl = el;
+    const step = () => {
+      if (countdownEl !== el) return;
+      fn(performance.now());
+      raf = requestAnimationFrame(step);
+    };
+    step();
+  }
+
+  function renderTiming(view) {
+    const a = view.answer;
+    const t = performance.now();
+    const header = h('p', { class: 'stage-q' }, [view.section.name, a.kind === 'reflejos' ? `Ronda ${a.round} de ${a.rounds}` : view.itemCount ? `Ronda ${view.itemIndex + 1} de ${view.itemCount}` : ''].filter(Boolean).join(' · '));
+    root.dataset.kind = a.kind;
+    delete root.dataset.light;
+    const counter = h('span', { class: 'answered-count' }, `${a.answeredIds.length} de ${a.eligibleIds.length} ${a.kind === 'contador' ? 'han parado' : 'han pulsado'}`);
+
+    if (a.kind === 'contador') {
+      const target = h('p', { class: 'target' }, '🎯 ', secs(a.target, 2));
+      const modeText = { visible: 'Veréis el reloj', blind: '¡A ciegas! El reloj no se ve', hide: `El reloj desaparece a los ${secs(a.hideAfter, 0)}` }[a.mode];
+      if (a.phase === APHASE.READY) {
+        root.dataset.phase = 'ready';
+        return fill(root, header, h('p', { class: 'answer-question big' }, a.text), target, h('p', { class: 'answer-prompt' }, `${modeText} · Preparad los móviles`));
+      }
+      if (a.phase === APHASE.REVEALED) {
+        root.dataset.phase = 'revealed';
+        return fill(root, header, target, rankingList(a, (e) => secs(e.value, 2), (e) => `a ${secs(e.diff, 2)}`));
+      }
+      root.dataset.phase = a.phase;
+      const clock = h('p', { class: 'big-clock' });
+      fill(root, header, target, clock, h('div', { class: 'answer-footer' }, a.phase === APHASE.OPEN ? counter : [h('span', { class: 'times-up' }, '¡Tiempo!'), counter]));
+      if (a.phase === APHASE.OPEN) {
+        loop(clock, (now) => {
+          if (now < a.tOpen) {
+            clock.textContent = String(Math.ceil((a.tOpen - now) / 1000));
+            clock.classList.add('counting');
+            return;
+          }
+          clock.classList.remove('counting');
+          const elapsed = (now - a.tOpen) / 1000;
+          const hidden = a.mode === 'blind' || (a.mode === 'hide' && elapsed >= a.hideAfter);
+          clock.textContent = hidden ? '??,??' : elapsed.toFixed(2).replace('.', ',');
+          clock.classList.toggle('hidden-clock', hidden);
+        });
+      } else {
+        clock.textContent = '??,??';
+      }
+      return;
+    }
+
+    // Reflejos
+    const who = a.duel ? h('p', { class: 'answer-prompt' }, a.duelPick.length === 2 ? `Duelo: ${a.duelPick[0].name} contra ${a.duelPick[1].name}` : 'Duelo: el presentador elige a los dos') : null;
+    if (a.phase === APHASE.READY) {
+      root.dataset.phase = 'ready';
+      return fill(root, header, h('p', { class: 'answer-question big' }, a.text), who, h('p', { class: 'answer-prompt' }, 'Si pulsáis en rojo, quedáis fuera de la ronda'));
+    }
+    if (a.phase === APHASE.REVEALED) {
+      root.dataset.phase = 'revealed';
+      return fill(root, header, h('p', { class: 'answer-question' }, '¿Quién tiene mejores reflejos?'), rankingList(a, (e) => (e.early ? '¡En rojo!' : `${Math.round(e.value)} ms`), () => ''));
+    }
+    root.dataset.phase = a.phase;
+    const green = a.tGreen != null && t >= a.tGreen;
+    root.dataset.light = a.phase === APHASE.OPEN && t >= a.tOpen ? (green ? 'green' : 'red') : '';
+    const big = h('p', { class: 'light-text' }, a.phase !== APHASE.OPEN ? '¡Fin de la ronda!' : t < a.tOpen ? 'Preparados…' : green ? '¡YA!' : 'Espera…');
+    fill(root, header, who, big, h('div', { class: 'answer-footer' }, counter));
+  }
+
   return { root, render };
+}
+
+const secs = (n, decimals) => `${Number(n).toFixed(decimals).replace('.', ',')} s`;
+
+/** Clasificación de una sección de tiempo (Contador o Reflejos). */
+function rankingList(a, valueText, diffText) {
+  const entries = a.results.entries;
+  if (!entries.length) return h('p', { class: 'reveal-line' }, 'Nadie ha pulsado');
+  return h(
+    'ol',
+    { class: 'estimates' },
+    entries.map((e) =>
+      h(
+        'li',
+        { class: e.place == null ? 'over' : e.place === 1 ? 'first' : '', style: { '--pc': getColor(e.player.color).bg } },
+        h('span', { class: 'f-place' }, e.place ? ordinal(e.place) : '—'),
+        avatar(e.player),
+        h('span', { class: 'es-name' }, e.player.name),
+        h('span', { class: 'es-value' }, valueText(e)),
+        h('span', { class: 'es-diff' }, diffText(e)),
+        h('strong', { class: 'es-points' }, e.points ? `+${e.points}` : ''),
+      ),
+    ),
+  );
 }
 
 // ---------------------------------------------------------------------------------------- Mientras se responde

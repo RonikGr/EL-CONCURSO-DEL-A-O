@@ -4,10 +4,10 @@ Pulsador de concurso con móviles, estilo Kahoot. La pantalla del presentador se
 conectado por HDMI); cada jugador usa su móvil como pulsador, sin instalar nada. Web 100 % estática
 (GitHub Pages) con WebRTC mediante [PeerJS](https://peerjs.com/).
 
-> Estado: **fase 5** — concurso por secciones con equipos, cargado desde una hoja de cálculo; la tele es el
+> Estado: **fase 6** — concurso por secciones con equipos, cargado desde una hoja de cálculo; la tele es el
 > espectáculo y el presentador lo maneja desde su móvil. Se juegan **Pulsador**, **Test** (con comodines),
-> **Verdad o mentira**, **Dos verdades y una mentira**, **¿Quién es más probable…?** y **Estimación**.
-> Contador, Reflejos y Libre ya se leen de la hoja y llegan en las fases 6–7.
+> **Verdad o mentira**, **Dos verdades y una mentira**, **¿Quién es más probable…?**, **Estimación**,
+> **Parar el contador** y **Duelo de reflejos**. La sección Libre ya se lee de la hoja y llega en la fase 7.
 
 ## Preparar el concurso
 
@@ -43,7 +43,14 @@ conectado por HDMI); cada jugador usa su móvil como pulsador, sin instalar nada
    - **Estimación**: puntos por puestos según la columna Puntos (p. ej. 3,2,1); «Sin pasarse» deja fuera a quien se pasa.
    - **Dos verdades y una mentira**: el protagonista (su nombre debe coincidir con el de su jugador) no vota y suma
      1 punto por cada uno al que engaña.
+   - En el móvil, la respuesta se elige con un toque y se **confirma tocando otra vez la misma**.
    - «Reiniciar pregunta» después de revelar quita los puntos que dio esa pregunta.
+8. **Parar el contador**: «¡Empezar!» → cuenta atrás 3-2-1 → el reloj corre en la tele y en los móviles (visible, a
+   ciegas o desaparece a los N segundos, según la fila) → cada uno pulsa STOP → «Revelar» ordena por cercanía al
+   objetivo. Cuenta el instante exacto del toque con el reloj sincronizado.
+9. **Duelo de reflejos**: «Poner en rojo» → entre 2 y 6 s después, al azar, todo se pone verde (tele y móviles a la
+   vez) → gana la reacción más rápida. Quien pulsa en rojo queda fuera de esa ronda. En modo «Duelo», el presentador
+   elige en el mando a los dos que juegan.
 
 El mando tiene tres pestañas: **Juego** (lo que toca ahora), **Jugadores** (puntos ±, puntos de equipo, mover de
 equipo, quitar) y **Secciones** (saltar a cualquiera).

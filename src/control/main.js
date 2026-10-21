@@ -337,12 +337,18 @@ function answerPanel() {
     solution = h('p', { class: 'c-answer' }, h('small', {}, a.kind === 'dosVerdades' ? 'La mentira' : 'Correcta'), `${s.shape} ${a.options[a.correct]}`);
   } else if (a.kind === 'estimacion') {
     solution = h('p', { class: 'c-answer' }, h('small', {}, a.noOver ? 'Respuesta (gana el más cercano sin pasarse)' : 'Respuesta (gana el más cercano)'), fmt(a.correct));
+  } else if (a.kind === 'contador') {
+    const mode = { visible: 'reloj visible', blind: 'a ciegas', hide: `el reloj desaparece a los ${a.hideAfter} s` }[a.mode];
+    solution = h('p', { class: 'c-answer' }, h('small', {}, `Objetivo · ${mode}`), `${String(a.target).replace('.', ',')} s`);
+  } else if (a.kind === 'reflejos') {
+    solution = h('p', { class: 'c-answer' }, h('small', {}, a.duel ? 'Duelo' : 'Todos contra todos'), `Ronda ${a.round} de ${a.rounds}`);
   }
   const subjectWarning =
     a.kind === 'dosVerdades' && a.subject && !a.subject.id
       ? h('p', { class: 'warn' }, `No hay ningún jugador llamado «${a.subject.name}»: votarán todos y nadie suma por engañar.`)
       : null;
 
+  const timing = a.kind === 'contador' || a.kind === 'reflejos';
   const question = h(
     'section',
     { class: 'c-card' },
@@ -359,7 +365,7 @@ function answerPanel() {
       ? h(
           'section',
           { class: 'c-card' },
-          h('p', { class: 'c-kicker' }, `${a.answeredIds.length} de ${a.eligibleIds.length} han respondido`),
+          h('p', { class: 'c-kicker' }, `${a.answeredIds.length} de ${a.eligibleIds.length} ${timing ? 'han pulsado' : 'han respondido'}`),
           h(
             'p',
             { class: 'small' },
@@ -374,11 +380,16 @@ function answerPanel() {
 
   let actions;
   switch (a.phase) {
-    case 'ready':
-      actions = [h('button', { class: 'btn primary big', disabled: !view.canStart, onclick: () => cmd('openAnswers') }, 'Abrir respuestas')];
+    case 'ready': {
+      const label = { contador: '¡Empezar! (3, 2, 1…)', reflejos: 'Poner en rojo' }[a.kind] ?? 'Abrir respuestas';
+      actions = [
+        a.kind === 'reflejos' && a.duel ? duelPicker(a) : null,
+        h('button', { class: 'btn primary big', disabled: !view.canStart, onclick: () => cmd('openAnswers') }, label),
+      ];
       break;
+    }
     case 'open':
-      actions = [h('p', { class: 'c-live' }, '¡Respondiendo!'), btn('Cerrar ya', () => cmd('closeAnswers'))];
+      actions = [h('p', { class: 'c-live' }, timing ? '¡En juego!' : '¡Respondiendo!'), btn('Cerrar ya', () => cmd('closeAnswers'))];
       break;
     case 'closed':
       actions = [h('button', { class: 'btn primary big', onclick: () => cmd('reveal') }, 'Revelar')];
@@ -402,8 +413,33 @@ function answerPanel() {
   ];
 }
 
+/** Duelo de reflejos: el presentador elige a los dos que juegan. */
+function duelPicker(a) {
+  const players = view.players.filter((p) => p.connected);
+  const [first, second] = a.duelPick;
+  const select = (id, selected) =>
+    h(
+      'select',
+      { class: 'c-select', id },
+      h('option', { value: '' }, '—'),
+      players.map((p) => h('option', { value: p.id, selected: p.id === selected?.id }, p.name)),
+    );
+  return h(
+    'div',
+    { class: 'c-card' },
+    h('p', { class: 'c-kicker' }, first && second ? `Duelo: ${first.name} contra ${second.name}` : 'Elige a los dos del duelo'),
+    h('div', { class: 'c-row' }, select('duel-a', first), select('duel-b', second)),
+    btn('Fijar duelo', () => cmd('setDuel', { a: document.getElementById('duel-a').value, b: document.getElementById('duel-b').value })),
+  );
+}
+
 /** Recuento en directo (solo lo ve el presentador). */
 function liveCounts(a) {
+  if (a.kind === 'contador' || a.kind === 'reflejos') {
+    if (!a.answers?.length) return null;
+    const text = (x) => (x.value == null ? 'en rojo' : a.kind === 'contador' ? `${x.value.toFixed(2).replace('.', ',')} s` : `${Math.round(x.value)} ms`);
+    return h('p', { class: 'small muted' }, a.answers.map((x) => `${x.player.name}: ${text(x)}`).join(' · '));
+  }
   if (!a.counts) return null;
   if (a.kind === 'votacion') {
     const rows = a.candidates.map((p) => [p.name, a.counts[p.id] ?? 0]).sort((x, y) => y[1] - x[1]);

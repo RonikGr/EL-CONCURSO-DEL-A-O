@@ -39,12 +39,11 @@ document.addEventListener('visibilitychange', () => {
 // Secciones de respuestas: el botón grande se cambia por las opciones.
 const ackKinds = new Map(); // seq → 'answer' | 'joker'
 const pad = createAnswerPad({
-  onAnswer: (roundId, value) => {
-    const now = performance.now();
+  onAnswer: (roundId, value, tLocal) => {
     const clock = sync.estimate();
     const seq = ++buzzSeq;
     ackKinds.set(seq, 'answer');
-    connection?.send({ t: MSG.ANSWER, seq, roundId, value, tLocal: now, offset: clock?.offset, err: clock?.err });
+    connection?.send({ t: MSG.ANSWER, seq, roundId, value, tLocal: tLocal ?? performance.now(), offset: clock?.offset, err: clock?.err });
     vibrate(30);
   },
   onJoker: (roundId, kind) => {
@@ -61,6 +60,7 @@ const ANSWER_REJECTED = {
   closed: 'La pregunta ya está cerrada.',
   'not-eligible': 'Esta pregunta no es para ti.',
   invalid: 'Respuesta no válida.',
+  early: '¡Aún no ha empezado el reloj! Espera a que corra.',
 };
 
 const joinPicker = createProfilePicker(profile);
@@ -243,6 +243,8 @@ function handleMessage(msg, tRecv) {
       const kind = ackKinds.get(msg.seq);
       ackKinds.delete(msg.seq);
       if (msg.result === 'ok') break;
+      // En Reflejos, pulsar en rojo queda registrado: lo cuenta el estado ("¡Demasiado pronto!").
+      if (msg.result === 'early' && lastState?.answer?.kind === 'reflejos') break;
       if (kind === 'answer') {
         pad.rejectPending();
         toast(ANSWER_REJECTED[msg.result] ?? 'No se ha podido enviar la respuesta.');

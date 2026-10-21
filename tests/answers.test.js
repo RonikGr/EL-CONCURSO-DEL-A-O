@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ANSWER_RESULT, APHASE, AnswerRound, JokerBank, buildQuestion, scoreRound } from '../src/core/answers.js';
+import { ANSWER_RESULT, APHASE, AnswerRound, COUNTDOWN_MS, JokerBank, REACTION_LIMIT_MS, buildQuestion, scoreRound } from '../src/core/answers.js';
 
 const section = (type, points = [2]) => ({ type, points });
 const PLAYERS = [
@@ -187,5 +187,69 @@ describe('comodines del concurso', () => {
     expect(bank.remaining('rojos').fifty).toBe(1);
     const restored = new JokerBank({ fifty: 1, double: 1, audience: 2 }, JSON.parse(JSON.stringify(bank.toJSON())));
     expect(restored.remaining('rojos')).toEqual(bank.remaining('rojos'));
+  });
+});
+
+describe('Parar el contador', () => {
+  const item = { target: 10, mode: 'hide', hideAfter: 3 };
+
+  it('el reloj arranca tras la cuenta atrás y cuenta el instante de la pulsación', () => {
+    const q = buildQuestion(section('contador', [3, 2, 1]), item);
+    expect(q).toMatchObject({ kind: 'contador', target: 10, mode: 'hide', hideAfter: 3, seconds: 20, unit: 's' });
+    const r = new AnswerRound(q, { roundId: 'c1' });
+    r.open({ now: 1000, eligibleIds: IDS });
+    expect(r.tOpen).toBe(1000 + COUNTDOWN_MS);
+    expect(r.deadline).toBe(r.tOpen + 20_000);
+    // Pulsar en la cuenta atrás no cuenta: se puede volver a pulsar.
+    expect(r.answer('ana', 0, at(r.tOpen - 100))).toBe(ANSWER_RESULT.EARLY);
+    expect(r.answer('ana', 'lo que sea', at(r.tOpen + 9_950))).toBe(ANSWER_RESULT.OK);
+    expect(r.answer('bea', 0, at(r.tOpen + 10_300))).toBe(ANSWER_RESULT.OK);
+    expect(r.answer('cris', 0, at(r.tOpen + 12_000))).toBe(ANSWER_RESULT.OK);
+    expect(r.answers.get('ana').value).toBeCloseTo(9.95, 9);
+    expect(r.counts()).toBeNull();
+    r.reveal();
+    expect(r.results.entries.map((e) => [e.playerId, e.place, e.points])).toEqual([
+      ['ana', 1, 3], // a 0,05 s
+      ['bea', 2, 2], // a 0,3 s
+      ['cris', 3, 1], // a 2 s
+    ]);
+  });
+});
+
+describe('Duelo de reflejos', () => {
+  const roundOf = (eligibleIds = IDS) => {
+    const q = buildQuestion(section('reflejos', [3, 2, 1]), { round: 2, rounds: 3, duel: false });
+    const r = new AnswerRound(q, { roundId: 'x' });
+    r.open({ now: 1000, eligibleIds, scheduledOpenMs: 300, greenDelayMs: 4000 });
+    return r;
+  };
+
+  it('rojo y luego verde al azar; el plazo acaba poco después del verde', () => {
+    const r = roundOf();
+    expect(r.question).toMatchObject({ round: 2, rounds: 3 });
+    expect(r.tOpen).toBe(1300);
+    expect(r.tGreen).toBe(5300);
+    expect(r.deadline).toBe(5300 + REACTION_LIMIT_MS);
+  });
+
+  it('pulsar en rojo elimina de la ronda; gana la reacción más rápida', () => {
+    const r = roundOf();
+    expect(r.answer('ana', 0, at(5000))).toBe(ANSWER_RESULT.EARLY); // en rojo
+    expect(r.answer('ana', 0, at(5500))).toBe(ANSWER_RESULT.DUPLICATE); // ya está fuera
+    expect(r.answer('bea', 0, at(5300 + 312))).toBe(ANSWER_RESULT.OK);
+    expect(r.answer('cris', 0, at(5300 + 250))).toBe(ANSWER_RESULT.OK);
+    expect(r.allAnswered(new Set(IDS))).toBe(true); // el eliminado cuenta como respondido
+    r.reveal();
+    expect(r.results.entries.map((e) => [e.playerId, e.value, e.place, e.points, e.early])).toEqual([
+      ['cris', 250, 1, 3, false],
+      ['bea', 312, 2, 2, false],
+      ['ana', null, null, 0, true],
+    ]);
+    expect(r.results.points).toEqual({ cris: 3, bea: 2 });
+  });
+
+  it('en un duelo solo juegan los dos elegidos', () => {
+    const r = roundOf(['ana', 'bea']);
+    expect(r.answer('cris', 0, at(5400))).toBe(ANSWER_RESULT.NOT_ELIGIBLE);
   });
 });
