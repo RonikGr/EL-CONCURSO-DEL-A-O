@@ -4,8 +4,8 @@ Pulsador de concurso con móviles, estilo Kahoot. La pantalla del presentador se
 conectado por HDMI); cada jugador usa su móvil como pulsador, sin instalar nada. Web 100 % estática
 (GitHub Pages) con WebRTC mediante [PeerJS](https://peerjs.com/).
 
-> Estado: **fase 2** — sala, QR, jugadores, reconexión y flujo completo del pulsador (gana quien llega antes).
-> La sincronización de relojes (gana quien pulsó antes de verdad) llega en la fase 3.
+> Estado: **fase 3** — sala, QR, jugadores, reconexión, flujo completo del pulsador y relojes sincronizados:
+> gana quien pulsó antes, no quien tiene mejor conexión. Falta la fase 4 (pulido visual, sonido, wake lock).
 
 ## Cómo se juega
 
@@ -25,6 +25,48 @@ conectado por HDMI); cada jugador usa su móvil como pulsador, sin instalar nada
 
 En **Ajustes** se cambian los puntos por acierto y por fallo (negativos para restar), el umbral de casi empate,
 la ventana de decisión y la apertura programada. Los botones +/− de cada tarjeta corrigen el marcador a mano.
+La tecla **D** (o el botón «Depuración») abre el panel con los relojes y los tiempos de cada pulsación.
+
+## Justicia en los tiempos
+
+Cada móvil tiene una conexión distinta: uno puede tardar 5 ms en hacer llegar su pulsación y otro 150 ms
+(los móviles en ahorro de energía responden lento a la wifi). Si ganara quien **llega** antes, ganaría el de mejor
+conexión. Por eso:
+
+1. **Sincronización de relojes.** Al conectar, cada 15 s y al volver a primer plano, el móvil intercambia mensajes con
+   el presentador al estilo NTP: anota cuándo sale cada mensaje y cuándo vuelve, y el presentador cuándo llega y
+   cuándo contesta. Con 10 muestras se queda con las 3 más rápidas (las que no se han quedado esperando en la red) y
+   calcula la diferencia entre los dos relojes (*offset*).
+2. **La pulsación lleva su hora.** El móvil manda el instante exacto en que el dedo tocó la pantalla
+   (`event.timeStamp`), traducido al reloj del presentador.
+3. **Ventana de decisión.** El presentador espera 150 ms tras la primera pulsación que llega antes de declarar
+   ganador, para que entren pulsaciones anteriores que viajaban más despacio. Luego ordena por la hora de pulsación.
+4. **Apertura programada.** «Abrir turno» se programa 300 ms en el futuro y cada móvil lo traduce a su reloj: la tele
+   y todos los móviles cambian a «¡Pulsad!» a la vez, sin que el de peor conexión lo vea más tarde.
+
+### Límites y margen de error
+
+| Fuente de error | Magnitud típica | ¿Se corrige? |
+|---|---|---|
+| Asimetría de la red al sincronizar (ida ≠ vuelta) | wifi: ±1–5 ms (peor caso ±10 ms) | Se acota: el error nunca supera la mitad del RTT de la mejor muestra; el panel D lo muestra por jugador |
+| **Pantalla táctil y sistema** (del dedo al evento) | 10–60 ms, distinto en cada modelo | **No**: el navegador no puede saberlo. Es la mayor fuente de error |
+| Resolución del reloj del navegador | 0,1–1 ms | Despreciable |
+| Deriva entre relojes | < 1 ms entre resincronizaciones | Sí (resincronización cada 15 s) |
+| Móvil bloqueado / app en segundo plano | El reloj puede pararse | Resincroniza al volver |
+| Pulsación que llega más de 150 ms tarde | Rara en wifi | Entra en la lista, pero no quita el puesto al ganador; el panel D la marca |
+
+**En la práctica:** con todos en la misma wifi, el orden es fiable cuando la diferencia supera **30–50 ms**. Por
+debajo de eso decide más el hardware de cada móvil que el jugador: por eso se marca «casi empate» por debajo de
+30 ms. Sin sincronizar, ordenando por llegada, el sesgo entre un móvil rápido y uno lento era de 50–200 ms.
+
+### ¿Se puede hacer trampa?
+
+Sí, y es fácil para quien sepa programar: la hora de la pulsación la pone el móvil. Abriendo la página de jugador
+en un ordenador, con una línea en la consola del navegador se puede enviar una pulsación con la hora adelantada.
+El presentador **recorta** lo físicamente imposible (una pulsación anterior a su llegada en más de 250 ms o del
+doble del RTT, o posterior a su llegada), así que la ventaja máxima de un tramposo queda en unos 250 ms, y el panel
+D marca esas pulsaciones como «recortadas». Impedirlo del todo es imposible sin confiar en el reloj del móvil:
+lo único que no se puede falsear es el orden de llegada, que es justo lo que no es justo. Entre amigos, suficiente.
 
 ## Requisitos
 
@@ -74,6 +116,12 @@ npm test
 ```
 
 Cubren la lógica que no depende de la red (`src/core`, `src/shared`).
+
+### Qué probar en la fase 3
+
+- Abrir el panel **D**: cada jugador debe mostrar «Error sinc.» de pocos ms y 10 o más muestras.
+- Pulsar con dos móviles casi a la vez: en el panel, «Pulsó» decide el orden aunque «Llegó» diga otra cosa.
+- Bloquear un móvil, desbloquearlo y comprobar que vuelve a sincronizar (las muestras empiezan de nuevo).
 
 ### Qué probar en la fase 2
 

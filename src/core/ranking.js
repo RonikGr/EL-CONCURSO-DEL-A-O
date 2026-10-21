@@ -31,6 +31,7 @@ export function rankBuzzes(buzzes, { winnerId = null, tOpen = 0, nearTieMs = 30 
       nearTie: i > 0 && Math.abs(deltaMs) < nearTieMs,
       // Pulsó antes que el ganador pero llegó después de cerrar la ventana (se ve en depuración).
       beatWinner: i > 0 && compareBuzz(b, winner) < 0,
+      meta: b.meta ?? null,
     };
   });
 }

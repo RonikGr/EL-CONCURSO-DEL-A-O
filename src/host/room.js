@@ -29,6 +29,8 @@ export class HostRoom extends EventTarget {
     this.game = new QuestionEngine(this.settings, { qid });
     this.network = { state: 'connecting', message: '' };
     this.rtt = new Map();
+    this.sync = new Map(); // playerId → último syncReport del móvil
+    this.lastRound = null; // última ronda con pulsaciones, para el modo depuración
     this.source = new PeerSource({
       roomCode: code,
       handlers: {
@@ -39,6 +41,10 @@ export class HostRoom extends EventTarget {
         onHello: (playerId, msg) => this.#onHello(playerId, msg),
         onProfile: (playerId, msg) => this.#onProfile(playerId, msg),
         onBuzz: (playerId, msg) => this.#onBuzz(playerId, msg),
+        onSyncReport: (playerId, report) => {
+          this.sync.set(playerId, report);
+          this.#changed({ persist: false });
+        },
         onLeave: (playerId) => this.#onLeave(playerId),
         onRtt: (playerId, ms) => {
           this.rtt.set(playerId, ms);
@@ -154,6 +160,7 @@ export class HostRoom extends EventTarget {
     this.source.kick(playerId, { code: ERROR_CODE.REMOVED, message: 'El presentador te ha quitado de la sala.' });
     this.roster.remove(playerId);
     this.rtt.delete(playerId);
+    this.sync.delete(playerId);
     this.game.unlock(playerId);
     this.#broadcastState();
     this.#changed();
@@ -189,7 +196,7 @@ export class HostRoom extends EventTarget {
   }
 
   #onBuzz(playerId, msg) {
-    const res = this.game.buzz({ playerId, tPress: msg.tPress, tArrival: msg.tArrival, epoch: msg.epoch });
+    const res = this.game.buzz({ playerId, tPress: msg.tPress, tArrival: msg.tArrival, epoch: msg.epoch, meta: msg.meta });
     this.source.sendTo(playerId, { t: MSG.BUZZ_ACK, seq: msg.seq, result: res.result });
     if (res.windowEndsAt != null && !this.#windowTimer) {
       this.#windowTimer = setTimeout(() => this.#closeWindow(), Math.max(0, res.windowEndsAt - now()));
@@ -207,6 +214,7 @@ export class HostRoom extends EventTarget {
   #onLeave(playerId) {
     this.roster.setConnected(playerId, false);
     this.rtt.delete(playerId);
+    this.sync.delete(playerId);
     this.#broadcastState();
     this.#changed();
   }
@@ -238,8 +246,20 @@ export class HostRoom extends EventTarget {
   }
 
   #afterGameChange() {
+    const ranking = this.game.ranking();
+    if (ranking.length) this.lastRound = { qid: this.game.qid, tOpen: this.game.tOpen, decided: !!this.game.winnerId, ranking };
     this.#broadcastState();
     this.#changed();
+  }
+
+  /** Datos del modo depuración: relojes de cada jugador y tiempos de la última ronda. */
+  debugView() {
+    const players = this.roster.list().map((p) => ({ player: p, rtt: this.rtt.get(p.id) ?? null, sync: p.connected ? (this.sync.get(p.id) ?? null) : null }));
+    const round = this.lastRound && {
+      ...this.lastRound,
+      ranking: this.lastRound.ranking.map((r) => ({ ...r, player: this.roster.get(r.playerId) })).filter((r) => r.player),
+    };
+    return { players, round, settings: this.settings };
   }
 
   #clearTimers() {

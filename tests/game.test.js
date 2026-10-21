@@ -41,6 +41,16 @@ describe('flujo básico', () => {
     expect(g.winnerId).toBe('datos');
   });
 
+  it('una pulsación anterior que llega después de cerrar la ventana no quita el puesto, pero queda marcada', () => {
+    openAt1000();
+    press('wifi', 1510, 1515);
+    g.closeWindow(1665);
+    g.buzz({ playerId: 'lento', tPress: 1490, tArrival: 1700, epoch: g.epoch, meta: { source: 'synced' } });
+    const [first, second] = g.ranking();
+    expect(first.playerId).toBe('wifi');
+    expect(second).toMatchObject({ playerId: 'lento', beatWinner: true, meta: { source: 'synced' } });
+  });
+
   it('tras declarar ganador, las siguientes pulsaciones entran como seguidores', () => {
     openAt1000();
     press('a', 1500);
@@ -170,7 +180,7 @@ describe('vista del jugador', () => {
   it('recorre los estados de una pregunta', () => {
     expect(playerView(g, 'a', 0).status).toBe('wait');
     openAt1000();
-    expect(playerView(g, 'a', 1100)).toMatchObject({ status: 'go', opensInMs: 200 });
+    expect(playerView(g, 'a', 1100)).toMatchObject({ status: 'go', tOpen: 1300, opensInMs: 200 });
     press('a', 1500);
     press('b', 1520);
     expect(playerView(g, 'a', 1510).status).toBe('pressed');

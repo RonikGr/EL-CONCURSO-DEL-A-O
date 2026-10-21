@@ -10,6 +10,7 @@ import { HostRoom } from './room.js';
 import { clearSavedRoom, loadSavedRoom } from './persistence.js';
 import { createStage } from './stage.js';
 import { openSettingsDialog } from './settingsDialog.js';
+import { createDebugPanel } from './debugPanel.js';
 
 // Marca de esta pestaña: si se recarga, se recupera la sala sin preguntar.
 const TAB_KEY = 'concurso.host.tab';
@@ -18,6 +19,7 @@ const LOCAL_HOSTS = ['localhost', '127.0.0.1', '[::1]'];
 const app = $('#app');
 let room = null;
 let stage = null;
+const debug = createDebugPanel();
 const cards = new Map(); // playerId → elementos de su tarjeta
 
 const actions = {
@@ -123,7 +125,8 @@ function renderShell() {
       h(
         'footer',
         { class: 'toolbar' },
-        h('span', { class: 'hint' }, 'Teclas: Espacio abrir / siguiente · A acierto · F fallo · R reiniciar'),
+        h('span', { class: 'hint' }, 'Teclas: Espacio abrir / siguiente · A acierto · F fallo · R reiniciar · D depuración'),
+        h('button', { class: 'btn', onclick: () => debug.toggle(room) }, 'Depuración'),
         h('button', { class: 'btn', onclick: () => openSettingsDialog(room) }, 'Ajustes'),
         h('button', { class: 'btn', onclick: toggleFullscreen }, 'Pantalla completa'),
         h('button', { class: 'btn', onclick: confirmResetScores }, 'Marcadores a 0'),
@@ -131,6 +134,7 @@ function renderShell() {
       ),
     ),
     stage.overlay,
+    debug.root,
   );
 }
 
@@ -141,6 +145,7 @@ function render() {
   renderNetwork();
   stage.render(room);
   renderPlayers();
+  debug.render(room);
 }
 
 const NET_LABEL = {
@@ -279,6 +284,9 @@ document.addEventListener('keydown', (e) => {
       break;
     case 'KeyF':
       if (phase === PHASE.RESULT) actions.wrong();
+      break;
+    case 'KeyD':
+      debug.toggle(room);
       break;
   }
 });

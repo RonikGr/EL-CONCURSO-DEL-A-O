@@ -33,7 +33,7 @@ Ojo con PowerShell 5.1: `Get-Content`/`Set-Content` sin `-Encoding` rompen los a
 
 ## Arquitectura
 
-- `src/core/` — lógica pura, sin DOM ni red, con tests: roster de jugadores, (fase 2) máquina de estados de la pregunta y ranking, (fase 3) sincronización de reloj.
+- `src/core/` — lógica pura, sin DOM ni red, con tests: roster de jugadores, máquina de estados de la pregunta, ranking, sincronización de reloj y plausibilidad de marcas.
 - `src/shared/` — protocolo, código de sala, configuración PeerJS, apariencias, almacenamiento seguro.
 - `src/host/` — red del presentador, persistencia, interfaz para la tele. Las pulsaciones entran por "fuentes" (`sources/`): hoy móviles; fase 2 de la hoja de ruta: mandos (Gamepad API) con offset 0.
 - `src/player/` — red del jugador con reconexión, interfaz del botón, wake lock y vibración.
@@ -41,12 +41,12 @@ Ojo con PowerShell 5.1: `Get-Content`/`Set-Content` sin `-Encoding` rompen los a
 ### Protocolo (JSON por DataConnection fiable, campo `t` = tipo)
 
 Jugador → presentador: `hello {v, playerId, name, color, icon}`, `profile {name, color, icon}`, `hbAck {h0}`,
-`buzz {seq, epoch}` (fase 3 añadirá `tLocal, offset, err`), (fase 3) `sync {id, t0}`, `syncReport {offset, rtt, err}`.
+`buzz {seq, epoch, tLocal?, offset?, err?}` (sin offset → cuenta la llegada), `sync {id, t0}`, `syncReport {offset, err, rtt, samples}`.
 
 Presentador → jugador: `welcome {you, adjusted}`, `state {room, playerCount, minPlayers, taken, you, game, winner}`
 (foto completa y personalizada en cada cambio, para que reconectar sea trivial; `game` = `playerView()`),
-`hb {h0}` cada 2 s, `buzzAck {seq, result}`, `error {code, message}` (`room-full`, `version`, `removed`, `replaced`),
-(fase 3) `syncReply {id, t0, t1, t2}`.
+`hb {h0}` cada 2 s, `buzzAck {seq, result}`, `syncReply {id, t0, t1, t2}`,
+`error {code, message}` (`room-full`, `version`, `removed`, `replaced`).
 
 - Mismo `playerId` desde otra conexión (otra pestaña): la vieja recibe `replaced` y deja de reconectar; si no, se echarían mutuamente.
 - `?perfil=X` en la página del jugador usa otra identidad (clave de localStorage distinta): para probar varios jugadores en un navegador.
@@ -58,8 +58,10 @@ tras "Fallo" sin nadie más, `closed`. "Fallo" bloquea al ganador y abre una ron
 `epoch` crece con cada apertura, reinicio (R) y pregunta nueva; el móvil manda la época que veía al pulsar. Una pulsación
 de época vieja se descarta (`stale`, sin bloquear) salvo que caiga dentro del turno abierto ahora (`tPress ≥ tOpen`).
 El móvil envía también en "Espera": decide el presentador (antes de tiempo → bloqueo si la opción está activa).
-Fase 2: `tPress = tArrival` (orden de llegada); la fase 3 solo cambia cómo se calcula `tPress` en `peerSource.js`.
-Teclas de la tele: Espacio (abrir / siguiente), A (acierto), F (fallo), R (reiniciar pregunta).
+`tPress` lo calcula `peerSource.js` con `resolvePressTime()` (marca sincronizada, o llegada si el móvil aún no está sincronizado).
+Teclas de la tele: Espacio (abrir / siguiente), A (acierto), F (fallo), R (reiniciar pregunta), D (depuración).
+Los `<dialog>` se gestionan con el evento `submit` del formulario, no con `close`: Chrome no dispara `close`
+mientras la página no se pinta (ventana oculta o minimizada).
 
 - Latido: el presentador manda `hb` cada 2 s; RTT = mediana de los últimos 5. Sin respuesta en 6 s → desconectado.
   El jugador, si no recibe `hb` en 6 s, cierra y reconecta.
@@ -71,18 +73,25 @@ Teclas de la tele: Espacio (abrir / siguiente), A (acierto), F (fallo), R (reini
 
 ### Justicia en los tiempos (fase 3)
 
-Relojes con `performance.now()` en ambos lados; la pulsación usa `event.timeStamp` del `pointerdown`.
-Sincronización NTP iniciada por el móvil: ráfaga de 10 muestras, se toman las 3 de menor RTT, mediana del offset,
-error ±rttMin/2; mini-ráfagas cada 15 s y ráfaga completa al reconectar o volver a primer plano.
-Apertura programada (`T_open = ahora + 300 ms`) para que tele y móviles cambien a la vez. Los móviles envían siempre
-la pulsación; el presentador decide con `tHost` frente a `T_open`. Ventana de 150 ms tras la primera llegada válida;
-orden por `tHost`, desempate por llegada y `playerId`; "casi empate" < 30 ms. Las marcas implausibles se recortan.
+- Relojes con `performance.now()` en ambos lados (monótono); la pulsación usa `event.timeStamp` del `pointerdown`
+  (instante del toque, no de la ejecución del manejador; si cae a >1 s de `performance.now()` se usa este).
+- `src/core/clockSync.js`: NTP iniciado por el móvil. Ráfaga de 10 muestras cada 60 ms al conectar, mini-ráfaga de 4
+  cada 15 s y completa al volver a primer plano. Ventana de 24 muestras de ≤ 90 s; se toman las 3 de menor RTT,
+  mediana del offset, `err = rttMin/2`. Se reinicia en cada conexión (el presentador pudo recargar: su reloj empieza de 0).
+  `player/syncClient.js` lo ejecuta; el presentador contesta `syncReply` en cuanto llega `sync` (t1 = llegada, t2 = salida).
+- `src/core/plausibility.js`: `tPress = tLocal + offset`, recortado a `tArrival` si dice ser posterior a la llegada (más de
+  max(10 ms, err)) y a `tArrival − max(250 ms, 2×RTT latido)` si dice ser demasiado anterior.
+- Apertura programada: el móvil sincronizado cambia a "¡PULSA!" en `tOpen − offset` (a la vez que la tele); sin
+  sincronizar, en `recepción + opensInMs`.
+- Ventana de 150 ms tras la primera llegada válida; orden por `tPress`, desempate por llegada y `playerId`.
+- Modo depuración (D): por jugador RTT del latido, offset, error y muestras; por ronda pulsó / llegó / red / origen.
+- Límites y trampas: ver README, "Justicia en los tiempos".
 
 ## Fases
 
 1. Conexión, sala, QR, lista de jugadores, reconexión, persistencia. ✔
 2. Flujo del pulsador (orden por llegada). ✔
-3. Sincronización de tiempos y modo depuración.
+3. Sincronización de tiempos y modo depuración. ✔
 4. Pulido visual, sonido, vibración, wake lock.
 
 Hoja de ruta posterior: mandos físicos (Gamepad API) y archivo de preguntas.

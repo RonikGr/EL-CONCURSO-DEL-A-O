@@ -2,6 +2,7 @@
 // con un latido y detecta caídas. La futura fuente de mandos (Gamepad API) expondrá los mismos eventos.
 import { HostNetwork } from '../network.js';
 import { RttTracker } from '../../core/latency.js';
+import { resolvePressTime } from '../../core/plausibility.js';
 import { ERROR_CODE, MSG, PROTOCOL_VERSION, parsePlayerMessage } from '../../shared/protocol.js';
 
 const HB_INTERVAL_MS = 2000;
@@ -20,7 +21,8 @@ export class PeerSource {
   /**
    * @param handlers.onHello(playerId, msg) → {ok: true} | {ok: false, error: {code, message}}
    * @param handlers.onProfile(playerId, msg)
-   * @param handlers.onBuzz(playerId, {seq, epoch, tPress, tArrival}) — tiempos en el reloj del presentador
+   * @param handlers.onBuzz(playerId, {seq, epoch, tPress, tArrival, meta}) — tiempos en el reloj del presentador
+   * @param handlers.onSyncReport(playerId, {offset, err, rtt, samples})
    * @param handlers.onLeave(playerId)
    * @param handlers.onRtt(playerId, ms)
    * @param handlers.onStatus({state, message})
@@ -75,9 +77,24 @@ export class PeerSource {
     if (!entry.playerId) return; // nada antes del hello
 
     switch (msg.t) {
-      case MSG.BUZZ:
-        // Fase 2: sin sincronización de relojes, la pulsación cuenta en el instante en que llega.
-        this.handlers.onBuzz?.(entry.playerId, { ...msg, tPress: tArrival, tArrival });
+      case MSG.SYNC:
+        // Contestar ya: t1 = llegada, t2 = salida. Cuanto menos tiempo pase aquí, mejor.
+        this.#network.send(connId, { t: MSG.SYNC_REPLY, id: msg.id, t0: msg.t0, t1: tArrival, t2: now() });
+        break;
+      case MSG.BUZZ: {
+        const rtt = entry.rtt.median();
+        const press = resolvePressTime({ tLocal: msg.tLocal, offset: msg.offset, err: msg.err, tArrival, rtt });
+        this.handlers.onBuzz?.(entry.playerId, {
+          seq: msg.seq,
+          epoch: msg.epoch,
+          tPress: press.tPress,
+          tArrival,
+          meta: { source: press.source, claimed: press.claimed, tLocal: msg.tLocal, offset: msg.offset, err: msg.err, rtt },
+        });
+        break;
+      }
+      case MSG.SYNC_REPORT:
+        this.handlers.onSyncReport?.(entry.playerId, msg);
         break;
       case MSG.HB_ACK:
         entry.rtt.add(tArrival - msg.h0);

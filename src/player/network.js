@@ -188,14 +188,15 @@ export class PlayerConnection {
     });
     conn.on('data', (data) => {
       if (!current()) return;
-      this.#lastSeen = performance.now();
+      const tRecv = performance.now(); // lo primero: es t3 de la sincronización
+      this.#lastSeen = tRecv;
       const msg = parseHostMessage(data);
       if (!msg) return;
       if (msg.t === MSG.HB) {
         this.send({ t: MSG.HB_ACK, h0: msg.h0 });
         return;
       }
-      this.onMessage?.(msg);
+      this.onMessage?.(msg, tRecv);
     });
     conn.on('close', () => current() && this.#lost());
     conn.on('error', () => current() && this.#lost());

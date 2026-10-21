@@ -8,6 +8,7 @@ import { loadJSON, newId, saveJSON } from '../shared/storage.js';
 import { formatDeltaSeconds, formatSeconds } from '../shared/format.js';
 import { PlayerConnection } from './network.js';
 import { createProfilePicker } from './profilePicker.js';
+import { SyncClient } from './syncClient.js';
 
 // `?perfil=2` usa otra identidad: para probar varios jugadores en pestañas del mismo navegador.
 const profileSlot = new URLSearchParams(location.search).get('perfil');
@@ -25,6 +26,12 @@ let pressedEpoch = null; // época en la que ya pulsé
 let buzzSeq = 0;
 let goTimer = null;
 let lastShownStatus = null;
+
+const sync = new SyncClient({ send: (msg) => connection?.send(msg) ?? false });
+// Al volver a primer plano el reloj puede haberse parado (iOS lo hace con la pantalla bloqueada): resincronizar.
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && connection?.connected) sync.burst();
+});
 
 const joinPicker = createProfilePicker(profile);
 const editPicker = createProfilePicker(profile);
@@ -96,8 +103,10 @@ function join(code) {
 
   connection = new PlayerConnection({
     roomCode: code,
-    onOpen: () =>
-      connection.send({ t: MSG.HELLO, v: PROTOCOL_VERSION, playerId: profile.playerId, name: profile.name, color: profile.color, icon: profile.icon }),
+    onOpen: () => {
+      connection.send({ t: MSG.HELLO, v: PROTOCOL_VERSION, playerId: profile.playerId, name: profile.name, color: profile.color, icon: profile.icon });
+      sync.start(); // después del hello: el presentador ignora todo lo anterior
+    },
     onMessage: handleMessage,
     onStatus: handleStatus,
   });
@@ -105,6 +114,7 @@ function join(code) {
 }
 
 function leave() {
+  sync.stop();
   connection?.stop();
   connection = null;
   me = null;
@@ -129,6 +139,7 @@ function handleStatus({ state, message }) {
       }
       break;
     case 'not-found':
+      sync.stop();
       writeSession(null);
       showJoin(`No encuentro la sala ${roomCode}. Revisa el código y que el presentador tenga la sala abierta.`);
       break;
@@ -136,11 +147,15 @@ function handleStatus({ state, message }) {
       showMessage('No se puede jugar en este navegador', message);
       break;
   }
+  if (state !== 'connected') sync.stop(); // al reconectar, onOpen la vuelve a arrancar desde cero
   document.body.classList.toggle('offline', state !== 'connected');
 }
 
-function handleMessage(msg) {
+function handleMessage(msg, tRecv) {
   switch (msg.t) {
+    case MSG.SYNC_REPLY:
+      sync.handleReply(msg, tRecv);
+      break;
     case MSG.WELCOME: {
       const firstTime = !me;
       me = msg.you;
@@ -173,6 +188,7 @@ function handleMessage(msg) {
 }
 
 function handleError(msg) {
+  sync.stop();
   connection?.stop();
   connection = null;
   me = null;
@@ -197,13 +213,21 @@ function renderMe() {
   $('#me-score').textContent = me.score;
 }
 
+/**
+ * Instante local en que empieza el turno. Sincronizado: el `tOpen` del presentador traducido a este reloj
+ * (todos los móviles cambian a la vez). Sin sincronizar: cuenta atrás desde que llegó el estado.
+ */
+function localOpenTime(g) {
+  return sync.toLocal(g.tOpen) ?? stateReceivedAt + (g.opensInMs ?? 0);
+}
+
 /** Estado que se ve ahora: el del presentador, más "preparados" (apertura programada) y "pulsado" local. */
 function displayedStatus() {
   const g = lastState?.game;
   if (!g) return 'wait';
   if (g.status === 'go') {
     if (pressedEpoch === g.epoch) return 'pressed'; // optimista: no esperar al presentador
-    if (stateReceivedAt + (g.opensInMs ?? 0) > performance.now()) return 'ready';
+    if (localOpenTime(g) > performance.now()) return 'ready';
   }
   return g.status;
 }
@@ -216,7 +240,7 @@ function renderBuzzer() {
   const status = displayedStatus();
   if (status === 'ready') {
     // Cambiar a "¡PULSA!" justo cuando empieza el turno.
-    goTimer = setTimeout(renderBuzzer, stateReceivedAt + g.opensInMs - performance.now());
+    goTimer = setTimeout(renderBuzzer, localOpenTime(g) - performance.now());
   }
   if (status === 'first' && lastShownStatus !== 'first') vibrate([80, 60, 80]);
   lastShownStatus = status;
@@ -253,7 +277,12 @@ buzzer.addEventListener('pointerdown', (e) => {
   if (!g || !connection?.connected || !['wait', 'ready', 'go'].includes(status)) return;
   if (pressedEpoch === g.epoch) return; // una pulsación por ronda
   pressedEpoch = g.epoch;
-  connection.send({ t: MSG.BUZZ, seq: ++buzzSeq, epoch: g.epoch });
+  // event.timeStamp = cuándo tocó el dedo la pantalla (no cuándo se ejecuta este código), en el reloj de
+  // performance.now(). Si un navegador antiguo usara otra base, se nota porque cae lejos de ahora.
+  const now = performance.now();
+  const tLocal = Math.abs(now - e.timeStamp) < 1000 ? e.timeStamp : now;
+  const clock = sync.estimate();
+  connection.send({ t: MSG.BUZZ, seq: ++buzzSeq, epoch: g.epoch, tLocal, offset: clock?.offset, err: clock?.err });
   vibrate(30);
   renderBuzzer();
 });
@@ -277,8 +306,11 @@ $('#edit-profile').addEventListener('click', () => {
   editPicker.value = { ...profile, color: me?.color ?? profile.color, icon: me?.icon ?? profile.icon };
   dialog.showModal();
 });
-dialog.addEventListener('close', () => {
-  if (dialog.returnValue !== 'save') return;
+// 'submit' y no 'close': Chrome no dispara 'close' mientras la página no se pinta.
+$('#profile-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  dialog.close();
+  if (e.submitter?.value !== 'save') return;
   const value = editPicker.value;
   Object.assign(profile, value);
   saveProfile();

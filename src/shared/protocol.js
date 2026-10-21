@@ -7,11 +7,14 @@ export const MSG = {
   PROFILE: 'profile',
   HB_ACK: 'hbAck',
   BUZZ: 'buzz',
+  SYNC: 'sync',
+  SYNC_REPORT: 'syncReport',
   // presentador → jugador
   WELCOME: 'welcome',
   STATE: 'state',
   HB: 'hb',
   BUZZ_ACK: 'buzzAck',
+  SYNC_REPLY: 'syncReply',
   ERROR: 'error',
 };
 
@@ -52,7 +55,21 @@ export function parsePlayerMessage(msg) {
     case MSG.HB_ACK:
       return isNum(msg.h0) ? { t: msg.t, h0: msg.h0 } : null;
     case MSG.BUZZ:
-      return isNum(msg.seq) && isNum(msg.epoch) ? { t: msg.t, seq: msg.seq, epoch: msg.epoch } : null;
+      if (!isNum(msg.seq) || !isNum(msg.epoch)) return null;
+      return {
+        t: msg.t,
+        seq: msg.seq,
+        epoch: msg.epoch,
+        // Sin sincronizar aún: el presentador usará la hora de llegada.
+        tLocal: isNum(msg.tLocal) ? msg.tLocal : undefined,
+        offset: isNum(msg.offset) ? msg.offset : undefined,
+        err: isNum(msg.err) ? msg.err : undefined,
+      };
+    case MSG.SYNC:
+      return isNum(msg.id) && isNum(msg.t0) ? { t: msg.t, id: msg.id, t0: msg.t0 } : null;
+    case MSG.SYNC_REPORT:
+      if (!isNum(msg.offset) || !isNum(msg.err)) return null;
+      return { t: msg.t, offset: msg.offset, err: msg.err, rtt: isNum(msg.rtt) ? msg.rtt : msg.err * 2, samples: isNum(msg.samples) ? msg.samples : 0 };
     default:
       return null;
   }
@@ -71,6 +88,8 @@ export function parseHostMessage(msg) {
       return typeof msg.code === 'string' ? msg : null;
     case MSG.BUZZ_ACK:
       return isNum(msg.seq) && typeof msg.result === 'string' ? msg : null;
+    case MSG.SYNC_REPLY:
+      return isNum(msg.id) && isNum(msg.t0) && isNum(msg.t1) && isNum(msg.t2) ? msg : null;
     default:
       return null;
   }

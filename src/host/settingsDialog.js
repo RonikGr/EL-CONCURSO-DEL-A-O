@@ -50,8 +50,14 @@ export function openSettingsDialog(room) {
     ),
   );
   const dialog = h('dialog', { class: 'settings-dialog' }, form);
-  dialog.addEventListener('close', () => {
-    if (dialog.returnValue === 'save') {
+  const dismiss = () => {
+    dialog.close();
+    dialog.remove();
+  };
+  // Se usa 'submit' y no 'close': Chrome no dispara 'close' mientras la página no se pinta (ventana oculta).
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    if (e.submitter?.value === 'save') {
       const patch = {};
       for (const [key, { input, field }] of inputs) {
         if (field.type === 'checkbox') patch[key] = input.checked;
@@ -62,7 +68,11 @@ export function openSettingsDialog(room) {
       }
       room.updateSettings(patch);
     }
-    dialog.remove();
+    dismiss();
+  });
+  dialog.addEventListener('cancel', (e) => {
+    e.preventDefault(); // Escape
+    dismiss();
   });
   document.body.append(dialog);
   dialog.showModal();

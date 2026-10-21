@@ -564,6 +564,81 @@ kbd {
   color: var(--text);
 }
 
+/* --- Depuración (tecla D) --- */
+.debug-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  width: min(46rem, 100vw);
+  overflow: auto;
+  padding: 1rem 1.25rem;
+  background: rgb(11 13 23 / 0.96);
+  border-left: 2px solid var(--border);
+  font-size: 0.85rem;
+  box-shadow: -1rem 0 2rem rgb(0 0 0 / 0.4);
+}
+
+.debug-panel header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.debug-panel h2 {
+  margin: 0;
+  font-size: 1.4rem;
+}
+
+.debug-panel h3 {
+  margin: 1.2rem 0 0.5rem;
+  font-size: 1.05rem;
+  color: var(--accent);
+}
+
+.debug-panel table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.debug-panel th,
+.debug-panel td {
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.debug-panel th {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.debug-panel tr.dim {
+  opacity: 0.5;
+}
+
+.debug-panel .warn {
+  color: var(--warn);
+}
+
+.dbg-who {
+  white-space: nowrap;
+}
+
+.dbg-key,
+.dbg-help,
+.dbg-empty {
+  color: var(--muted);
+}
+
+.dbg-help {
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+}
+
 /* --- Ajustes --- */
 .settings-dialog {
   width: min(40rem, calc(100vw - 2rem));

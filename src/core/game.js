@@ -56,7 +56,7 @@ export class QuestionEngine {
    * @returns {{result: string, locked?: boolean, windowEndsAt?: number}}
    * Si `windowEndsAt` viene, el presentador debe llamar a `closeWindow` en ese instante.
    */
-  buzz({ playerId, tPress, tArrival, epoch }) {
+  buzz({ playerId, tPress, tArrival, epoch, meta = null }) {
     if (this.lockouts.has(playerId)) return { result: BUZZ.LOCKED };
 
     // Pulsación hecha con una época vieja: solo vale si cae dentro del turno abierto ahora
@@ -74,7 +74,7 @@ export class QuestionEngine {
     if (!accepting) return { result: BUZZ.CLOSED };
     if (this.buzzes.some((b) => b.playerId === playerId)) return { result: BUZZ.DUPLICATE };
 
-    this.buzzes.push({ playerId, tPress, tArrival });
+    this.buzzes.push({ playerId, tPress, tArrival, meta }); // meta: datos para el modo depuración
     // La ventana arranca con la primera LLEGADA válida: da tiempo a que entren pulsaciones anteriores más lentas.
     if (this.phase === PHASE.OPEN && this.windowEndsAt == null) {
       this.windowEndsAt = tArrival + this.settings.decisionWindowMs;
@@ -149,7 +149,8 @@ export function playerView(game, playerId, now) {
       return { ...base, status: 'wait' };
     case PHASE.OPEN: {
       if (game.buzzes.some((b) => b.playerId === playerId)) return { ...base, status: 'pressed' };
-      return { ...base, status: 'go', opensInMs: Math.max(0, game.tOpen - now) };
+      // tOpen (reloj del presentador) para móviles sincronizados; opensInMs como respaldo.
+      return { ...base, status: 'go', tOpen: game.tOpen, opensInMs: Math.max(0, game.tOpen - now) };
     }
     case PHASE.RESULT: {
       const entry = game.ranking().find((r) => r.playerId === playerId);
