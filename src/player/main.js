@@ -115,6 +115,44 @@ function show(id) {
   for (const s of document.querySelectorAll('.screen')) s.hidden = s.id !== id;
 }
 
+// ---------- Bienvenida ----------
+
+// Al entrar en una sala (ya con equipo, cara o icono y color): «¡Hola, Rodri!» con su foto o su icono en grande. Unos
+// segundos (o un toque en «¡Vamos!») y al juego. Una vez por sala.
+const WELCOME_MS = 4500;
+let welcomedRoom = null;
+let welcomeTimer = 0;
+
+function showWelcome(state) {
+  welcomedRoom = state.room;
+  const color = getColor(me.color);
+  const avatar = $('#welcome-avatar');
+  avatar.style.setProperty('--wc', color.bg);
+  avatar.classList.toggle('has-face', !!me.face);
+  avatar.replaceChildren(avatarOf(me));
+  $('#welcome-name').textContent = `¡Hola, ${me.name}!`;
+  const team = state.teams?.find((t) => t.id === me.teamId);
+  $('#welcome-sub').textContent = [
+    'Ya estás en el concurso',
+    team ? `con ${team.name}` : null,
+    me.face ? '· juegas con tu foto' : null,
+  ]
+    .filter(Boolean)
+    .join(' ');
+  show('screen-welcome');
+  vibrate([40, 40, 40]);
+  clearTimeout(welcomeTimer);
+  welcomeTimer = setTimeout(endWelcome, WELCOME_MS);
+}
+
+function endWelcome() {
+  clearTimeout(welcomeTimer);
+  welcomeTimer = 0;
+  if (!$('#screen-welcome').hidden) show('screen-game');
+}
+
+$('#welcome-go').addEventListener('click', endWelcome);
+
 function showJoin(error = '') {
   show('screen-join');
   $('#join-error').textContent = error;
@@ -294,9 +332,13 @@ function handleMessage(msg, tRecv) {
         else renderBuzzer();
       }
       // Con equipos, quien aún no tiene uno tiene que elegirlo antes de nada; luego, icono y color si no hay foto.
-      if (msg.teams?.length && !me.teamId && !teamRequested) showTeamPicker(msg.teams);
-      else if (needsLook()) showLook(msg);
-      else if ($('#screen-game').hidden) show('screen-game');
+      if (msg.teams?.length && !me.teamId) {
+        if (!teamRequested) showTeamPicker(msg.teams); // si ya lo pidió, se espera a que la tele lo confirme
+      } else if (needsLook()) showLook(msg);
+      else if (welcomedRoom !== msg.room) showWelcome(msg);
+      else if (welcomeTimer) {
+        // sigue la bienvenida: que no la tape el juego
+      } else if ($('#screen-game').hidden) show('screen-game');
       break;
     }
     case MSG.ANSWER_ACK: {

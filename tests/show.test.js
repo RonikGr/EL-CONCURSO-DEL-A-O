@@ -247,6 +247,38 @@ describe('lectura del libro', () => {
     expect(cultura.items.map((q) => q.level)).toEqual(['easy', 'medium', 'hard', null]);
   });
 
+  it('la fila de ayuda de la plantilla no cuenta y la sección vacía es la única de su tipo', () => {
+    const { show, errors } = parseShowWorkbook(
+      workbook({
+        Concurso: [
+          ['Sección', 'Tipo'],
+          ['↳ Nombre que se verá en la tele', '↳ Elige el tipo'],
+          ['Cultura', 'Test'],
+          ['Votos 1', 'Votación'],
+          ['Votos 2', 'Votación'],
+        ],
+        Test: [
+          ['Pregunta', 'A', 'B', 'Correcta', 'Sección'],
+          ['↳ La pregunta tal cual', '↳ Respuestas', null, '↳ Letra', '↳ Vacía = la única sección de este tipo'],
+          ['¿1?', 'x', 'y', 'A', null],
+        ],
+        Votación: [
+          ['Pregunta', 'Sección'],
+          ['¿Quién…?', null],
+          ['¿Quién más…?', 'Votos 2'],
+        ],
+        Pulsador: null,
+        Contador: null,
+      }),
+    );
+    expect(show.sections.map((x) => x.name)).toEqual(['Cultura', 'Votos 1', 'Votos 2']);
+    expect(show.sections[0].items).toHaveLength(1);
+    expect(show.sections[2].items).toHaveLength(1);
+    expect(errors).toEqual([
+      { sheet: 'Votación', row: 2, message: 'Escribe en la columna "Sección" a cuál pertenece: hay 2 secciones de tipo ¿Quién es más probable…? (Votos 1, Votos 2).' },
+    ]);
+  });
+
   it('un entorno desconocido solo avisa', () => {
     const { show, errors, warnings } = parseShowWorkbook(
       workbook({

@@ -140,6 +140,13 @@ function colorByName(value) {
  * @param columns {clave: [alias normalizados]}
  * @returns {rows: [{row, values: {clave: celda}}], missing: [clave]}
  */
+/** Fila de ayuda de la plantilla (explica cada columna): su primera celda con texto empieza por «↳». */
+export const HELP_MARK = '↳';
+const isHelpRow = (cells) => {
+  const first = cells.find((c) => !isEmpty(c));
+  return typeof first === 'string' && first.trim().startsWith(HELP_MARK);
+};
+
 function readTable(data, columns) {
   const headerIndex = data.findIndex((r) => r?.some((c) => !isEmpty(c)));
   if (headerIndex < 0) return { rows: [], missing: Object.keys(columns) };
@@ -155,6 +162,7 @@ function readTable(data, columns) {
   for (let r = headerIndex + 1; r < data.length; r++) {
     const cells = data[r] ?? [];
     if (!cells.some((c) => !isEmpty(c))) continue;
+    if (isHelpRow(cells)) continue; // la fila de ayuda de la plantilla, debajo de los títulos
     const values = {};
     for (const [key, i] of Object.entries(colOf)) values[key] = cells[i] ?? null;
     rows.push({ row: r + 1, values }); // fila tal como la numera Excel
@@ -372,10 +380,25 @@ export function parseShowWorkbook(sheets) {
     const sheet = findSheet(sheets, info.sheet);
     if (!sheet) continue;
     const { rows } = readTable(sheet.data, COLUMNS[type]);
+    // Sección vacía: la única de ese tipo (lo normal: así no hay que escribirla en cada fila)
+    const ofType = sections.filter((s) => s.type === type);
     for (const { row, values } of rows) {
-      const section = sectionByName.get(norm(values.section));
+      let section = sectionByName.get(norm(values.section));
+      if (isEmpty(values.section)) {
+        if (ofType.length === 1) section = ofType[0];
+        else {
+          err(
+            info.sheet,
+            row,
+            ofType.length
+              ? `Escribe en la columna "Sección" a cuál pertenece: hay ${ofType.length} secciones de tipo ${info.label} (${ofType.map((s) => s.name).join(', ')}).`
+              : `No hay ninguna sección de tipo ${info.label} en la pestaña Concurso: añádela allí.`,
+          );
+          continue;
+        }
+      }
       if (!section) {
-        err(info.sheet, row, isEmpty(values.section) ? 'Falta la columna "Sección" (a qué sección pertenece esta fila).' : `No hay ninguna sección "${text(values.section)}" en la pestaña Concurso.`);
+        err(info.sheet, row, `No hay ninguna sección "${text(values.section)}" en la pestaña Concurso.`);
         continue;
       }
       if (section.type !== type) {

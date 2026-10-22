@@ -6,7 +6,7 @@
 import { bell, bubble, crackle, mtof, noiseHit, owl, snare, thump, tone } from './synth.js';
 import { MOODS, STYLES } from './music.js';
 import { LADDER_SCENES, SFX_SLOT } from './tracks.js';
-import { MILLIONAIRE_CUES } from '../../core/millionaireMusic.js';
+import { getCues } from './cueSettings.js';
 
 const CROSSFADE = 0.7; // s (constante de tiempo del fundido entre estilos)
 const CUE_LEVEL = 0.75; // volumen de las canciones del millonario (como la música, sin reverberación)
@@ -299,6 +299,12 @@ class SoundEngine extends EventTarget {
     if (this.unlocked) this.#applyCue();
   }
 
+  /** Por dónde va (s) la canción del millonario que suena con esta `key`, o null si no es esa o aún no suena. */
+  cuePosition(key) {
+    const p = this.#cuePlay;
+    return p?.src && p.key === key ? this.#cuePos(p) : null;
+  }
+
   /** ¿Suenan ahora las canciones del millonario? (entonces sobran algunos efectos generados) */
   get cueActive() {
     return this.#cueHeld;
@@ -376,7 +382,7 @@ class SoundEngine extends EventTarget {
       src.loopEnd = cue.loop[1];
     }
     const g = c.createGain();
-    const level = 10 ** ((MILLIONAIRE_CUES[cue.track]?.gainDb ?? 0) / 20);
+    const level = 10 ** ((getCues()[cue.track]?.gainDb ?? 0) / 20);
     // desde el principio, de golpe; a mitad de canción, un fundido cortísimo para que no chasque
     if (cue.from > 0.05) {
       g.gain.value = 0;
@@ -386,7 +392,7 @@ class SoundEngine extends EventTarget {
     }
     src.connect(g).connect(this.cueBus);
     const from = Math.max(0, Math.min(cue.from, buf.duration - 0.05));
-    const end = MILLIONAIRE_CUES[cue.track]?.end;
+    const end = getCues()[cue.track]?.end;
     if (!cue.loop && end > from) src.start(t, from, end - from);
     else src.start(t, from);
     const play = { key: cue.key, track: cue.track, src, g, t0: t, from, loop: cue.loop, after: cue.after };

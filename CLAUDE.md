@@ -255,7 +255,12 @@ mientras la página no se pinta (ventana oculta o minimizada).
   punto y, al acabar una sin bucle, toca `after` (el colchón desde el bucle). Por la tele recargada a mitad: `from` se
   calcula con lo que queda del comodín. Con canciones sobran la campana, el acierto y el golpe generados. «Cómo se juega»:
   tras el título de una sección de Test, `next` pasa primero a `introRules` (sala `#rulesFor`; `prev` vuelve al título).
-  La ventana de música tiene «▶» para escuchar cada punto (`sound.previewCue`).
+  La ventana de música tiene «▶» para escuchar cada punto (`sound.previewCue`) y «⏱ Ajustar tiempos» por canción
+  (`CUE_FIELDS`, `cueFieldsOf`): cada punto con su valor, ±0,1 s y «▶» que suena desde 2 s antes con una cuenta
+  «2… 1… ¡Ahora!» que sigue la posición real (`sound.cuePosition(key)`). Los ajustes van a localStorage
+  (`fx/cueSettings.js`, `concurso.millonario.puntos.v1`) y `applyCueOverrides` los aplica sobre `MILLIONAIRE_CUES`:
+  `getCues()` lo usan el realizador (`millionaireCue(v, ahora, cues)`) y audio.js. «📋 Copiar ajustes» los da en
+  texto para dejarlos fijos en el código.
 - **Carpeta del concurso** (`core/folder.js` `classifyFolder`, puro con tests; `host/contestFolder.js`): hoja .xlsx en la
   raíz, `Millonario/`, `Caras/`, `Música/<Momento>/` y `Música/<Sección>/<Momento>/` (nombres sin tildes ni mayúsculas).
   Con File System Access (Chrome/Edge) el handle se guarda en IndexedDB (`concurso-carpeta`) para «Volver a leer» con
@@ -267,7 +272,9 @@ mientras la página no se pinta (ventana oculta o minimizada).
   a móviles y mandos. `avatarOf(p)` (shared/appearance.js) pinta la cara o el icono en todas partes.
 - **Entrar en el móvil:** primero código y nombre; si hay foto con ese nombre, juega con su cara; si no, tras el equipo
   elige icono y color (`screen-look`, una vez por móvil: `profile.lookChosen`). El ✏️ deja cambiar el nombre solo en
-  preparación (la tele lo ignora después) y tiene «Salir y entrar en otra sala».
+  preparación (la tele lo ignora después) y tiene «Salir y entrar en otra sala». Al entrar (ya con equipo y aspecto),
+  bienvenida «¡Hola, Rodri!» con su foto o su icono en grande (`screen-welcome`, 4,5 s o «¡Vamos!»; una vez por sala y
+  por carga de la página); con equipos se espera a que la tele confirme el equipo.
 - **Efectos** (`fx/audio.js`, Web Audio): whoosh, gong, ¡pulsad!, pulsación, acierto, fallo, tictac, cuenta atrás,
   campana, redoble, revelado, trueno, fanfarria. Ajustes `musicOn`, `sfxOn`, `volume` (en Ajustes de la tele y en el mando, pestaña Secciones). El
   navegador no deja sonar nada hasta un toque: la tele muestra «🔊 Activar sonido» hasta la primera tecla o clic.
@@ -320,8 +327,12 @@ mientras la página no se pinta (ventana oculta o minimizada).
 - **Equipos:** se eligen al entrar; antes de empezar, pantalla de comprobación y "Equipos cerrados" (solo el
   presentador puede mover a alguien después). Puntos individuales visibles; equipo = suma de sus miembros + puntos
   dados al equipo entero.
-- **Contenido:** hoja de cálculo `.xlsx` (plantilla con una pestaña por tipo de sección + Concurso, Equipos,
-  Ajustes, Instrucciones), importada en el portátil con validación por fila.
+- **Contenido:** hoja de cálculo `.xlsx` (plantilla con «Empieza aquí», Concurso, Equipos, Ajustes y una pestaña por
+  tipo de sección), importada en el portátil con validación por fila. Debajo de los títulos, una fila de ayuda azul que
+  explica cada columna: empieza por «↳» (`HELP_MARK`) y la lectura la salta. La columna «Sección» de las preguntas va
+  al final y vacía = la única sección de ese tipo (si hay varias, error que las nombra). En Concurso, «Sus preguntas, en
+  la pestaña» es una fórmula (la lectura no la mira). Formato condicional: la respuesta buena del Test en verde, la
+  dificultad en colores, Verdad/Mentira y la frase falsa de Dos verdades.
 - **Música:** sin Spotify (descartado): la pone el presentador aparte. Las columnas "Música de entrada", "Canción" y
   "Desde segundo" ya no están en la plantilla; si una hoja antigua las trae, se leen pero no se usan.
 - **Secciones:**

@@ -9,6 +9,7 @@ import { PHASE } from '../../core/game.js';
 import { APHASE, isChoice } from '../../core/answers.js';
 import { FPHASE } from '../../core/free.js';
 import { millionaireCue } from '../../core/millionaireMusic.js';
+import { getCues } from './cueSettings.js';
 
 /** Entorno de una vista: el de la sección en juego; preparación, portada y final, la noche de luna. */
 export function envFor(view) {
@@ -112,6 +113,7 @@ export function createDirector({ backdrop }) {
           millionaire: view.millionaire,
         },
         performance.now(),
+        getCues(),
       ),
     );
     const own = sound.cueActive; // las canciones ya traen sus golpes

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MILLIONAIRE_CUES, levelOf, millionaireCue, millionaireTrackFor, pointsForLevel, questionLevel } from '../src/core/millionaireMusic.js';
+import { MILLIONAIRE_CUES, levelOf, millionaireCue, millionaireTrackFor, pointsForLevel, questionLevel, applyCueOverrides, cueFieldsOf, cueValue } from '../src/core/millionaireMusic.js';
 
 const base = { sectionType: 'test', sectionIndex: 2, screen: 'play', itemIndex: 0, itemCount: 6, introRules: false };
 const m = (over = {}) => ({ roundId: 'r1', phase: 'playing', used: [], audience: null, call: null, result: null, ...over });
@@ -90,5 +90,19 @@ describe('música del millonario', () => {
       if (c.end && c.clockEnd) expect(c.end, id).toBeGreaterThan(c.clockEnd);
       if (c.end && c.voteEnd) expect(c.end, id).toBeGreaterThan(c.voteEnd);
     }
+  });
+
+  it('los tiempos se pueden ajustar a mano', () => {
+    expect(cueFieldsOf('call')).toEqual(['loop.0', 'loop.1', 'clockEnd', 'end', 'gainDb']);
+    expect(cueFieldsOf('theme')).toEqual(['end', 'gainDb']);
+    const cues = applyCueOverrides(MILLIONAIRE_CUES, { hard: { lock: 52, 'suspense.1': 69 }, call: { clockEnd: 45.1, nada: 3 }, otra: { lock: 1 } });
+    expect(cues.hard.lock).toBe(52);
+    expect(cues.hard.suspense).toEqual([MILLIONAIRE_CUES.hard.suspense[0], 69]);
+    expect(cueValue(cues.call, 'clockEnd')).toBe(45.1);
+    expect(MILLIONAIRE_CUES.hard.lock).not.toBe(52); // los de partida no cambian
+    // y la música los usa: con el reloj de la llamada movido, empieza 0,25 s más tarde
+    const v = { ...base, millionaire: m({ used: ['call'], call: { state: 'running', endsAt: 30_000 } }) };
+    expect(millionaireCue(v, 0, cues).from).toBeCloseTo(45.1 - 30);
+    expect(millionaireCue({ ...base, itemIndex: 5, millionaire: m({ phase: 'marked' }) }, 0, cues).from).toBe(52);
   });
 });

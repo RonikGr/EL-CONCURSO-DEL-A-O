@@ -14,8 +14,11 @@ conectado por HDMI); cada jugador usa su móvil como pulsador, sin instalar nada
 
 1. Descarga la plantilla: en la tele, pantalla de preparación → **Descargar plantilla** (o
    `public/plantilla-concurso.xlsx`). Ábrela con Excel o Google Sheets (para cargarla: Archivo → Descargar → .xlsx).
-2. Rellénala: pestaña **Concurso** (secciones en orden), **Equipos** (vacía = sin equipos), **Ajustes** y una
-   pestaña por tipo de sección. La pestaña **Instrucciones** lo explica, y trae un ejemplo de cada tipo.
+2. Rellénala: empieza por la pestaña **Empieza aquí** (4 pasos y qué es cada tipo de sección). En **Concurso**, una
+   fila por sección (la columna gris te dice en qué pestaña van sus preguntas); luego las preguntas en la pestaña de su
+   tipo, una por fila. Debajo de los títulos, una fila azul explica cada columna. La columna **Sección** de las
+   preguntas puede quedar vacía si solo hay una sección de ese tipo. En el Test la respuesta buena se pinta de verde.
+   Para cambiar algo, edita la celda y vuelve a cargarla.
 3. En la tele, **Cargar concurso** (o arrastra el archivo a la pantalla). Si algo está mal, dice la pestaña y la fila.
 4. Opcional: en la pestaña **Concurso**, la columna **Entorno** elige el decorado de cada sección (Cementerio, Bosque
    encantado, Huerto de calabazas, Laboratorio, Mansión encantada, Telaraña, Aquelarre, Cripta helada, Tormenta o
@@ -261,6 +264,10 @@ Cubren la lógica que no depende de la red (`src/core`, `src/shared`).
   bucle de suspense, y al acertar al golpe final (al fallar, silencio). La del público empieza donde hace falta para
   que su golpe caiga al acabar los 15 s; la de la llamada espera en bucle y, con el «ya», su golpe final cae a los 30 s.
   En **🎵 Música** se escucha cada punto con «▶». Sin ellas suena la música generada.
+  Si algún golpe o empalme no cae justo, **⏱ Ajustar tiempos** en esa canción: cada punto con su valor en segundos,
+  «−0,1 / +0,1» y «▶», que suena desde 2 s antes con una cuenta «2… 1… ¡Ahora!» (en «¡Ahora!» tiene que sonar el
+  golpe). Se guarda en el portátil; «↺» vuelve al valor de partida y «📋 Copiar ajustes» te los da en texto para que
+  queden fijos para siempre.
 - **Otras canciones:** en **🎵 Música** hay huecos por sección y efectos que suenan una vez (respuesta definitiva,
   acierto, fallo y cada comodín). Si pones varias canciones en «Jugando», «Pregunta abierta» o «Suspense» de una
   sección, van en escalera: la 1ª en la 1ª pregunta, la 2ª en la 2ª… (por orden de nombre: «1 - …», «2 - …»).
