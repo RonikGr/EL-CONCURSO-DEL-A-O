@@ -594,3 +594,12 @@ button.me-score {
   display: grid;
   gap: 0.5rem;
 }
+
+/* Conectando: por qué cuesta entrar (wifi, tele cerrada…) */
+.connecting-help {
+  max-width: 22rem;
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.35;
+  color: var(--muted);
+}

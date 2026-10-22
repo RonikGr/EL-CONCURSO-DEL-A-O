@@ -279,3 +279,7 @@ export const STYLES = {
     },
   },
 };
+
+// Título del concurso y presentación de los equipos: si no hay canción tuya, los de la portada y el marcador.
+STYLES.title = STYLES.organ;
+STYLES.versus = STYLES.march;

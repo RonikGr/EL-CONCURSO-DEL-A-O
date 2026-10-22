@@ -13,6 +13,12 @@ const kbd = (key) => h('kbd', {}, key);
 const avatar = (p, cls = 'avatar') =>
   h('span', { class: `${cls} emoji`, style: { '--pc': getColor(p.color).bg, '--pc-fg': getColor(p.color).fg }, 'aria-hidden': 'true' }, avatarOf(p));
 
+/** Millonario: «fácil 1 · media 3 · difícil 5 puntos» (o un solo valor para todas). */
+function levelPointsText(points) {
+  if (!(points?.length >= 3)) return pointsText(points, false);
+  return `fácil ${points[0]} · media ${points[1]} · difícil ${points[2]} puntos`;
+}
+
 function pointsText(points, ranked) {
   if (!points?.length) return '';
   if (points.length > 1) return `${points.join(' · ')} puntos para los ${points.length} primeros`;
@@ -23,16 +29,32 @@ function pointsText(points, ranked) {
 // ---------------------------------------------------------------------------------------- Preparación
 
 /**
+ * Antes de empezar hay tres pasos (view.setupStep): «prep» = la hoja, los archivos y el mando; «title» = el título en
+ * grande (main.js lo pinta encima, con su canción); «join» = se conecta la gente.
  * @param ctx {joinQr, controlQr, joinUrlText, onFile, onStart, onLockTeams, onMoveTeam, facesCount, tracksCount, onOpenFaces, onOpenMusic}
  */
 export function setupScreen(view, ctx) {
-  const connected = view.players.filter((p) => p.connected).length;
-  const missing = MIN_PLAYERS - connected;
+  return view.setupStep === 'prep' ? prepScreen(view, ctx) : joinScreen(view, ctx);
+}
+
+/** El QR del mando (o «Mando conectado»). */
+function controlBox(view, ctx) {
+  return h(
+    'aside',
+    { class: 'setup-control' },
+    h('p', { class: 'join-label' }, 'Mando del presentador'),
+    view.controlsConnected
+      ? h('p', { class: 'control-ok' }, `✓ ${view.controlsConnected === 1 ? 'Mando conectado' : `${view.controlsConnected} mandos conectados`}`)
+      : h('p', { class: 'muted small' }, 'Escanéalo con tu móvil (no lo enseñes a los jugadores).'),
+    view.controlsConnected ? null : ctx.controlQr,
+  );
+}
+
+/** La hoja del concurso: cargar otra, plantilla y qué tal fue la última. */
+function importBox(view, ctx) {
   const imp = view.lastImport;
-
   const fileInput = h('input', { type: 'file', accept: '.xlsx', hidden: true, onchange: (e) => e.target.files[0] && ctx.onFile(e.target.files[0]) });
-
-  const importBox = h(
+  return h(
     'div',
     { class: 'import-box' },
     h('h3', {}, view.title),
@@ -52,6 +74,29 @@ export function setupScreen(view, ctx) {
     h('p', { class: 'muted small' }, 'También puedes arrastrar el archivo a esta pantalla.'),
     imp ? importReport(imp) : null,
   );
+}
+
+/** Paso 1: preparación (sin jugadores todavía): la hoja, los archivos y el mando. */
+function prepScreen(view, ctx) {
+  return h(
+    'div',
+    { class: 'setup prep' },
+    h(
+      'section',
+      { class: 'setup-main' },
+      h('div', { class: 'prep-head' }, h('h1', { class: 'prep-title' }, 'Preparación'), h('p', { class: 'muted' }, 'Carga el concurso y sus archivos y empareja tu mando. La gente se conecta después de presentar el concurso.')),
+      importBox(view, ctx),
+      extrasBox(ctx),
+      h('div', { class: 'setup-start' }, h('span', {}), h('button', { class: 'btn primary huge', onclick: ctx.onStart }, 'Presentar el concurso ', kbd('Espacio'))),
+    ),
+    controlBox(view, ctx),
+  );
+}
+
+/** Paso 3: se conecta la gente (QR grande) y se comprueban los equipos. */
+function joinScreen(view, ctx) {
+  const connected = view.players.filter((p) => p.connected).length;
+  const missing = MIN_PLAYERS - connected;
 
   const teamsBoard = view.teams.length ? teamsBoardView(view, ctx) : playersBoardView(view);
 
@@ -69,8 +114,6 @@ export function setupScreen(view, ctx) {
     h(
       'section',
       { class: 'setup-main' },
-      importBox,
-      extrasBox(ctx),
       h(
         'div',
         { class: 'setup-players' },
@@ -94,18 +137,10 @@ export function setupScreen(view, ctx) {
         missing > 0
           ? h('p', { class: 'stage-hint' }, `Falta${missing > 1 ? 'n' : ''} ${missing} para empezar (mínimo ${MIN_PLAYERS}).`)
           : h('p', { class: 'muted' }, view.teams.length ? 'Comprobad que cada uno está en su equipo: al empezar, los equipos se cierran.' : '¡Todo listo!'),
-        h('button', { class: 'btn primary huge', disabled: missing > 0, onclick: ctx.onStart }, 'Empezar concurso ', kbd('Espacio')),
+        h('button', { class: 'btn primary huge', disabled: missing > 0, onclick: ctx.onStart }, view.teams.length ? 'Presentar los equipos ' : 'Empezar concurso ', kbd('Espacio')),
       ),
     ),
-    h(
-      'aside',
-      { class: 'setup-control' },
-      h('p', { class: 'join-label' }, 'Mando del presentador'),
-      view.controlsConnected
-        ? h('p', { class: 'control-ok' }, `✓ ${view.controlsConnected === 1 ? 'Mando conectado' : `${view.controlsConnected} mandos conectados`}`)
-        : h('p', { class: 'muted small' }, 'Escanéalo con tu móvil (no lo enseñes a los jugadores).'),
-      view.controlsConnected ? null : ctx.controlQr,
-    ),
+    controlBox(view, ctx),
   );
 }
 
@@ -291,6 +326,38 @@ export function coverScreen(view) {
   );
 }
 
+/**
+ * Presentación de los equipos, antes de la portada: cada equipo entra por su lado con su gente y, en medio, «VS»
+ * (los golpes y la fanfarria los lanza el realizador a la vez: 0,5 s, 1,3 s y 2,1 s).
+ */
+export function versusScreen(view) {
+  const teams = view.teams
+    .map((team) => ({ team, members: view.players.filter((p) => p.teamId === team.id) }))
+    .filter((t) => t.members.length);
+  const items = [];
+  teams.forEach(({ team, members }, i) => {
+    if (i) items.push(h('div', { class: 'vs-sep display', style: { '--d': `${2100 + (i - 1) * 150}ms` } }, 'VS'));
+    items.push(
+      h(
+        'section',
+        { class: `vs-team ${i % 2 ? 'from-right' : 'from-left'}`, style: { '--tc': getColor(team.color).bg, '--d': `${500 + i * 800}ms` } },
+        h('h2', { class: 'vs-name display' }, team.name),
+        h(
+          'ul',
+          { class: 'vs-members' },
+          members.map((p, k) => h('li', { style: { '--d': `${800 + i * 800 + k * 120}ms` } }, h('span', { class: 'mini-avatar emoji', style: { '--pc': getColor(p.color).bg } }, avatarOf(p)), h('span', {}, p.name))),
+        ),
+      ),
+    );
+  });
+  return h(
+    'div',
+    { class: `versus n${teams.length}` },
+    h('p', { class: 'versus-kicker' }, view.title),
+    h('div', { class: 'versus-row' }, items),
+  );
+}
+
 export function introScreen(view) {
   const s = view.section;
   if (view.introRules) return millionaireRules(view);
@@ -301,7 +368,7 @@ export function introScreen(view) {
     kinetic('h1', 'intro-title display', s.name),
     h('p', { class: 'intro-type' }, view.sectionLabel),
     s.description ? h('p', { class: 'intro-desc' }, s.description) : null,
-    h('p', { class: 'intro-points' }, pointsText(s.points, s.points.length > 1)),
+    h('p', { class: 'intro-points' }, s.type === 'test' ? levelPointsText(s.points) : pointsText(s.points, s.points.length > 1)),
     view.playable ? null : h('p', { class: 'intro-soon' }, 'Esta sección llegará en una próxima versión: se saltará.'),
     view.turns ? turnsIntro(view.turns) : null,
   );
@@ -326,7 +393,7 @@ function millionaireRules(view) {
       h('li', {}, teams ? 'Concursa una persona cada vez, alternando equipos y en el orden que elija vuestro portavoz.' : 'Concursa una persona cada vez.'),
       h('li', {}, 'Las respuestas van apareciendo. Elige en tu móvil: toca una y vuelve a tocarla para confirmar.'),
       h('li', {}, 'Cuando el presentador la marque, es tu respuesta definitiva.'),
-      h('li', {}, `${pointsText(view.section.points, true)} por acierto. Salir de la app durante tu pregunta es trampa: no puntúas.`),
+      h('li', {}, `Por acierto: ${levelPointsText(view.section.points)}. Salir de la app durante tu pregunta es trampa: no puntúas.`),
     ),
     h('p', { class: 'mill-rules-sub' }, `Comodines: uno de cada ${teams ? 'por equipo' : 'por persona'} para toda la sección`),
     h(

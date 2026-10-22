@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MILLIONAIRE_CUES, levelOf, millionaireCue, millionaireTrackFor } from '../src/core/millionaireMusic.js';
+import { MILLIONAIRE_CUES, levelOf, millionaireCue, millionaireTrackFor, pointsForLevel, questionLevel } from '../src/core/millionaireMusic.js';
 
 const base = { sectionType: 'test', sectionIndex: 2, screen: 'play', itemIndex: 0, itemCount: 6, introRules: false };
 const m = (over = {}) => ({ roundId: 'r1', phase: 'playing', used: [], audience: null, call: null, result: null, ...over });
@@ -21,6 +21,18 @@ describe('música del millonario', () => {
     expect([0, 1, 2, 3, 4, 5].map((i) => levelOf(i, 6))).toEqual(['easy', 'easy', 'medium', 'medium', 'hard', 'hard']);
     expect([0, 1, 2, 3].map((i) => levelOf(i, 4))).toEqual(['easy', 'easy', 'medium', 'hard']);
     expect(levelOf(0, 1)).toBe('easy');
+  });
+
+  it('dificultad de la hoja (o por tercios) y sus puntos', () => {
+    expect(questionLevel({ level: 'hard' }, 0, 6)).toBe('hard');
+    expect(questionLevel({ level: null }, 2, 6)).toBe('medium');
+    expect(['easy', 'medium', 'hard'].map((l) => pointsForLevel([1, 3, 5], l))).toEqual([1, 3, 5]);
+    expect(pointsForLevel([2], 'hard')).toBe(2);
+    expect(pointsForLevel(undefined, 'easy')).toBe(1);
+  });
+
+  it('la música sigue la dificultad de la pregunta', () => {
+    expect(millionaireCue({ ...base, itemIndex: 0, millionaire: m({ level: 'hard' }) }, 0).track).toBe('hard');
   });
 
   it('solo en secciones de Test', () => {

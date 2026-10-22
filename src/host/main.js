@@ -19,7 +19,7 @@ import { createFreeStage } from './freeStage.js';
 import { createMillionaireStage } from './millionaireStage.js';
 import { MPHASE } from '../core/millionaire.js';
 import { APHASE } from '../core/answers.js';
-import { coverScreen, finalScreen, introScreen, scoreboardScreen, setupScreen } from './screens.js';
+import { coverScreen, finalScreen, introScreen, scoreboardScreen, setupScreen, versusScreen } from './screens.js';
 import { openSettingsDialog } from './settingsDialog.js';
 import { createDebugPanel } from './debugPanel.js';
 import { Backdrop } from './fx/backdrop.js';
@@ -187,24 +187,42 @@ function startRoom(saved) {
   room.addEventListener('change', render);
   room.start();
   render();
-  if (room.runner.screen === SCREEN.SETUP) showSplash(room.show.title);
 }
 
 // ---------- Presentación ----------
+
+// El título del concurso es un paso de la preparación (sala.setupStep = 'title'): se pinta encima de todo, con su
+// canción. Si el sonido aún no está activado, el primer toque solo lo activa (para que se oiga la canción).
+function syncSplash(view) {
+  const want = view.screen === SCREEN.SETUP && view.setupStep === 'title';
+  if (want && !splash) showSplash(view.title);
+  else if (!want && splash) hideSplash();
+  else if (splash) splash.querySelector('.splash-hint').textContent = splashHint();
+}
+
+const splashHint = () => (sound.unlocked ? 'Pulsa cualquier tecla o haz clic para continuar' : 'Pulsa para activar el sonido');
+let splashReady = false; // ¿el siguiente toque ya pasa de pantalla?
+sound.addEventListener('unlock', () => setTimeout(() => (splashReady = true), 400)); // el mismo toque no cuenta
+
+function splashNext() {
+  if (!splashReady) return; // este toque solo activa el sonido
+  run('next');
+}
 
 // Al abrir la tele (no al recuperar un concurso a medias): el título en grande. Con una tecla o un clic se pasa a
 // la pantalla de preparación, donde se van conectando los jugadores. Ese mismo toque desbloquea el sonido.
 let splash = null;
 
 function showSplash(title) {
+  splashReady = sound.unlocked;
   splash = h(
     'div',
-    { class: 'splash', role: 'button', tabindex: '0', 'aria-label': `${title}. Pulsa para empezar` },
+    { class: 'splash', role: 'button', tabindex: '0', 'aria-label': `${title}. Pulsa para continuar` },
     h('p', { class: 'splash-kicker' }, 'Esta noche…'),
     kinetic('h1', 'splash-title display', title, { step: 70 }),
-    h('p', { class: 'splash-hint' }, 'Pulsa cualquier tecla o haz clic para empezar'),
+    h('p', { class: 'splash-hint' }, splashHint()),
   );
-  splash.addEventListener('click', hideSplash);
+  splash.addEventListener('click', splashNext);
   document.body.append(splash);
   document.body.classList.add('splash-on'); // debajo solo se ve el decorado
 }
@@ -213,11 +231,7 @@ function hideSplash() {
   if (!splash) return;
   const el = splash;
   splash = null;
-  // Tras el toque el sonido ya está desbloqueado (audio.js escucha el mismo gesto en la fase de captura).
-  setTimeout(() => {
-    sound.play('whoosh');
-    sound.play('gong', 150);
-  }, 60);
+  sound.play('whoosh');
   backdrop.ok && backdrop.flash(0.5);
   el.classList.add('leaving');
   document.body.classList.remove('splash-on');
@@ -306,6 +320,7 @@ function render() {
   renderScreen(view);
   renderPlayers(view);
   renderApproval(view);
+  syncSplash(view);
   renderCheatAlert(view);
   debug.render(room);
 }
@@ -325,6 +340,20 @@ function renderNetwork() {
   pill.textContent = `Sala ${room.code} · ${NET_LABEL[state] ?? state}`;
 
   const banners = [];
+  // Móviles que no consiguen conectar (en el último minuto): casi siempre es la wifi
+  const fails = room.connectFailures;
+  if (fails && Date.now() - fails.at < 60_000) {
+    banners.push(
+      h(
+        'div',
+        { class: 'banner' },
+        `📶 Un móvil intenta entrar, pero la wifi no le deja conectar con la tele (${fails.count} ${fails.count === 1 ? 'vez' : 'veces'}). `,
+        'Comprobad que todos estáis en la misma wifi que el portátil (no la de invitados), sin datos móviles ni VPN.',
+      ),
+    );
+    clearTimeout(renderNetwork.timer);
+    renderNetwork.timer = setTimeout(() => room && renderNetwork(), 60_500 - (Date.now() - fails.at)); // quitar el aviso
+  }
   if (LOCAL_HOSTS.includes(location.hostname) && room.runner.screen === SCREEN.SETUP) {
     banners.push(
       h(
@@ -409,7 +438,7 @@ function renderScreen(view) {
         }),
       );
     case SCREEN.COVER:
-      return fill(screen, coverScreen(view));
+      return fill(screen, view.versus ? versusScreen(view) : coverScreen(view));
     case SCREEN.INTRO:
       return fill(screen, introScreen(view));
     case SCREEN.PLAY:
@@ -623,10 +652,6 @@ addEventListener('drop', (e) => {
 // ---------- Teclado ----------
 
 document.addEventListener('keydown', (e) => {
-  if (splash) {
-    e.preventDefault();
-    return hideSplash();
-  }
   if (!room || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
   if (document.querySelector('dialog[open]') || e.target.closest?.('input, textarea, select')) return;
 
@@ -635,6 +660,11 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
     run(e.key === 'Enter' ? 'approveControl' : 'denyControl', { controlId: pending.id });
     return;
+  }
+  if (splash) {
+    e.preventDefault();
+    if (e.code === 'ArrowLeft') return run('prev');
+    return splashNext();
   }
 
   const screen = room.runner.screen;

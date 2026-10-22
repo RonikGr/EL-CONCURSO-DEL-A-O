@@ -127,7 +127,7 @@ describe('lectura del libro', () => {
       { question: '¿Capital de Francia?', answer: 'París', showOnTv: true, song: null, songStart: 0, notes: 'fácil' },
       { question: '', answer: '', showOnTv: false, song: `spotify:track:${TRACK}`, songStart: 1.5, notes: '' },
     ]);
-    expect(cultura.items).toEqual([{ question: '¿2+2?', options: ['3', '4', '5'], correct: 1, seconds: 20, image: null }]);
+    expect(cultura.items).toEqual([{ question: '¿2+2?', options: ['3', '4', '5'], correct: 1, seconds: 20, image: null, level: null }]);
     expect(tiempo.presenterPlays).toBe(true); // por defecto en Contador
     expect(tiempo.items).toEqual([
       { target: 10, mode: 'hide', hideAfter: 3 },
@@ -220,6 +220,31 @@ describe('lectura del libro', () => {
       ['Rápido', false],
     ]);
     expect(warnings).toContainEqual(expect.objectContaining({ sheet: 'Concurso', row: 3, message: expect.stringContaining('no se puede jugar por turnos') }));
+  });
+
+  it('millonario: dificultad de cada pregunta y puntos 1, 3, 5 por defecto', () => {
+    const { show, errors } = parseShowWorkbook(
+      workbook({
+        Concurso: [
+          ['Sección', 'Tipo', 'Puntos'],
+          ['Cultura', 'Test', null],
+        ],
+        Test: [
+          ['Sección', 'Pregunta', 'A', 'B', 'Correcta', 'Dificultad'],
+          ['Cultura', '¿1?', 'x', 'y', 'A', 'Fácil'],
+          ['Cultura', '¿2?', 'x', 'y', 'A', 'media'],
+          ['Cultura', '¿3?', 'x', 'y', 'A', '3'],
+          ['Cultura', '¿4?', 'x', 'y', 'A', null],
+          ['Cultura', '¿5?', 'x', 'y', 'A', 'Imposible'],
+        ],
+        Pulsador: null,
+        Contador: null,
+      }),
+    );
+    expect(errors).toEqual([{ sheet: 'Test', row: 6, message: '"Dificultad" debe ser Fácil, Media o Difícil.' }]);
+    const cultura = show.sections.find((s) => s.name === 'Cultura');
+    expect(cultura.points).toEqual([1, 3, 5]);
+    expect(cultura.items.map((q) => q.level)).toEqual(['easy', 'medium', 'hard', null]);
   });
 
   it('un entorno desconocido solo avisa', () => {

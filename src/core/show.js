@@ -5,6 +5,7 @@
 import { COLORS } from '../shared/appearance.js';
 import { ENVIRONMENTS } from '../shared/environments.js';
 import { TURN_TYPES } from './turns.js';
+import { MILLIONAIRE_POINTS } from './millionaireMusic.js';
 
 export const SECTION_TYPES = {
   pulsador: { label: 'Pulsador', sheet: 'Pulsador', ranked: false, presenterPlays: false, needsItems: false },
@@ -184,7 +185,7 @@ const COLUMNS = {
     songStart: ['desde segundo', 'desde'],
     notes: ['notas'],
   },
-  test: { section: ['seccion'], question: ['pregunta'], a: ['a'], b: ['b'], c: ['c'], d: ['d'], correct: ['correcta'], seconds: ['segundos'], image: ['imagen'] },
+  test: { section: ['seccion'], question: ['pregunta'], a: ['a'], b: ['b'], c: ['c'], d: ['d'], correct: ['correcta'], level: ['dificultad', 'nivel'], seconds: ['segundos'], image: ['imagen'] },
   verdad: { section: ['seccion'], statement: ['afirmacion', 'frase'], answer: ['respuesta', 'es'] },
   dosVerdades: { section: ['seccion'], about: ['sobre'], s1: ['frase 1'], s2: ['frase 2'], s3: ['frase 3'], lie: ['mentira'] },
   votacion: { section: ['seccion'], question: ['pregunta'] },
@@ -326,7 +327,7 @@ export function parseShowWorkbook(sheets) {
       const info = SECTION_TYPES[type];
       let points = parsePointsList(values.points);
       if (!isEmpty(values.points) && !points) err('Concurso', row, `Puntos no válidos: "${text(values.points)}". Usa un número o una lista como 3,2,1.`);
-      points ??= info.ranked ? [...RANKED_DEFAULT_POINTS] : [settings.defaultPoints];
+      points ??= info.ranked ? [...RANKED_DEFAULT_POINTS] : type === 'test' ? [...MILLIONAIRE_POINTS] : [settings.defaultPoints];
       const presenterPlays = parseYesNo(values.presenterPlays, info.presenterPlays);
       if (presenterPlays === undefined) err('Concurso', row, '"El presentador juega" debe ser sí o no.');
       // Por turnos: cada pregunta la responde uno de cada equipo, en el orden que elige su portavoz
@@ -432,7 +433,11 @@ const ITEM_PARSERS = {
     if (seconds == null || seconds < 5) return err('"Segundos" debe ser un número de al menos 5.');
     const image = text(v.image);
     if (image && !/^https?:\/\//i.test(image)) return err('"Imagen" debe ser una dirección web (https://…).');
-    return { question, options: options.slice(0, lastFilled + 1), correct, seconds, image: image || null };
+    // Dificultad (millonario: música y puntos); vacía = por tercios
+    const lv = norm(v.level);
+    const level = !lv ? null : /^(facil|1)$/.test(lv) ? 'easy' : /^(media|medio|intermedia|2)$/.test(lv) ? 'medium' : /^(dificil|3)$/.test(lv) ? 'hard' : undefined;
+    if (level === undefined) return err('"Dificultad" debe ser Fácil, Media o Difícil.');
+    return { question, options: options.slice(0, lastFilled + 1), correct, seconds, image: image || null, level };
   },
 
   verdad(v, err) {

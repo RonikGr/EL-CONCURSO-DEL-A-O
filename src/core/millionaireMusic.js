@@ -37,11 +37,23 @@ export const MILLIONAIRE_CUES = {
 };
 
 export const LEVELS = ['easy', 'medium', 'hard'];
+export const LEVEL_LABELS = { easy: 'fácil', medium: 'media', hard: 'difícil' };
+/** Puntos por dificultad si la hoja no dice otros (columna Puntos del Test: «1, 3, 5»). */
+export const MILLIONAIRE_POINTS = [1, 3, 5];
 
-/** Nivel de la pregunta `index` de `count`: por tercios (con 4: fácil, fácil, media, difícil). */
+/** Nivel de la pregunta `index` de `count`: por tercios (con 6: 2 fáciles, 2 medias y 2 difíciles). */
 export function levelOf(index, count) {
   if (!(count > 0)) return 'easy';
   return LEVELS[Math.min(2, Math.floor((index * 3) / count))];
+}
+
+/** Dificultad de una pregunta: la de su columna «Dificultad» o, si no tiene, por tercios. */
+export const questionLevel = (item, index, count) => item?.level ?? levelOf(index, count);
+
+/** Puntos de una pregunta: con tres valores (fácil · media · difícil), el de su dificultad; con uno, ese. */
+export function pointsForLevel(points, level) {
+  if (points?.length >= 3) return points[LEVELS.indexOf(level)] ?? points[0];
+  return points?.[0] ?? 1;
 }
 
 /** ¿Qué canción del millonario es este archivo? (por su nombre) → id o null */
@@ -75,7 +87,7 @@ export function millionaireCue(v, now) {
   const m = v.millionaire;
   if (v.screen !== 'play' || !m) return null;
 
-  const level = levelOf(v.itemIndex, v.itemCount);
+  const level = m.level ?? levelOf(v.itemIndex, v.itemCount);
   const c = MILLIONAIRE_CUES[level];
   const r = m.roundId;
   // Tras un comodín con música, el colchón vuelve desde el bucle (sin la intro)

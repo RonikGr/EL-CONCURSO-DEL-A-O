@@ -8,6 +8,7 @@ import { fill, h } from '../shared/dom.js';
 import { avatarOf } from '../shared/appearance.js';
 import { JOKER_NAMES, jokerIcon } from '../shared/jokerIcons.js';
 import { LETTERS, MPHASE } from '../core/millionaire.js';
+import { LEVEL_LABELS } from '../core/millionaireMusic.js';
 
 /**
  * @param onAnswer(roundId, index)          elegir (quien concursa) o votar (público)
@@ -33,7 +34,7 @@ export function createMillionairePad({ onAnswer, onJoker }) {
     clearInterval(tick);
 
     const seatName = m.seat?.name ?? '¿?';
-    const parts = [h('p', { class: 'ap-label' }, `${seatName}${m.team ? ` · ${m.team.name}` : ''} · ${m.points} ${m.points === 1 ? 'punto' : 'puntos'}`)];
+    const parts = [h('p', { class: 'ap-label' }, `${seatName}${m.team ? ` · ${m.team.name}` : ''} · ${LEVEL_LABELS[m.level] ?? ''} · ${m.points} ${m.points === 1 ? 'punto' : 'puntos'}`)];
 
     if (m.role === 'friend') {
       parts.push(

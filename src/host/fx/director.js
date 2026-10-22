@@ -18,7 +18,8 @@ export function envFor(view) {
 
 /** Clave de "pantalla": si cambia, la pantalla entra con transición. */
 export function screenKey(view) {
-  return [view.peekScoreboard ? 'peek' : view.screen, view.sectionIndex, view.screen === SCREEN.PLAY ? view.itemIndex : view.introRules ? 'reglas' : ''].join('|');
+  const sub = view.screen === SCREEN.PLAY ? view.itemIndex : view.screen === SCREEN.SETUP ? view.setupStep : view.introRules ? 'reglas' : view.versus ? 'equipos' : '';
+  return [view.peekScoreboard ? 'peek' : view.screen, view.sectionIndex, sub].join('|');
 }
 
 function snapshot(view) {
@@ -41,6 +42,7 @@ function snapshot(view) {
       answered: a.answeredIds?.length ?? 0,
     },
     rules: !!view.introRules,
+    step: view.screen === SCREEN.SETUP ? view.setupStep : view.versus ? 'versus' : null,
     millionaire: view.millionaire && {
       round: view.millionaire.roundId,
       phase: view.millionaire.phase,
@@ -61,7 +63,8 @@ function snapshot(view) {
 
 /** Estilo de música de cada momento (ver music.js). */
 function musicScene(n) {
-  if (n.screen === SCREEN.SETUP) return 'lobby';
+  if (n.screen === SCREEN.SETUP) return n.step === 'title' ? 'title' : 'lobby';
+  if (n.screen === SCREEN.COVER && n.step === 'versus') return 'versus';
   if (n.screen === SCREEN.COVER || n.screen === SCREEN.INTRO) return 'organ';
   if (n.screen === SCREEN.SCOREBOARD || n.screen === 'peek') return 'march';
   if (n.screen === SCREEN.FINAL) return 'waltz';
@@ -119,9 +122,19 @@ export function createDirector({ backdrop }) {
         sound.play('whoosh');
         if (!own) sound.play('gong', 250);
         backdrop?.flash(0.35);
+      } else if (n.screen === SCREEN.COVER && n.step === 'versus') {
+        // Un golpe por equipo según van entrando (screens.versusScreen) y la fanfarria con el «VS»
+        sound.play('whoosh');
+        sound.play('hit', 500);
+        sound.play('hit', 1300);
+        sound.play('fanfare', 2100);
+        setTimeout(() => backdrop?.flash(0.5), 2100);
       } else if (n.screen === SCREEN.COVER) {
         sound.play('hit');
         sound.play('fanfare', 200);
+      } else if (n.screen === SCREEN.SETUP && n.step === 'title') {
+        sound.play('gong', 300);
+        backdrop?.flash(0.4);
       } else if (n.screen === SCREEN.SCOREBOARD || n.screen === 'peek') {
         sound.play('whoosh');
         sound.play('roll', 300);

@@ -5,9 +5,20 @@ export function hostPeerId(roomCode) {
   return PEER_ID_PREFIX + roomCode;
 }
 
-// Sin `host`/`port`: PeerJS usa su servidor de enlace público (0.peerjs.com) y sus STUN/TURN por defecto.
+/**
+ * Servidores TURN (repetidores): solo hacen falta si la wifi no deja que el móvil y el portátil hablen directamente
+ * (wifi de invitados, aislamiento entre dispositivos…). Los gratuitos de PeerJS y de Metered ya no existen (2026):
+ * aquí van los de una cuenta propia, p. ej. [{urls: ['turn:…:3478', 'turns:…:443?transport=tcp'], username, credential}].
+ */
+export const TURN_SERVERS = [];
+
+// Sin `host`/`port`: PeerJS usa su servidor de enlace público (0.peerjs.com). Los STUN dicen a cada uno su
+// dirección pública; en la misma wifi casi siempre basta con la conexión directa.
 export const PEER_OPTIONS = {
   debug: 1, // 0 nada, 1 errores, 2 avisos, 3 todo
+  config: {
+    iceServers: [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }, { urls: 'stun:stun.cloudflare.com:3478' }, ...TURN_SERVERS],
+  },
 };
 
 export const CONNECTION_OPTIONS = {

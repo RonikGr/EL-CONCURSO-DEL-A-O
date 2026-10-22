@@ -177,8 +177,16 @@ mientras la página no se pinta (ventana oculta o minimizada).
 
 - Latido: el presentador manda `hb` cada 2 s; RTT = mediana de los últimos 5. Sin respuesta en 6 s → desconectado.
   El jugador, si no recibe `hb` en 6 s, cierra y reconecta.
-- Reconexión del jugador: espera creciente 0,5 s → 5 s, inmediata al volver a primer plano o recuperar red. Si nunca
-  llegó a entrar y la sala no existe (`peer-unavailable`), avisa tras unos intentos; si ya había entrado, reintenta siempre.
+- Reconexión del jugador (y del mando, misma `PlayerConnection`): espera creciente 0,5 s → 5 s, inmediata al volver a
+  primer plano o recuperar red. Si nunca llegó a entrar y la sala no existe (`peer-unavailable`), avisa tras unos
+  intentos (el mando sigue probando cada 4 s); si ya había entrado, reintenta siempre. Tras más de 4 s en segundo plano
+  se rehace todo con un Peer nuevo (el navegador puede haber matado el enlace con el servidor sin avisar), y si parece
+  conectado, se comprueba que llegue el latido en 3,5 s. Dos fallos seguidos (plazo de 8 s o ICE `failed`) → Peer
+  nuevo. `onStatus` lleva `detail {attempts, reason}` y `connectionHelp()` lo explica en el móvil y en el mando.
+- ICE (`peerConfig.js`): STUN de Google y Cloudflare. Los TURN gratuitos de PeerJS y de Metered ya no existen (2026: sin
+  DNS): si la wifi no deja la conexión directa, hace falta un TURN propio en `TURN_SERVERS`. La tele avisa
+  (`connectFailures`, banda «📶 Un móvil intenta entrar…») cuando una llamada llega pero no se abre en 15 s o su ICE falla.
+  La tele, al volver a primer plano o recuperar la red, reconecta con el servidor de enlace sin esperar.
 - Recarga del presentador: estado en localStorage (`concurso.host.v1`, caduca a las 12 h) → "Recuperar sala". Se vuelve
   a registrar el mismo ID; si PeerJS lo tiene ocupado (`unavailable-id`) se reintenta cada 2 s.
 - Una vez establecidas, las conexiones son P2P: si cae el servidor PeerJS solo fallan las conexiones nuevas.
@@ -268,8 +276,13 @@ mientras la página no se pinta (ventana oculta o minimizada).
 - En el marcador y el final la firma de repintado no incluye `connected` (que una desconexión no repita la animación);
   un revelado ya pintado (`roundId`, que la vista de la tele incluye) no se vuelve a pintar: cortaría el suspense.
   Los sonidos programados se anulan al cambiar de momento (`momentKey`), no en cada repintado.
-- **Presentación:** al abrir la tele en preparación, el título en grande (`.splash`); una tecla o un clic pasa a la
-  preparación (y desbloquea el sonido). La **portada** es la introducción: secciones de la noche, cómo se juega y equipos.
+- **Antes de empezar** (`sala.setupStep`, persistido): `prep` (preparación: hoja, carpeta, caras, música y QR del
+  mando; sin QR de jugadores) → `title` (el título en grande, `.splash` encima de todo, con la canción «Título del
+  concurso»; si el sonido no está activado, el primer toque solo lo activa) → `join` (QR grande, equipos, portavoces).
+  `next` / `prev` recorren los pasos. Al empezar, si hay al menos dos equipos con gente (`hasVersus`), la portada
+  empieza por la **presentación de equipos** (`versusScreen`, `view.versus`, canción «Presentación de equipos»): cada
+  equipo entra por un lado con su gente, golpe por equipo y fanfarria con el «VS». La **portada** es la introducción:
+  secciones de la noche, cómo se juega y equipos.
 - **Antes de cada pregunta:** explicación (`howTo`: tiempo, cómo se puntúa) y cuenta atrás 3-2-1 (`countdownSec`,
   ajustable; 0 = sin ella) en tele y móviles. El motor del pulsador la aplica en la primera apertura (el rebote tras un
   fallo abre enseguida) y `AnswerRound.open({countdownMs})` en Test, Verdad, Dos verdades, Votación y Estimación.
@@ -292,7 +305,8 @@ mientras la página no se pinta (ventana oculta o minimizada).
   todo); `index.html` = jugador. El mando se empareja con un QR con clave secreta que muestra la tele en
   preparación + confirmación con tecla en el portátil; luego se recuerda. El teclado del portátil sigue de respaldo.
 - **El presentador también puede jugar** en las secciones que lo permitan (columna "El presentador juega").
-- **Pantallas de la tele:** Preparación → Portada → [Intro de sección → rondas → Marcador] × N → Final (podios).
+- **Pantallas de la tele:** Preparación → Título → Conexión → Equipos (A vs B) → Portada → [Intro de sección → rondas →
+  Marcador] × N → Final (podios).
 - **Equipos:** se eligen al entrar; antes de empezar, pantalla de comprobación y "Equipos cerrados" (solo el
   presentador puede mover a alguien después). Puntos individuales visibles; equipo = suma de sus miembros + puntos
   dados al equipo entero.
@@ -302,7 +316,9 @@ mientras la página no se pinta (ventana oculta o minimizada).
   "Desde segundo" ya no están en la plantilla; si una hoja antigua las trae, se leen pero no se usan.
 - **Secciones:**
   - **Pulsador** (la actual) + la pregunta en grande en la tele cuando el presentador quiera.
-  - **Test** = «¿Quién quiere ser millonario?»: un concursante cada vez; comodines 50:50, Público y Llamada (por equipo).
+  - **Test** = «¿Quién quiere ser millonario?»: un concursante cada vez; comodines 50:50, Público y Llamada (por equipo);
+    2 fáciles, 2 medias y 2 difíciles (columna «Dificultad» o por tercios) que valen 1 · 3 · 5 (Puntos del Test con tres
+    valores: `pointsForLevel`; la pregunta lleva `level` y sus puntos, y su música es la de su dificultad).
   - **Verdad o mentira**: V/F a la vez; variante "Dos verdades y una mentira" sobre un jugador (él no vota).
   - **¿Quién es más probable que…?**: todos votan a un jugador; revelado con suspense; puntos a quien vota con la mayoría.
   - **Estimación**: cada uno escribe un número; más cercano, o "sin pasarse" (El precio justo) según la pregunta.

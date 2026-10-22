@@ -5,7 +5,9 @@ import { MILLIONAIRE_TRACKS } from '../../core/millionaireMusic.js';
 
 /** Momentos del concurso → estilos de music.js (mismas claves). Valen para todo el concurso. */
 export const MUSIC_SLOTS = [
-  { id: 'lobby', label: 'Preparación', help: 'Suena en la pantalla de preparación, mientras se conecta la gente' },
+  { id: 'title', label: 'Título del concurso', help: 'Suena al presentar el concurso (el título en grande), antes de que se conecte la gente' },
+  { id: 'lobby', label: 'Preparación', help: 'Suena en la preparación y mientras se conecta la gente' },
+  { id: 'versus', label: 'Presentación de equipos', help: 'Suena al presentar los equipos («Rojos contra Azules»), antes de la portada' },
   { id: 'organ', label: 'Presentación', help: 'Suena en la portada y al presentar cada sección' },
   { id: 'explore', label: 'Jugando', help: 'Suena entre preguntas, antes de abrirlas' },
   { id: 'tension', label: 'Pregunta abierta', help: 'Suena durante la cuenta atrás y mientras se puede pulsar o responder' },

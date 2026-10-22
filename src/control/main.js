@@ -13,7 +13,7 @@ import { loadJSON, newId, saveJSON } from '../shared/storage.js';
 import { ERROR_CODE, MSG, PROTOCOL_VERSION, ROLE } from '../shared/protocol.js';
 import { envGradient, HOME_ENV } from '../shared/environments.js';
 import { keepScreenAwake } from '../shared/wakeLock.js';
-import { PlayerConnection as Connection } from '../player/network.js'; // la conexión con reconexión sirve igual
+import { PlayerConnection as Connection, connectionHelp } from '../player/network.js'; // la conexión con reconexión sirve igual
 
 const STORE_KEY = 'concurso.control.v1';
 const SCREEN_LABEL = { setup: 'Preparación', cover: 'Portada', intro: 'Presentación', play: 'Jugando', scoreboard: 'Marcador', final: 'Final' };
@@ -56,14 +56,19 @@ function connect(code, key) {
     onOpen: () =>
       connection.send({ t: MSG.HELLO, v: PROTOCOL_VERSION, role: ROLE.CONTROL, controlId: store.controlId, token: key, deviceName: deviceName() }),
     onMessage: handleMessage,
-    onStatus: ({ state, message: text }) => {
+    onStatus: ({ state, message: text, detail }) => {
       if (state === 'connected') return;
-      if (state === 'not-found') return message('No encuentro la sala', `¿Está abierta la sala ${code} en el portátil?`, 'Reintentar', () => location.reload());
+      if (state === 'connecting' && detail?.attempts >= 2 && !view) return message('Conectando…', connectionHelp(detail) ?? `Buscando la sala ${code}.`);
+      if (state === 'not-found') {
+        message('Esperando a la tele…', `No encuentro la sala ${code}: ¿está abierta en el portátil? Sigo intentándolo.`, 'Reintentar ya', () => location.reload());
+        setTimeout(() => connection?.state === 'not-found' && connect(code, key), 4000);
+        return;
+      }
       if (state === 'fatal') return message('No se puede usar este navegador', text);
       if (state === 'reconnecting' || state === 'server-down') {
         status = 'reconnecting';
         document.body.classList.add('offline');
-        renderBanner(text || 'Reconectando…');
+        renderBanner(detail?.attempts >= 2 ? connectionHelp(detail) : text || 'Reconectando…');
       }
     },
   });
@@ -211,6 +216,7 @@ function gameTabBody() {
     case 'setup':
       return setupPanel();
     case 'cover':
+      if (view.versus) return [h('section', { class: 'c-card center' }, h('p', { class: 'c-kicker' }, 'En la tele: los equipos'), h('h2', {}, view.teams.map((t) => t.name).join(' vs '))), bigNext('Portada →'), navRow()];
       return [h('section', { class: 'c-card center' }, h('p', { class: 'c-kicker' }, 'En la tele: portada'), h('h2', {}, view.title)), bigNext('Presentar la primera sección →'), navRow()];
     case 'intro':
       if (view.section?.type === 'test' && view.playable && !view.introRules) return [sectionCard(), bigNext('Explicar cómo se juega →'), navRow()];
@@ -236,6 +242,26 @@ function bigNext(label) {
 function setupPanel() {
   const connected = view.players.filter((p) => p.connected).length;
   const imp = view.lastImport;
+  if (view.setupStep === 'prep') {
+    return [
+      h(
+        'section',
+        { class: 'c-card' },
+        h('p', { class: 'c-kicker' }, 'Preparación'),
+        h('h2', {}, view.title),
+        h('p', { class: 'muted' }, `${view.sections.length} secciones · ${view.teams.length ? `${view.teams.length} equipos` : 'sin equipos'}`),
+        h('p', { class: 'muted small' }, 'Carga la hoja y la carpeta del concurso en la tele. Luego, presenta el concurso: sale el título con su canción.'),
+      ),
+      bigNext('Presentar el concurso →'),
+    ];
+  }
+  if (view.setupStep === 'title') {
+    return [
+      h('section', { class: 'c-card center' }, h('p', { class: 'c-kicker' }, 'En la tele: el título'), h('h2', {}, view.title)),
+      bigNext('Que se conecte la gente →'),
+      navRow(),
+    ];
+  }
   return [
     h(
       'section',
@@ -255,7 +281,7 @@ function setupPanel() {
         ? btn(view.teamsLocked ? '🔒 Equipos cerrados (abrir)' : '🔓 Equipos abiertos (cerrar)', () => cmd('lockTeams', { locked: !view.teamsLocked }))
         : null,
     ),
-    h('button', { class: 'btn primary big', disabled: !view.canStart, onclick: () => cmd('next') }, 'Empezar concurso →'),
+    h('button', { class: 'btn primary big', disabled: !view.canStart, onclick: () => cmd('next') }, view.teams.length ? 'Presentar los equipos →' : 'Empezar concurso →'),
     view.canStart ? h('p', { class: 'muted small center' }, view.teams.length ? 'Al empezar, los equipos se cierran.' : '') : null,
   ];
 }

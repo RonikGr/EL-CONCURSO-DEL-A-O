@@ -6,6 +6,7 @@ import { avatarOf, getColor } from '../shared/appearance.js';
 import { LETTERS, MPHASE } from '../core/millionaire.js';
 import { sound } from './fx/audio.js';
 import { jokerIcon } from '../shared/jokerIcons.js';
+import { LEVEL_LABELS } from '../core/millionaireMusic.js';
 
 /** Reloj redondo con el número (como el de la llamada del programa). */
 function timerRing() {
@@ -56,7 +57,7 @@ export function createMillionaireStage() {
             'div',
             { class: 'mill-seat', style: { '--tc': getColor(team?.color ?? m.seat.color).bg } },
             h('span', { class: 'mini-avatar emoji', style: { '--pc': getColor(m.seat.color).bg } }, avatarOf(m.seat)),
-            h('div', {}, h('strong', {}, m.seat.name), h('small', {}, [team?.name, `Pregunta ${view.itemIndex + 1} de ${view.itemCount}`, `${m.points} ${m.points === 1 ? 'punto' : 'puntos'}`].filter(Boolean).join(' · '))),
+            h('div', {}, h('strong', {}, m.seat.name), h('small', {}, [team?.name, `Pregunta ${view.itemIndex + 1} de ${view.itemCount}`, LEVEL_LABELS[m.level], `${m.points} ${m.points === 1 ? 'punto' : 'puntos'}`].filter(Boolean).join(' · '))),
           )
         : h('div', { class: 'mill-seat' }, h('strong', {}, 'Elige quién concursa (mando)')),
       m.jokers

@@ -47,6 +47,7 @@ export class PeerSource {
       onConnection: (connId) => this.#conns.set(connId, { role: null, id: null, lastSeen: now(), openedAt: now(), rtt: new RttTracker() }),
       onData: (connId, data) => this.#onData(connId, data),
       onClose: (connId) => this.#drop(connId),
+      onFailed: () => handlers.onConnectFailed?.(),
     });
   }
 

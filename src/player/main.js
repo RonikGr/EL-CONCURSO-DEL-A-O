@@ -9,7 +9,7 @@ import { isValidRoomCode, normalizeRoomCode } from '../shared/roomCode.js';
 import { ERROR_CODE, MSG, PROTOCOL_VERSION } from '../shared/protocol.js';
 import { loadJSON, newId, saveJSON } from '../shared/storage.js';
 import { formatDeltaSeconds, formatSeconds } from '../shared/format.js';
-import { PlayerConnection } from './network.js';
+import { PlayerConnection, connectionHelp } from './network.js';
 import { createProfilePicker } from './profilePicker.js';
 import { SyncClient } from './syncClient.js';
 import { createAnswerPad } from './answerPad.js';
@@ -156,6 +156,7 @@ function join(code) {
   writeSession(code);
   history.replaceState(null, '', `?sala=${code}${profileSlot ? `&perfil=${encodeURIComponent(profileSlot)}` : ''}`);
   $('#connecting-text').textContent = `Conectando con la sala ${code}…`;
+  $('#connecting-help').hidden = true;
   show('screen-connecting');
 
   connection = new PlayerConnection({
@@ -189,8 +190,11 @@ function leave() {
   showJoin();
 }
 
-function handleStatus({ state, message }) {
+function handleStatus({ state, message, detail }) {
   const banner = $('#net-banner');
+  const help = connectionHelp(detail);
+  $('#connecting-help').hidden = !help;
+  $('#connecting-help').textContent = help ?? '';
   switch (state) {
     case 'connected':
       banner.hidden = true;

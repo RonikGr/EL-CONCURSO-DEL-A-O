@@ -53,7 +53,7 @@ const SHEETS = [
     ],
     rows: [
       [1, 'Calentamiento', 'Pulsador', 'El primero que pulse, responde.', 1, 'No'],
-      [2, 'Cultura general', 'Test', '¿Quién quiere ser millonario? Uno cada vez; vuestro portavoz decide el orden.', 2, null, null],
+      [2, 'Cultura general', 'Test', '¿Quién quiere ser millonario? Uno cada vez; vuestro portavoz decide el orden.', '1,3,5', null, null],
       [3, '¿Verdad o mentira?', 'Verdad o mentira', '¿Te lo crees o no?', 1, null],
       [4, '¿Quién es más probable…?', 'Votación', 'Votad sin piedad.', 1, null],
       [5, 'Calcula', 'Estimación', 'El que más se acerque.', '3,2,1', null],
@@ -120,15 +120,23 @@ const SHEETS = [
       { title: 'C', width: 22, note: 'C y D son opcionales.' },
       { title: 'D', width: 22 },
       { title: 'Correcta', width: 10, list: ['A', 'B', 'C', 'D'] },
+      {
+        title: 'Dificultad',
+        width: 12,
+        list: ['Fácil', 'Media', 'Difícil'],
+        note: 'Su música y sus puntos (columna Puntos de la pestaña Concurso: fácil, media, difícil, p. ej. 1,3,5). Vacía = por tercios.',
+      },
       { title: 'Imagen', width: 40, note: 'Opcional: dirección web de una imagen.' },
     ],
     // Se juega como el millonario: sin reloj, el presentador enseña las respuestas, marca la elegida y muestra la buena.
-    // Ordena las preguntas de la más fácil a la más difícil.
+    // 2 fáciles, 2 medias y 2 difíciles: con dos equipos, cada uno tiene una de cada (se alternan).
     rows: [
-      ['Cultura general', '¿Cuántos lados tiene un hexágono?', 'Cinco', 'Seis', 'Siete', 'Ocho', 'B', null],
-      ['Cultura general', '¿En qué año llegó el hombre a la Luna?', '1965', '1969', '1972', '1975', 'B', null],
-      ['Cultura general', '¿Cuál es la capital de provincia española que está a más altura?', 'Cuenca', 'Badajoz', 'Jaén', 'Ávila', 'D', null],
-      ['Cultura general', '¿Cuál es el planeta más grande?', 'Saturno', 'Neptuno', 'Júpiter', 'Urano', 'C', null],
+      ['Cultura general', '¿Cuántos lados tiene un hexágono?', 'Cinco', 'Seis', 'Siete', 'Ocho', 'B', 'Fácil', null],
+      ['Cultura general', '¿De qué color es el caballo blanco de Santiago?', 'Negro', 'Marrón', 'Blanco', 'Gris', 'C', 'Fácil', null],
+      ['Cultura general', '¿En qué año llegó el hombre a la Luna?', '1965', '1969', '1972', '1975', 'B', 'Media', null],
+      ['Cultura general', '¿Cuál es el planeta más grande?', 'Saturno', 'Neptuno', 'Júpiter', 'Urano', 'C', 'Media', null],
+      ['Cultura general', '¿Cuál es la capital de provincia española que está a más altura?', 'Cuenca', 'Badajoz', 'Jaén', 'Ávila', 'D', 'Difícil', null],
+      ['Cultura general', '¿Qué elemento químico tiene el símbolo W?', 'Wolframio', 'Vanadio', 'Osmio', 'Wiconio', 'A', 'Difícil', null],
     ],
   },
   {

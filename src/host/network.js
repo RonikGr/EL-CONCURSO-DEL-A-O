@@ -6,6 +6,7 @@ import { PEER_OPTIONS, describePeerError, hostPeerId } from '../shared/peerConfi
 const ID_BUSY_RETRY_MS = 2000;
 const ID_BUSY_MAX_TRIES = 30; // ~60 s: lo que tarda el servidor en soltar el ID tras recargar
 const SERVER_RETRY_MS = [1000, 2000, 4000, 8000, 15000];
+const OPEN_TIMEOUT_MS = 15000; // un móvil que llama y no llega a abrir la conexión en este tiempo: la wifi no le deja
 
 /**
  * Estados que se notifican en `onStatus({state, message})`:
@@ -23,17 +24,33 @@ export class HostNetwork {
   #retryTimer = null;
   #destroyed = false;
 
-  constructor({ roomCode, onStatus, onConnection, onData, onClose }) {
+  constructor({ roomCode, onStatus, onConnection, onData, onClose, onFailed }) {
     this.roomCode = roomCode;
     this.onStatus = onStatus;
     this.onConnection = onConnection;
     this.onData = onData;
     this.onClose = onClose;
+    this.onFailed = onFailed;
   }
 
   start() {
     this.#createPeer();
+    // Con la ventana oculta el navegador frena los temporizadores y el servidor de enlace puede soltarnos:
+    // al volver (o al recuperar la red), reintentar ya en vez de esperar al siguiente intento.
+    this.#wake = () => {
+      if (this.#destroyed || document.visibilityState === 'hidden') return;
+      const peer = this.#peer;
+      if (!peer || peer.destroyed) this.#createPeer();
+      else if (peer.disconnected) {
+        this.#serverTries = 0;
+        peer.reconnect();
+      }
+    };
+    document.addEventListener('visibilitychange', this.#wake);
+    addEventListener('online', this.#wake);
   }
+
+  #wake = null;
 
   send(connId, msg) {
     const conn = this.#conns.get(connId);
@@ -54,6 +71,8 @@ export class HostNetwork {
   destroy() {
     this.#destroyed = true;
     clearTimeout(this.#retryTimer);
+    document.removeEventListener('visibilitychange', this.#wake);
+    removeEventListener('online', this.#wake);
     this.#discardPeer();
   }
 
@@ -140,7 +159,21 @@ export class HostNetwork {
   #accept(conn) {
     const id = conn.connectionId;
     this.#conns.set(id, conn);
-    conn.on('open', () => this.onConnection?.(id, conn.peer));
+    // Llegó la llamada por el servidor de enlace, pero ¿se abre la conexión directa? Si no, la wifi no la deja.
+    let failed = false;
+    const fail = () => {
+      if (failed || conn.open) return;
+      failed = true;
+      this.onFailed?.();
+    };
+    const timer = setTimeout(fail, OPEN_TIMEOUT_MS);
+    conn.peerConnection?.addEventListener('iceconnectionstatechange', () => {
+      if (conn.peerConnection.iceConnectionState === 'failed') fail();
+    });
+    conn.on('open', () => {
+      clearTimeout(timer);
+      this.onConnection?.(id, conn.peer);
+    });
     conn.on('data', (data) => this.onData?.(id, data));
     const closed = () => {
       if (!this.#conns.has(id)) return;

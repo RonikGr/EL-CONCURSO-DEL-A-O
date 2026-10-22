@@ -23,11 +23,15 @@ conectado por HDMI); cada jugador usa su móvil como pulsador, sin instalar nada
 
 ## Cómo se juega
 
-1. Abre `host.html` en el portátil conectado a la tele y pon la ventana a pantalla completa.
-2. **Tu móvil como mando:** escanea el QR «Mando del presentador» de la pantalla de preparación y confirma en el
-   portátil (Enter). Desde entonces tu móvil se reconecta solo. Ves cada pregunta con su respuesta antes de lanzarla.
-3. Los jugadores escanean el QR grande, eligen nombre e icono y, si hay equipos, su equipo (color del equipo).
-   Comprueba los equipos en la tele (se puede mover a alguien) y pulsa **Empezar concurso**: los equipos se cierran.
+1. Abre `host.html` en el portátil conectado a la tele y pon la ventana a pantalla completa. Empieza en la
+   **Preparación**: carga la hoja y la carpeta del concurso (canciones y caras).
+2. **Tu móvil como mando:** escanea el QR «Mando del presentador» de la preparación y confirma en el portátil (Enter).
+   Desde entonces tu móvil se reconecta solo, también si lo bloqueas o cambias de app. Ves cada pregunta con su
+   respuesta antes de lanzarla.
+3. **Presentar el concurso**: el título en grande con su canción (hueco «Título del concurso» de 🎵 Música). Un toque
+   o una tecla y sale el QR grande para que **se conecte la gente**: eligen nombre e icono y, si hay equipos, su equipo.
+   Comprueba los equipos en la tele (se puede mover a alguien) y pulsa **Presentar los equipos**: los equipos se cierran
+   y sale «Los Rojos contra Los Azules» con su música (hueco «Presentación de equipos»).
 4. Portada → presentación de cada sección → preguntas → marcador → … → final con podios.
 5. En el **Pulsador**: «Mostrar pregunta» (la pone en grande en la tele), «Abrir turno» → a los 300 ms tele y
    móviles pasan a **¡Pulsad!** a la vez. La primera pulsación llena la tele con el ganador, su tiempo y el orden de
@@ -38,8 +42,9 @@ conectado por HDMI); cada jugador usa su móvil como pulsador, sin instalar nada
    perdonar con «Desbloquear»).
 
 7. **Test = «¿Quién quiere ser millonario?»**: concursa una persona cada vez, alternando equipos (pregunta 1 → Los
-   Rojos, pregunta 2 → Los Azules…) y dentro de cada equipo en el orden que eligió su portavoz (ordena las preguntas
-   de la hoja de la más fácil a la más difícil). No hay reloj: desde el mando vas **enseñando las respuestas** (una a
+   Rojos, pregunta 2 → Los Azules…) y dentro de cada equipo en el orden que eligió su portavoz. La plantilla trae
+   **2 fáciles, 2 medias y 2 difíciles** (columna «Dificultad»; vacía = por tercios), que valen **1, 3 y 5 puntos**
+   (columna Puntos del Test en la pestaña Concurso: «1,3,5»). Cada una suena con su música (fácil, media o difícil). No hay reloj: desde el mando vas **enseñando las respuestas** (una a
    una o todas); el concursante elige en su móvil (tú ves cuál) y la **marcas** cuando la dé por definitiva (se pone
    amarilla con letras negras; también puedes marcar otra si la dice en voz alta); luego **muestras la correcta**: verde.
    - **Comodines**, uno de cada para todo el concurso, por equipo (o por jugador sin equipos), y solo con las cuatro
@@ -128,7 +133,9 @@ lo único que no se puede falsear es el orden de llegada, que es justo lo que no
 ## Requisitos
 
 - Node.js 22.12 o superior (probado con 24 LTS) y Git.
-- Portátil y móviles **en la misma wifi**.
+- Portátil y móviles **en la misma wifi** (no la de invitados: suele aislar los dispositivos). Si un móvil se queda
+  en «Conectando…», el propio móvil y la tele dicen por qué. Si la wifi no deja la conexión directa, hace falta un
+  servidor TURN (repetidor): los gratuitos de PeerJS ya no existen; se pone uno propio en `src/shared/peerConfig.js`.
 - Navegadores actuales: Chrome, Safari (iOS 16.4+) o Firefox.
 
 ## Probar en local
@@ -219,8 +226,9 @@ Cubren la lógica que no depende de la red (`src/core`, `src/shared`).
 
 - Cada sección tiene su **entorno de Halloween** animado en la tele (y sus colores de fondo en los móviles); entre
   secciones el decorado se funde en otro.
-- **Al abrir la tele**, el título del concurso en grande; con una tecla o un clic se pasa a la preparación (así además
-  se activa el sonido). Al empezar, una **introducción**: las secciones de la noche, cómo se juega y los equipos.
+- **Presentar el concurso**: el título en grande con su canción; luego se conecta la gente y, al empezar, «Equipo A
+  contra equipo B» (cada equipo entra por su lado con su gente). Después, una **introducción**: las secciones de la
+  noche, cómo se juega y los equipos.
 - **Antes de cada pregunta**, una breve explicación (tiempo, puntos) y una **cuenta atrás 3-2-1** en la tele y en los
   móviles. Se ajusta en **Ajustes** («Cuenta atrás antes de cada pregunta», 0 = sin ella).
 - **Música:** cambia según el momento (preparación, presentación, jugando, pregunta abierta, suspense, revelado,

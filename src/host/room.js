@@ -28,6 +28,7 @@ import { saveRoom } from './persistence.js';
 import { matchFace } from '../core/faces.js';
 import { TURN_TYPES, answererFor, normalizeOrder, seatFor } from '../core/turns.js';
 import { MPHASE, MillionaireRound } from '../core/millionaire.js';
+import { pointsForLevel, questionLevel } from '../core/millionaireMusic.js';
 import { sectionEnv } from '../shared/environments.js';
 
 /** Ajustes de tiempos del pulsador y del sonido de la tele (los puntos vienen del concurso). */
@@ -44,6 +45,7 @@ export const DEFAULT_SETTINGS = {
 };
 
 const CONTROL_PUSH_MS = 150; // agrupar cambios antes de mandar el estado completo al mando
+const SETUP_STEPS = ['prep', 'title', 'join']; // antes de empezar: archivos y mando → título → conexión
 const ANSWER_GRACE_MS = 500; // tras el final, se espera un poco a respuestas dadas a tiempo que aún viajan
 const now = () => performance.now();
 
@@ -61,6 +63,7 @@ export class HostRoom extends EventTarget {
   #away = new Map(); // playerId → instante en que salió
   #buzzerOpenedAt = null;
   #rulesFor = null; // sección (millonario) cuya presentación va ya por «Cómo se juega»
+  #versusStep = false; // portada: antes, la presentación de los equipos («Rojos contra Azules»)
   cheatAlerts = []; // [{id, playerId, name, ms, voided, forgiven, at}] los últimos
   #alertSeq = 0;
   #windowTimer = null;
@@ -93,6 +96,8 @@ export class HostRoom extends EventTarget {
     // Por turnos: portavoz de cada equipo (lo elige el presentador; si no, el primero que entró) y orden por sección
     this.spokespeople = new Map(Object.entries(saved?.spokespeople ?? {})); // teamId → playerId
     this.turnOrders = saved?.turnOrders ?? {}; // sectionId → teamId → [playerId…]
+    // Antes de empezar: preparación (archivos y mando) → título del concurso → conexión de los jugadores
+    this.setupStep = SETUP_STEPS.includes(saved?.setupStep) ? saved.setupStep : 'prep';
     this.answerRound = null;
     this.freeRound = null; // sección Libre: la prueba actual
     this.duelPick = []; // Duelo de reflejos: los dos que juegan (se mantiene entre rondas)
@@ -112,6 +117,11 @@ export class HostRoom extends EventTarget {
       handlers: {
         onStatus: (s) => {
           this.network = s;
+          this.#changed({ persist: false });
+        },
+        // Un móvil llega a la tele por el servidor de enlace pero no consigue la conexión directa
+        onConnectFailed: () => {
+          this.connectFailures = { count: (this.connectFailures?.count ?? 0) + 1, at: Date.now() };
           this.#changed({ persist: false });
         },
         onHello: (playerId, msg) => this.#onHello(playerId, msg),
@@ -175,6 +185,17 @@ export class HostRoom extends EventTarget {
   }
 
   /** ¿Se está jugando una pregunta del millonario (sección de Test)? */
+  /** ¿Hay al menos dos equipos con gente? (entonces, antes de la portada, «Equipo A contra equipo B») */
+  get hasVersus() {
+    const players = this.roster.list();
+    return this.roster.teams.filter((t) => players.some((p) => p.teamId === t.id)).length >= 2;
+  }
+
+  /** ¿La portada va por la presentación de los equipos? */
+  get versusStep() {
+    return this.runner.screen === SCREEN.COVER && this.#versusStep;
+  }
+
   /** ¿La presentación de un millonario va por «Cómo se juega»? */
   get introRules() {
     const r = this.runner;
@@ -410,6 +431,8 @@ export class HostRoom extends EventTarget {
       // Lista para la introducción del concurso en la tele
       sections: this.show.sections.map((s, i) => ({ name: s.name, label: SECTION_TYPES[s.type].label, env: sectionEnv(s, i) })),
       section: r.section,
+      setupStep: this.setupStep,
+      versus: this.versusStep,
       introRules: this.introRules,
       sectionLabel: r.section ? SECTION_TYPES[r.section.type].label : '',
       playable: isPlayable(r.section),
@@ -455,6 +478,7 @@ export class HostRoom extends EventTarget {
     return {
       code: v.code,
       network: this.network,
+      connectFailures: this.connectFailures ?? null,
       title: v.title,
       screen: v.screen,
       peekScoreboard: v.peekScoreboard,
@@ -475,6 +499,8 @@ export class HostRoom extends EventTarget {
         env: sectionEnv(v.section, v.sectionIndex),
       },
       sectionLabel: v.sectionLabel,
+      setupStep: v.setupStep,
+      versus: v.versus,
       introRules: v.introRules,
       playable: v.playable,
       item: v.item,
@@ -524,12 +550,24 @@ export class HostRoom extends EventTarget {
 
   #actions = {
     next: () => {
-      if (this.runner.screen === SCREEN.SETUP) {
+      const r = this.runner;
+      if (r.screen === SCREEN.SETUP) {
+        // Preparación → título del concurso → conexión de los jugadores → empezar
+        if (this.setupStep !== 'join') {
+          this.setupStep = SETUP_STEPS[SETUP_STEPS.indexOf(this.setupStep) + 1];
+          return true;
+        }
         if (!this.canStart) return `Hacen falta al menos ${MIN_PLAYERS} jugadores conectados.`;
         this.roster.lockTeams(true); // al empezar, los equipos quedan cerrados
+        const ok = r.next();
+        this.#versusStep = ok !== false && r.screen === SCREEN.COVER && this.hasVersus;
+        return ok;
+      }
+      if (r.screen === SCREEN.COVER && this.#versusStep) {
+        this.#versusStep = false;
+        return true;
       }
       // Millonario: tras el título de la sección, «Cómo se juega» (con su música) y luego la primera pregunta
-      const r = this.runner;
       if (r.screen === SCREEN.INTRO && r.section?.type === 'test' && isPlayable(r.section) && this.#rulesFor !== r.sectionIndex) {
         this.#rulesFor = r.sectionIndex;
         return true;
@@ -541,11 +579,24 @@ export class HostRoom extends EventTarget {
         this.#rulesFor = null;
         return true;
       }
-      return this.runner.prev();
+      const r = this.runner;
+      if (r.screen === SCREEN.SETUP && this.setupStep !== 'prep') {
+        this.setupStep = SETUP_STEPS[SETUP_STEPS.indexOf(this.setupStep) - 1];
+        return true;
+      }
+      if (r.screen === SCREEN.COVER) {
+        if (!this.#versusStep && this.hasVersus) {
+          this.#versusStep = true;
+          return true;
+        }
+        this.#versusStep = false;
+      }
+      return r.prev();
     },
     nextItem: () => this.runner.nextItem(),
     gotoSection: ({ index }) => {
       this.#rulesFor = null;
+      this.#versusStep = false;
       return this.runner.goToSection(Number(index));
     },
     endSection: () => this.runner.endSection(),
@@ -977,6 +1028,8 @@ export class HostRoom extends EventTarget {
       return;
     }
     const question = buildQuestion(section, this.runner.item, { players: this.roster.list(), settings: this.show.settings });
+    question.level = questionLevel(this.runner.item, this.runner.itemIndex, this.runner.itemCount);
+    question.points = [pointsForLevel(section.points, question.level)];
     const stored = this.itemResults[key]?.millionaire;
     if (stored) {
       this.millionaire = MillionaireRound.fromJSON(question, stored);
@@ -1083,6 +1136,7 @@ export class HostRoom extends EventTarget {
       text: q.text,
       image: q.image,
       points: q.points?.[0] ?? 1,
+      level: q.level,
       options: q.options.map((o, i) => (i < r.shown || forControl ? o : null)),
       count: q.options.length,
       shown: r.shown,
@@ -1494,6 +1548,7 @@ export class HostRoom extends EventTarget {
       itemResults: this.itemResults,
       spokespeople: Object.fromEntries(this.spokespeople),
       turnOrders: this.turnOrders,
+      setupStep: this.setupStep,
     });
   }
 
