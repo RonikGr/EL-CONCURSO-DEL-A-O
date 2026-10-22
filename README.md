@@ -85,6 +85,12 @@ En el móvil de cada concursante, bajo su nombre, se ve en qué sección está (
 juego) y su equipo con el puesto. Tocando sus puntos se abre el **marcador** (equipos y concursantes, en directo) sin
 salir de lo que está pasando: «Volver al juego» lo cierra.
 
+**Probar sin móviles:** en la barra de la tele (abajo; mueve el ratón si no se ve), **🤖 Pruebas**: «+1», «+5» o
+«Llenar los huecos» mete concursantes de prueba («🤖 Lola», «🤖 Paco»…) con equipo, icono y color, y juegan solos al
+azar: pulsan, responden, votan, eligen en el millonario, votan en el Público, ordenan su equipo si son portavoces y
+cuentan en Libre. Con «Responden solos» apagado, solo lo hacen al pulsar «¡Responded ya!». «Quitarlos» los saca.
+Tú llevas el concurso como siempre, desde el teclado o el mando.
+
 El mando tiene cuatro pestañas: **Juego** (lo que toca ahora), **Jugadores** (puntos ±, puntos de equipo, mover de
 equipo, quitar), **Secciones** (saltar a cualquiera) y **🎮 Jugar**: para jugar tú también con el mismo móvil (no abras
 la página de jugador en otra pestaña: el móvil congela la que no ves y se desconecta). Solo juegas en las secciones con

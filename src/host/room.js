@@ -24,6 +24,7 @@ import {
 import { ERROR_CODE, MSG } from '../shared/protocol.js';
 import { FPHASE, FreeRound } from '../core/free.js';
 import { PeerSource } from './sources/peerSource.js';
+import { BotPlayers } from './bots.js';
 import { saveRoom } from './persistence.js';
 import { matchFace } from '../core/faces.js';
 import { TURN_TYPES, answererFor, normalizeOrder, seatFor } from '../core/turns.js';
@@ -114,9 +115,8 @@ export class HostRoom extends EventTarget {
     this.sync = new Map(); // playerId → último syncReport del móvil
     this.lastRound = null; // última ronda con pulsaciones, para el modo depuración
 
-    this.source = new PeerSource({
-      roomCode: code,
-      handlers: {
+    // Lo que entra de los jugadores y mandos: por la red (PeerSource) o de los concursantes de prueba (bots)
+    const handlers = {
         onStatus: (s) => {
           this.network = s;
           this.#changed({ persist: false });
@@ -150,12 +150,14 @@ export class HostRoom extends EventTarget {
           this.pendingControls.delete(controlId);
           this.#changed({ persist: false });
         },
-      },
-    });
+    };
+    this.source = new PeerSource({ roomCode: code, handlers });
+    this.bots = new BotPlayers(this, handlers);
   }
 
   start() {
     this.source.start();
+    this.bots.start();
     this.#persist();
   }
 
@@ -163,6 +165,7 @@ export class HostRoom extends EventTarget {
     this.#clearTimers();
     clearTimeout(this.#controlPush);
     this.source.destroy();
+    this.bots.stop();
   }
 
   get canStart() {
@@ -449,6 +452,7 @@ export class HostRoom extends EventTarget {
       setupStep: this.setupStep,
       versus: this.versusStep,
       introRules: this.introRules,
+      bots: { count: this.bots.ids.length, auto: this.bots.auto }, // concursantes de prueba
       sectionLabel: r.section ? SECTION_TYPES[r.section.type].label : '',
       playable: isPlayable(r.section),
       item: r.item,
@@ -821,6 +825,18 @@ export class HostRoom extends EventTarget {
       this.#syncMillionaire();
       return true;
     },
+    // Concursantes de prueba (🤖 Pruebas): añadir, quitar, que respondan solos o ya
+    botsAdd: ({ count = MAX_PLAYERS }) => this.bots.add(Number(count)) > 0 || 'La sala ya está llena.',
+    botsRemove: () => this.bots.removeAll() > 0 || 'No hay concursantes de prueba.',
+    botsAuto: ({ on }) => {
+      this.bots.auto = !!on;
+      return true;
+    },
+    botsAct: () => {
+      this.bots.actNow();
+      return true;
+    },
+
     removePlayer: ({ playerId }) => {
       if (!this.roster.get(playerId)) return false;
       this.source.kick(playerId, { code: ERROR_CODE.REMOVED, message: 'El presentador te ha quitado de la sala.' });

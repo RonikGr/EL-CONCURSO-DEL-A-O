@@ -2453,3 +2453,10 @@ body.splash-on {
 .cue-row.adjusted .cue-label {
   color: var(--accent);
 }
+
+/* Ventana de concursantes de prueba */
+.bots-count {
+  margin: 0.4rem 0 0.8rem;
+  font-size: 1.3rem;
+  font-weight: 700;
+}

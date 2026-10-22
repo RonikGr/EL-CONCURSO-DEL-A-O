@@ -28,6 +28,7 @@ import { TrackStore } from './fx/tracks.js';
 import { FaceStore } from './faceStore.js';
 import { openFacesDialog } from './facesDialog.js';
 import { openMusicDialog } from './musicDialog.js';
+import { openBotsDialog } from './botsDialog.js';
 import { canRemember, chooseFolder, importFolder, rereadFolder, savedFolder } from './contestFolder.js';
 import { createDirector, envFor, screenKey } from './fx/director.js';
 import { enterScreen, kinetic, odometer } from './fx/motion.js';
@@ -288,6 +289,7 @@ function renderShell() {
         'footer',
         { class: 'toolbar' },
         h('span', { class: 'hint' }, 'Espacio · ← → · P pregunta · V respuesta · A acierto · F fallo · R reiniciar · M marcador · D depuración'),
+        h('button', { class: 'btn', onclick: () => openPanel(() => openBotsDialog({ room, run })) }, '🤖 Pruebas'),
         h('button', { class: 'btn', onclick: () => debug.toggle(room) }, 'Depuración'),
         h('button', { class: 'btn', onclick: () => openSettingsDialog(room) }, 'Ajustes'),
         h('button', { class: 'btn', onclick: toggleFullscreen }, 'Pantalla completa'),

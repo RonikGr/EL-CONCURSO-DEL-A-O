@@ -46,6 +46,15 @@ Ojo con PowerShell 5.1: `Get-Content`/`Set-Content` sin `-Encoding` rompen los a
   `sources/peerSource.js` (jugadores y mandos); fase futura: mandos físicos (Gamepad API) con offset 0.
   `show.css` = capa visual del espectáculo sobre `host.css`. `fx/` = espectáculo (ver «Espectáculo (fase 9)»).
 - `src/player/` — móvil del jugador: reconexión, sincronización, botón, elegir equipo.
+- **Concursantes de prueba** («🤖 Pruebas» en la barra de la tele, `host/botsDialog.js`; órdenes botsAdd {count},
+  botsRemove, botsAuto {on}, botsAct): `host/bots.js` `BotPlayers` entra por los mismos manejadores que la red
+  (`room` los guarda en `handlers` y se los pasa a PeerSource y a los bots), sin red: hello en los huecos libres (equipo
+  con menos gente, icono y color al azar, nombre «🤖 Lola»; ids `bot-…`), y cada 250 ms deciden al azar
+  (`core/bots.js`, puro con tests): pulsan (60 %, 0,25–1,8 s), responden (opciones con 60 % de acierto, votos, números
+  entre la mitad y el doble), pulsan cerca del objetivo del Contador o tras la señal en Reflejos (8 % antes de tiempo),
+  eligen en el millonario y votan en el Público, ordenan su equipo si son portavoces y cuentan en Libre. «Responden
+  solos» (por defecto) o solo con «¡Responded ya!». Siguen en la sala al recargar la tele (`start()` los vuelve a
+  conectar). Lo que la tele les manda (`sendTo`) se pierde sin más: miran el estado de la sala directamente.
 - `src/control/` — mando del presentador: pestañas Juego / Jugadores / Secciones / 🎮 Jugar; manda órdenes `cmd` y pinta
   `controlState`. «Jugar» = la página de jugador en un iframe (`./?sala=X&mando=1`) que se crea una vez y no se quita:
   con dos pestañas del navegador en el mismo móvil, la que no se ve se congela y se desconecta (y salta el antitrampas);
