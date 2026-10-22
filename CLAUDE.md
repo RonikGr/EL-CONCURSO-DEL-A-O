@@ -46,9 +46,15 @@ Ojo con PowerShell 5.1: `Get-Content`/`Set-Content` sin `-Encoding` rompen los a
   `sources/peerSource.js` (jugadores y mandos); fase futura: mandos físicos (Gamepad API) con offset 0.
   `show.css` = capa visual del espectáculo sobre `host.css`. `fx/` = espectáculo (ver «Espectáculo (fase 9)»).
 - `src/player/` — móvil del jugador: reconexión, sincronización, botón, elegir equipo.
-- `src/control/` — mando del presentador: pestañas Juego / Jugadores / Secciones; manda órdenes `cmd` y pinta `controlState`.
+- `src/control/` — mando del presentador: pestañas Juego / Jugadores / Secciones / 🎮 Jugar; manda órdenes `cmd` y pinta
+  `controlState`. «Jugar» = la página de jugador en un iframe (`./?sala=X&mando=1`) que se crea una vez y no se quita:
+  con dos pestañas del navegador en el mismo móvil, la que no se ve se congela y se desconecta (y salta el antitrampas);
+  dentro de una sola página las dos conexiones siguen vivas. Usa la identidad de jugador del móvil (sin `perfil`).
 
-### Protocolo (JSON por DataConnection fiable, campo `t` = tipo; `PROTOCOL_VERSION` = 2)
+### Protocolo (objetos por DataConnection fiable, campo `t` = tipo; `PROTOCOL_VERSION` = 2)
+
+Serialización `binary` (peerConfig.js), que trocea: con `json`, PeerJS da error con mensajes de más de 16 300 bytes
+(una sola foto de cara ya lo supera) y la conexión se cortaba. Un error al enviar no corta la conexión si sigue abierta.
 
 Jugador → tele: `hello {v, role:'player', playerId, name, color, icon, teamId}`, `profile {name, color, icon, teamId}`,
 `hbAck {h0}`, `buzz {seq, epoch, tLocal?, offset?, err?}` (sin offset → cuenta la llegada),
@@ -298,13 +304,17 @@ mientras la página no se pinta (ventana oculta o minimizada).
 - `h()` aplica las variables CSS de `style` con `setProperty` (antes `Object.assign` las ignoraba y opciones,
   barras y fichas salían sin color).
 
-## Diseño del concurso (acordado; hecho hasta la fase 9, salvo que el presentador juegue)
+## Diseño del concurso (acordado; hecho hasta la fase 9)
 
 - **Tres papeles:** `host.html` = espectáculo en la tele (sigue siendo la autoridad: estado, puntos, conexiones,
   música); `control.html` = mando del presentador en su móvil (ve preguntas y respuestas en privado, lo controla
   todo); `index.html` = jugador. El mando se empareja con un QR con clave secreta que muestra la tele en
   preparación + confirmación con tecla en el portátil; luego se recuerda. El teclado del portátil sigue de respaldo.
-- **El presentador también puede jugar** en las secciones que lo permitan (columna "El presentador juega").
+- **El presentador también puede jugar** en las secciones que lo permitan (columna "El presentador juega"), desde la
+  pestaña «Jugar» del mando: su `hello` lleva `presenter: true` → `sala.presenterIds` (persistido). `benched(id)` =
+  presentador y la sección no lo permite (Test, Verdad, Estimación…: ve las respuestas): fuera de los elegibles de
+  respuestas, del pulsador (`closed`), del asiento y del público/llamada del millonario y del orden de su equipo (y mejor
+  no portavoz); su móvil dice «🎤 Presentas» (`state.benched`) y la tele pone 🎤 en su tarjeta.
 - **Pantallas de la tele:** Preparación → Título → Conexión → Equipos (A vs B) → Portada → [Intro de sección → rondas →
   Marcador] × N → Final (podios).
 - **Equipos:** se eligen al entrar; antes de empezar, pantalla de comprobación y "Equipos cerrados" (solo el
@@ -336,7 +346,7 @@ mientras la página no se pinta (ventana oculta o minimizada).
    (Los demás tipos ya se leen y validan desde la hoja; en el juego muestran su intro y se saltan hasta su fase.)
 5. Respuestas desde el móvil: Test (con comodines), Verdad o mentira, Dos verdades, ¿Quién es más probable…?, Estimación. ✔
 6. Secciones de tiempo: Parar el contador y Duelo de reflejos. ✔
-7. Sección Libre (cronómetro y contador). ✔ Pendiente de esta fase: que el presentador juegue desde el mando.
+7. Sección Libre (cronómetro y contador). ✔ Y que el presentador juegue desde el mando (pestaña «Jugar»). ✔
 8. ~~Spotify~~ — descartado: la música la pone el presentador aparte.
 9. Espectáculo con tema de Halloween: entorno por sección (WebGL), música y efectos generados, transiciones, marcador
    animado, revelados con suspense, podio con confeti, wake lock, tarjetas compactas para 20 jugadores. ✔

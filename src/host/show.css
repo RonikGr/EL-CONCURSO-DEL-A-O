@@ -2394,3 +2394,8 @@ body.splash-on {
     animation: none;
   }
 }
+
+/* El presentador que juega desde el mando, en una sección donde no juega */
+.player-card.benched {
+  opacity: 0.55;
+}

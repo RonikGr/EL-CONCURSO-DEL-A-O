@@ -114,7 +114,7 @@ body.offline .c-net {
   bottom: 0;
   z-index: 5;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   padding-bottom: env(safe-area-inset-bottom);
   background: var(--surface);
   border-top: 1px solid var(--border);
@@ -512,4 +512,22 @@ body.offline .c-net {
   min-height: 2.2rem;
   padding: 0.2em 0.7em;
   font-size: 0.9rem;
+}
+
+/* Jugar desde el mando: la página de jugador ocupa lo que hay entre la cabecera y las pestañas */
+.c-play-frame {
+  position: fixed;
+  left: 0;
+  z-index: 4;
+  width: 100%;
+  border: 0;
+  background: transparent;
+}
+
+.c-play-frame[hidden] {
+  display: none;
+}
+
+body.c-playing .c-main {
+  display: none;
 }

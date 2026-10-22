@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { MSG, PROTOCOL_VERSION, parseHostMessage, parsePlayerMessage } from '../src/shared/protocol.js';
+import { CONNECTION_OPTIONS } from '../src/shared/peerConfig.js';
 
 describe('protocolo', () => {
   it('acepta un hello válido y descarta campos desconocidos', () => {
     const msg = parsePlayerMessage({ t: MSG.HELLO, v: PROTOCOL_VERSION, playerId: 'abc', name: 'Ana', color: 'rojo', icon: 'zorro', extra: 1 });
-    expect(msg).toEqual({ t: 'hello', v: PROTOCOL_VERSION, role: 'player', playerId: 'abc', name: 'Ana', color: 'rojo', icon: 'zorro', teamId: null });
+    expect(msg).toEqual({ t: 'hello', v: PROTOCOL_VERSION, role: 'player', playerId: 'abc', name: 'Ana', color: 'rojo', icon: 'zorro', teamId: null, presenter: false });
+    // desde el mando del presentador (pestaña «Jugar»)
+    expect(parsePlayerMessage({ t: MSG.HELLO, v: PROTOCOL_VERSION, playerId: 'abc', presenter: true }).presenter).toBe(true);
+    expect(parsePlayerMessage({ t: MSG.HELLO, v: PROTOCOL_VERSION, playerId: 'abc', presenter: 'sí' }).presenter).toBe(false);
   });
 
   it('rechaza mensajes mal formados', () => {
@@ -83,5 +87,11 @@ describe('protocolo', () => {
     expect(parseHostMessage({ t: MSG.STATE })).toBeNull();
     expect(parseHostMessage({ t: MSG.STATE, you: {} })).not.toBeNull();
     expect(parseHostMessage({ t: MSG.ERROR, code: 'room-full' })).not.toBeNull();
+  });
+
+  it('los mensajes grandes se trocean (con «json», PeerJS corta a partir de 16 300 bytes)', () => {
+    // Una foto de la cara ya pasa de 16 KB: con «json» la conexión se cortaba y quien tenía foto no podía entrar.
+    expect(CONNECTION_OPTIONS.serialization).toBe('binary');
+    expect(CONNECTION_OPTIONS.reliable).toBe(true);
   });
 });

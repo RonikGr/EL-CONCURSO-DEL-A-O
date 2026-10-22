@@ -81,6 +81,7 @@ export function parsePlayerMessage(msg) {
         color: str(msg.color, 32),
         icon: str(msg.icon, 32),
         teamId: optStr(msg.teamId, 64),
+        presenter: msg.presenter === true, // juega desde el mando del presentador
       };
     case MSG.PROFILE:
       return {

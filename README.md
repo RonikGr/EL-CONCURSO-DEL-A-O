@@ -82,8 +82,11 @@ En el móvil de cada concursante, bajo su nombre, se ve en qué sección está (
 juego) y su equipo con el puesto. Tocando sus puntos se abre el **marcador** (equipos y concursantes, en directo) sin
 salir de lo que está pasando: «Volver al juego» lo cierra.
 
-El mando tiene tres pestañas: **Juego** (lo que toca ahora), **Jugadores** (puntos ±, puntos de equipo, mover de
-equipo, quitar) y **Secciones** (saltar a cualquiera).
+El mando tiene cuatro pestañas: **Juego** (lo que toca ahora), **Jugadores** (puntos ±, puntos de equipo, mover de
+equipo, quitar), **Secciones** (saltar a cualquiera) y **🎮 Jugar**: para jugar tú también con el mismo móvil (no abras
+la página de jugador en otra pestaña: el móvil congela la que no ves y se desconecta). Solo juegas en las secciones con
+«El presentador juega» (por defecto Votación, Contador, Reflejos y Libre); en las demás, como ves las respuestas, tu
+móvil dice «🎤 Presentas» y la tele no cuenta contigo (ni en los turnos ni en el millonario).
 
 Teclado del portátil (por si el mando falla): **Espacio** (abrir turno / siguiente), **← →**, **P** pregunta,
 **V** respuesta, **A** acierto, **F** fallo, **R** reiniciar, **M** marcador, **D** depuración. En **Ajustes** se

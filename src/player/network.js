@@ -253,7 +253,11 @@ export class PlayerConnection {
       this.onMessage?.(msg, tRecv);
     });
     conn.on('close', () => current() && this.#lost());
-    conn.on('error', () => current() && this.#lost());
+    // Un error al mandar un mensaje no es motivo para cortar: solo si la conexión ya no está abierta
+    conn.on('error', (err) => {
+      console.warn('[player] conexión', err?.type ?? err);
+      if (current() && !conn.open) this.#lost();
+    });
   }
 
   #checkHost() {

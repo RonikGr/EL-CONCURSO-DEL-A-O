@@ -27,6 +27,7 @@ saveJSON(STORE_KEY, store);
 let connection = null;
 let view = null;
 let tab = 'game';
+let playFrame = null; // la página de jugador dentro del mando (pestaña «Jugar»): se crea la primera vez y no se quita
 let cmdSeq = 0;
 let lastSignature = null;
 let status = 'connecting'; // connecting | pending | ready | reconnecting
@@ -138,7 +139,7 @@ function render() {
       h('span', { class: 'c-net', title: 'Conexión' }),
     ),
     h('div', { id: 'c-banner', class: 'c-banner', hidden: true }),
-    h('main', { class: 'c-main' }, tab === 'game' ? gameTab() : tab === 'players' ? playersTab() : sectionsTab()),
+    h('main', { class: 'c-main' }, tab === 'game' ? gameTab() : tab === 'players' ? playersTab() : tab === 'sections' ? sectionsTab() : null),
     h(
       'nav',
       { class: 'c-tabs' },
@@ -146,6 +147,7 @@ function render() {
         ['game', 'Juego'],
         ['players', 'Jugadores'],
         ['sections', 'Secciones'],
+        ['play', '🎮 Jugar'],
       ].map(([id, label]) =>
         h(
           'button',
@@ -162,6 +164,35 @@ function render() {
     ),
     h('div', { id: 'c-toast', class: 'c-toast', hidden: true }),
   );
+  showPlayFrame(tab === 'play');
+}
+
+/**
+ * Jugar desde el mando: la página de jugador va dentro del mando (un iframe que no se quita al cambiar de pestaña).
+ * Así el móvil mantiene las dos conexiones vivas: con dos pestañas del navegador, la que no se ve se congela y se
+ * desconecta. Usa la identidad de jugador de este móvil (si ya jugaste con él, eres el mismo) y avisa a la tele de que
+ * eres el presentador: en las secciones donde no juegas (las que ves con respuestas), la tele te deja fuera.
+ */
+function showPlayFrame(visible) {
+  document.body.classList.toggle('c-playing', visible);
+  if (!visible) {
+    if (playFrame) playFrame.hidden = true;
+    return;
+  }
+  if (!playFrame) {
+    playFrame = h('iframe', {
+      class: 'c-play-frame',
+      title: 'Jugar',
+      src: `./?sala=${view.code}&mando=1`,
+      allow: 'screen-wake-lock; vibrate',
+    });
+    document.body.append(playFrame);
+  }
+  playFrame.hidden = false;
+  // entre la cabecera del mando y las pestañas
+  const top = app.querySelector('.c-top')?.getBoundingClientRect().bottom ?? 0;
+  playFrame.style.top = `${Math.round(top)}px`;
+  playFrame.style.height = `calc(100dvh - ${Math.round(top)}px - 3.4rem - env(safe-area-inset-bottom))`; // un iframe no se estira con top y bottom
 }
 
 function renderBanner(text) {

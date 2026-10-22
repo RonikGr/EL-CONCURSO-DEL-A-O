@@ -20,6 +20,9 @@ import { keepScreenAwake } from '../shared/wakeLock.js';
 // `?perfil=2` usa otra identidad: para probar varios jugadores en pestañas del mismo navegador.
 const profileSlot = new URLSearchParams(location.search).get('perfil');
 const PROFILE_KEY = 'concurso.player.v1' + (profileSlot ? `.${profileSlot.slice(0, 16)}` : '');
+// `?mando=1`: esta página va dentro del mando del presentador (pestaña «Jugar»): la tele sabe que juega el presentador
+const inRemote = new URLSearchParams(location.search).get('mando') === '1';
+if (inRemote) document.body.classList.add('in-remote');
 // sessionStorage: sala en la que está esta pestaña, para volver a entrar sola si se recarga.
 const SESSION_KEY = 'concurso.player.session';
 
@@ -154,7 +157,7 @@ function join(code) {
   connection?.stop();
   roomCode = code;
   writeSession(code);
-  history.replaceState(null, '', `?sala=${code}${profileSlot ? `&perfil=${encodeURIComponent(profileSlot)}` : ''}`);
+  history.replaceState(null, '', `?sala=${code}${profileSlot ? `&perfil=${encodeURIComponent(profileSlot)}` : ''}${inRemote ? '&mando=1' : ''}`);
   $('#connecting-text').textContent = `Conectando con la sala ${code}…`;
   $('#connecting-help').hidden = true;
   show('screen-connecting');
@@ -170,6 +173,7 @@ function join(code) {
         color: profile.color,
         icon: profile.icon,
         teamId: profile.teamId ?? null,
+        presenter: inRemote,
       });
       sync.start(); // después del hello: el presentador ignora todo lo anterior
       sendBack(); // si volvió a la app mientras no había conexión
@@ -511,7 +515,9 @@ function renderInfo(state) {
     free.won ? '¡Has ganado!' : free.out ? '¡Eliminado!' : free.participating ? '¡Te toca!' : free.title,
     free.won ? `+${free.points} ${free.byTeams ? 'para tu equipo' : ''}`.trim() : free.participating ? free.title : 'Mira la tele',
   ];
-  const [label, sub] = freeText ?? {
+  // El presentador, en las secciones donde no juega (ve las respuestas en el mando)
+  const benched = state.benched && ['intro', 'play'].includes(state.screen) ? ['🎤 Presentas', 'En esta sección no juegas: tú la llevas'] : null;
+  const [label, sub] = benched ?? freeText ?? {
     setup: ['Espera', state.playerCount < state.minPlayers ? `Esperando jugadores (mínimo ${state.minPlayers})` : 'Enseguida empezamos'],
     cover: ['¡Empezamos!', 'Mira la tele'],
     intro: state.turns

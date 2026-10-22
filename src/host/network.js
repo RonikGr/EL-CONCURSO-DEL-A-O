@@ -181,6 +181,10 @@ export class HostNetwork {
       this.onClose?.(id);
     };
     conn.on('close', closed);
-    conn.on('error', closed);
+    // Un error al mandar un mensaje no es motivo para cortar: solo si la conexión ya no está abierta
+    conn.on('error', (err) => {
+      console.warn('[host] conexión', err?.type ?? err);
+      if (!conn.open) closed();
+    });
   }
 }

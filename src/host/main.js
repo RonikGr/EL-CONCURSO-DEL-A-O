@@ -544,14 +544,16 @@ function updateCard(card, p, place, hasAnswered = null) {
     card.look = look;
     card.avatar.replaceChildren(avatarOf(p));
   }
-  card.name.textContent = p.name;
+  card.name.textContent = p.presenter ? `🎤 ${p.name}` : p.name; // juega desde el mando del presentador
   let status = p.connected ? `Conectado${p.rtt != null ? ` · ${Math.round(p.rtt)} ms` : ''}` : 'Desconectado';
   if (p.lock) status = LOCK_TEXT[p.lock] + (p.connected ? '' : ' · desconectado');
   if (hasAnswered != null) status = hasAnswered ? '✓ Ha respondido' : 'Pensando…';
   // Antitrampas: fuera de la app ahora mismo, o anulado en esta pregunta por haber salido
   if (p.cheated) status = '🚨 Anulado · salió de la app';
   else if (p.away) status = '👀 Fuera de la app';
+  if (p.benched) status = 'Presenta (no juega esta sección)';
   card.root.classList.toggle('away', !!p.away || !!p.cheated);
+  card.root.classList.toggle('benched', !!p.benched);
   card.meta.textContent = status;
   card.root.classList.toggle('answered', hasAnswered === true);
   card.place.textContent = place ? `${place}º` : '';

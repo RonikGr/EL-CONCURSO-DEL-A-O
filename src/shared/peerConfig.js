@@ -21,9 +21,12 @@ export const PEER_OPTIONS = {
   },
 };
 
+// 'binary' trocea los mensajes grandes (fotos de las caras, el estado del mando con 20 jugadores) y los vuelve a juntar.
+// Con 'json', PeerJS da error en cuanto un mensaje pasa de 16 300 bytes y la conexión se cortaba: quien tenía foto
+// (y el mando, que recibe todas) no conseguía entrar.
 export const CONNECTION_OPTIONS = {
   reliable: true,
-  serialization: 'json',
+  serialization: 'binary',
 };
 
 /** Traduce los errores de PeerJS a mensajes para personas. */

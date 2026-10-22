@@ -98,6 +98,8 @@ export class HostRoom extends EventTarget {
     this.turnOrders = saved?.turnOrders ?? {}; // sectionId → teamId → [playerId…]
     // Antes de empezar: preparación (archivos y mando) → título del concurso → conexión de los jugadores
     this.setupStep = SETUP_STEPS.includes(saved?.setupStep) ? saved.setupStep : 'prep';
+    // Jugadores que juegan desde el mando del presentador: en las secciones sin «El presentador juega», fuera
+    this.presenterIds = new Set(saved?.presenterIds ?? []);
     this.answerRound = null;
     this.freeRound = null; // sección Libre: la prueba actual
     this.duelPick = []; // Duelo de reflejos: los dos que juegan (se mantiene entre rondas)
@@ -208,7 +210,7 @@ export class HostRoom extends EventTarget {
 
   /** Millonario: grupos para el asiento (equipos con el orden de su portavoz; sin equipos, todos por orden de llegada). */
   #seatGroups() {
-    if (!this.roster.hasTeams) return [{ teamId: null, order: this.roster.list().map((p) => p.id) }];
+    if (!this.roster.hasTeams) return [{ teamId: null, order: this.roster.list().filter((p) => !this.benched(p.id)).map((p) => p.id) }];
     return this.roster.teams.map((t) => ({ teamId: t.id, order: this.#turnOrder(t.id) }));
   }
 
@@ -223,16 +225,27 @@ export class HostRoom extends EventTarget {
     return this.roster.list().filter((p) => p.teamId === teamId);
   }
 
-  /** Portavoz de un equipo: el elegido por el presentador o, si no hay, el primero que entró en el equipo. */
+  /**
+   * ¿Este jugador es el presentador (juega desde el mando) y la sección actual no le deja jugar? Ve las preguntas con
+   * sus respuestas en el mando, así que solo juega donde lo dice la columna «El presentador juega».
+   */
+  benched(playerId) {
+    const s = this.runner.section;
+    return this.presenterIds.has(playerId) && !!s && !s.presenterPlays;
+  }
+
+  /** Portavoz de un equipo: el elegido por el presentador o, si no hay, el primero que entró (mejor no el presentador). */
   spokespersonOf(teamId) {
     const members = this.#members(teamId);
     const chosen = this.spokespeople.get(teamId);
-    return members.find((p) => p.id === chosen)?.id ?? members[0]?.id ?? null;
+    return members.find((p) => p.id === chosen)?.id ?? members.find((p) => !this.presenterIds.has(p.id))?.id ?? members[0]?.id ?? null;
   }
 
-  /** Orden del equipo en la sección actual (el del portavoz, completado). */
+  /** Orden del equipo en la sección actual (el del portavoz, completado; sin el presentador si no juega). */
   #turnOrder(teamId) {
-    const ids = this.#members(teamId).map((p) => p.id);
+    const ids = this.#members(teamId)
+      .filter((p) => !this.benched(p.id))
+      .map((p) => p.id);
     return normalizeOrder(this.turnOrders[this.runner.section?.id]?.[teamId], ids);
   }
 
@@ -309,6 +322,8 @@ export class HostRoom extends EventTarget {
       lock: this.inBuzzerPlay ? (this.game.lockouts.get(p.id) ?? null) : null,
       away: this.#away.has(p.id), // antitrampas: ahora mismo fuera de la app
       cheated: this.inAnswerPlay && this.answerRound.cheaters.has(p.id),
+      presenter: this.presenterIds.has(p.id), // juega desde el mando
+      benched: this.benched(p.id),
     }));
   }
 
@@ -644,7 +659,10 @@ export class HostRoom extends EventTarget {
       if (!this.inAnswerPlay) return false;
       if (!this.canStart) return `Hacen falta al menos ${MIN_PLAYERS} jugadores conectados.`;
       const q = this.answerRound.question;
-      let eligibleIds = this.roster.list().filter((p) => p.connected).map((p) => p.id);
+      let eligibleIds = this.roster
+        .list()
+        .filter((p) => p.connected && !this.benched(p.id))
+        .map((p) => p.id);
       // Por turnos: solo el que le toca de cada equipo
       if (this.inTurns && !q.duel) eligibleIds = this.#answerers().map((a) => a.playerId).filter((id) => eligibleIds.includes(id));
       if (q.duel) {
@@ -864,6 +882,8 @@ export class HostRoom extends EventTarget {
     if (!res.ok) {
       return { ok: false, error: { code: ERROR_CODE.ROOM_FULL, message: `La sala está llena (máximo ${MAX_PLAYERS} jugadores).` } };
     }
+    if (msg.presenter) this.presenterIds.add(playerId);
+    else this.presenterIds.delete(playerId); // la misma persona, ahora desde la página normal de jugador
     this.#assignFaces();
     this.source.sendTo(playerId, { t: MSG.FACES, images: this.#faceImages() }); // antes del welcome: que ya se vea su cara
     this.#broadcastFaces();
@@ -893,7 +913,7 @@ export class HostRoom extends EventTarget {
   }
 
   #onBuzz(playerId, msg) {
-    if (!this.inBuzzerPlay) {
+    if (!this.inBuzzerPlay || this.benched(playerId)) {
       // Fuera de una pregunta de pulsador no cuenta (ni bloquea a quien toque el botón en la portada).
       this.source.sendTo(playerId, { t: MSG.BUZZ_ACK, seq: msg.seq, result: 'closed' });
       return;
@@ -1065,14 +1085,14 @@ export class HostRoom extends EventTarget {
     const seat = this.millionaire.seat;
     return this.roster
       .list()
-      .filter((p) => p.connected && p.id !== seat.playerId && (!seat.teamId || p.teamId === seat.teamId))
+      .filter((p) => p.connected && p.id !== seat.playerId && !this.benched(p.id) && (!seat.teamId || p.teamId === seat.teamId))
       .map((p) => p.id);
   }
 
   /** A quién se puede llamar: compañeros de equipo (o cualquiera sin equipos) que no concursan ahora. */
   #callable() {
     const seat = this.millionaire.seat;
-    return this.roster.list().filter((p) => p.id !== seat.playerId && (!seat.teamId || p.teamId === seat.teamId));
+    return this.roster.list().filter((p) => p.id !== seat.playerId && !this.benched(p.id) && (!seat.teamId || p.teamId === seat.teamId));
   }
 
   #mTimer(at, fn) {
@@ -1290,6 +1310,7 @@ export class HostRoom extends EventTarget {
     const play = this.inBuzzerPlay;
     const winner = play && g.winnerId && g.phase === PHASE.RESULT ? this.roster.get(g.winnerId) : null;
     const showSection = r.section && [SCREEN.INTRO, SCREEN.PLAY, SCREEN.SCOREBOARD].includes(r.screen);
+    const benched = this.benched(player.id);
     return {
       t: MSG.STATE,
       room: this.code,
@@ -1323,12 +1344,13 @@ export class HostRoom extends EventTarget {
           .map(publicPlayer)
           .sort((a, b) => b.score - a.score),
       },
-      game: play ? playerView(g, player.id, now()) : null,
+      game: play && !benched ? playerView(g, player.id, now()) : null,
       winner: winner ? publicPlayer(winner) : null,
-      answer: this.inAnswerPlay ? this.#answerViewFor(player) : null,
+      answer: this.inAnswerPlay && !benched ? this.#answerViewFor(player) : null,
       free: this.inFreePlay ? this.#freeViewFor(player) : null,
-      millionaire: this.inMillionairePlay ? this.#millionaireFor(player) : null,
-      turns: this.#turnsFor(player),
+      millionaire: this.inMillionairePlay && !benched ? this.#millionaireFor(player) : null,
+      turns: benched ? null : this.#turnsFor(player),
+      benched, // el presentador, en una sección donde no juega
     };
   }
 
@@ -1549,6 +1571,7 @@ export class HostRoom extends EventTarget {
       spokespeople: Object.fromEntries(this.spokespeople),
       turnOrders: this.turnOrders,
       setupStep: this.setupStep,
+      presenterIds: [...this.presenterIds],
     });
   }
 
