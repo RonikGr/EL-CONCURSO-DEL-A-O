@@ -1,12 +1,14 @@
 // Ajustes a mano de los puntos de las canciones del millonario (ventana de música → «Ajustar tiempos»): se guardan en
 // este portátil y mandan sobre los de core/millionaireMusic.js. «Copiar ajustes» los da en texto para dejarlos fijos
 // en el código si se quiere.
-import { MILLIONAIRE_CUES, applyCueOverrides } from '../../core/millionaireMusic.js';
+import { MILLIONAIRE_CUES, applyCueOverrides, pruneCueOverrides } from '../../core/millionaireMusic.js';
 import { loadJSON, saveJSON } from '../../shared/storage.js';
 
 const KEY = 'concurso.millonario.puntos.v1';
 
-let overrides = loadJSON(KEY, {}) ?? {};
+// los que ya coinciden con los de partida (p. ej. porque se dejaron fijos en el código) dejan de contar como ajustes
+let overrides = pruneCueOverrides(MILLIONAIRE_CUES, loadJSON(KEY, {}) ?? {});
+saveJSON(KEY, overrides);
 let cues = applyCueOverrides(MILLIONAIRE_CUES, overrides);
 
 /** Avisa cuando cambia algún punto (para repintar la ventana y que la música use los nuevos). */

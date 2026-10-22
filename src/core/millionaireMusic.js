@@ -30,8 +30,8 @@ export const MILLIONAIRE_CUES = {
   theme: { gainDb: -3.5, end: 38.4 },
   rules: { gainDb: 0, loop: [16.685, 44.509] },
   easy: { gainDb: 3.5, loop: [15.08, 79.08], lock: 84.98, suspense: [91.06, 97.06], reveal: 99.4 },
-  medium: { gainDb: 2.4, loop: [17.215, 81.215], lock: 83.12, suspense: [91.2, 97.2], reveal: 99.0 },
-  hard: { gainDb: 1.3, loop: [15.965, 47.965], lock: 55.9, suspense: [61.95, 67.95], reveal: 73.45 },
+  medium: { gainDb: 2.4, loop: [17.215, 81.215], lock: 83.12, suspense: [91.2, 97.2], reveal: 100 }, // reveal ajustado de oído
+  hard: { gainDb: 1.3, loop: [15.965, 47.965], lock: 54, suspense: [61.95, 67.95], reveal: 73.45 }, // lock ajustado de oído
   audience: { gainDb: 1, voteEnd: 22.09, end: 32.8 },
   call: { gainDb: 3, loop: [5.86, 13.86], clockEnd: 44.85, end: 46.8 },
 };
@@ -79,6 +79,17 @@ export function applyCueOverrides(base, overrides = {}) {
       if (i == null) out[track][key] = value;
       else if (Array.isArray(out[track][key])) out[track][key][Number(i)] = value;
     }
+  }
+  return out;
+}
+
+/** Quita los ajustes que ya valen lo mismo que los de partida (los demás, tal cual). */
+export function pruneCueOverrides(base, overrides = {}) {
+  const out = {};
+  for (const [track, fields] of Object.entries(overrides ?? {})) {
+    if (!base[track]) continue;
+    const kept = Object.fromEntries(Object.entries(fields ?? {}).filter(([field, v]) => CUE_FIELDS[field] && Math.abs(cueValue(base[track], field) - v) > 1e-6));
+    if (Object.keys(kept).length) out[track] = kept;
   }
   return out;
 }

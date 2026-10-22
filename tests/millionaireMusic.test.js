@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MILLIONAIRE_CUES, levelOf, millionaireCue, millionaireTrackFor, pointsForLevel, questionLevel, applyCueOverrides, cueFieldsOf, cueValue } from '../src/core/millionaireMusic.js';
+import { MILLIONAIRE_CUES, pruneCueOverrides, levelOf, millionaireCue, millionaireTrackFor, pointsForLevel, questionLevel, applyCueOverrides, cueFieldsOf, cueValue } from '../src/core/millionaireMusic.js';
 
 const base = { sectionType: 'test', sectionIndex: 2, screen: 'play', itemIndex: 0, itemCount: 6, introRules: false };
 const m = (over = {}) => ({ roundId: 'r1', phase: 'playing', used: [], audience: null, call: null, result: null, ...over });
@@ -90,6 +90,12 @@ describe('música del millonario', () => {
       if (c.end && c.clockEnd) expect(c.end, id).toBeGreaterThan(c.clockEnd);
       if (c.end && c.voteEnd) expect(c.end, id).toBeGreaterThan(c.voteEnd);
     }
+  });
+
+  it('los ajustes que ya son los de partida dejan de contar', () => {
+    expect(pruneCueOverrides(MILLIONAIRE_CUES, { medium: { reveal: MILLIONAIRE_CUES.medium.reveal }, hard: { lock: 50, reveal: MILLIONAIRE_CUES.hard.reveal }, nada: { x: 1 } })).toEqual({
+      hard: { lock: 50 },
+    });
   });
 
   it('los tiempos se pueden ajustar a mano', () => {
