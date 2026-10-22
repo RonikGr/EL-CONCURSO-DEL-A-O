@@ -2155,3 +2155,91 @@ body.splash-on {
 .mill-stage:has(.mill-panel) .mill-audience {
   height: 8.5rem;
 }
+
+/* Millonario: «Cómo se juega» (presentación de la sección, con la Explicación sonando) */
+.mill-rules {
+  gap: 0.9rem;
+  max-width: 78rem;
+  margin: 0 auto;
+}
+
+.mill-rules .intro-title {
+  font-size: 5rem;
+}
+
+.mill-rules-list {
+  margin: 0;
+  padding: 1rem 1.6rem 1rem 3.4rem;
+  display: grid;
+  gap: 0.5rem;
+  text-align: left;
+  font-size: 1.7rem;
+  line-height: 1.3;
+  border-radius: 1.2rem;
+  background: rgb(5 11 48 / 0.72);
+  box-shadow: inset 0 0 0 2px #8ea2cf;
+}
+
+.mill-rules-list li::marker {
+  color: #ffb733;
+  font-weight: 800;
+}
+
+.mill-rules-sub {
+  margin: 0.4rem 0 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--muted);
+}
+
+.mill-rules-jokers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.2rem;
+}
+
+.mill-rules-jokers li {
+  display: flex;
+  gap: 0.9rem;
+  align-items: center;
+  text-align: left;
+  padding: 0.7rem 1rem;
+  border-radius: 1rem;
+  background: rgb(5 11 48 / 0.6);
+}
+
+.mill-rules-jokers strong {
+  display: block;
+  font-size: 1.6rem;
+}
+
+.mill-rules-jokers span {
+  font-size: 1.2rem;
+  color: var(--muted);
+}
+
+.mill-rules-jokers .joker-icon {
+  flex: none;
+}
+
+.mill-rules:has(.turns-intro) .mill-rules-list {
+  font-size: 1.4rem;
+}
+
+/* Preparación: resultado de leer la carpeta del concurso */
+.folder-report {
+  margin: 0.6rem 0 0;
+  font-weight: 600;
+  color: var(--ok);
+}
+
+/* Millonario en la ventana de música: los «▶» para escuchar cada punto, en su propia línea */
+.ms-previews {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}

@@ -8,6 +8,7 @@ import { SCREEN } from '../../core/runner.js';
 import { PHASE } from '../../core/game.js';
 import { APHASE, isChoice } from '../../core/answers.js';
 import { FPHASE } from '../../core/free.js';
+import { millionaireCue } from '../../core/millionaireMusic.js';
 
 /** Entorno de una vista: el de la sección en juego; preparación, portada y final, la noche de luna. */
 export function envFor(view) {
@@ -17,7 +18,7 @@ export function envFor(view) {
 
 /** Clave de "pantalla": si cambia, la pantalla entra con transición. */
 export function screenKey(view) {
-  return [view.peekScoreboard ? 'peek' : view.screen, view.sectionIndex, view.screen === SCREEN.PLAY ? view.itemIndex : ''].join('|');
+  return [view.peekScoreboard ? 'peek' : view.screen, view.sectionIndex, view.screen === SCREEN.PLAY ? view.itemIndex : view.introRules ? 'reglas' : ''].join('|');
 }
 
 function snapshot(view) {
@@ -39,6 +40,7 @@ function snapshot(view) {
       variant: a.reflex?.variant ?? null,
       answered: a.answeredIds?.length ?? 0,
     },
+    rules: !!view.introRules,
     millionaire: view.millionaire && {
       round: view.millionaire.roundId,
       phase: view.millionaire.phase,
@@ -94,12 +96,28 @@ export function createDirector({ backdrop }) {
     // Las canciones de una sección valen en su presentación, su juego y su marcador final (no al consultar el marcador)
     const inSection = view.section && [SCREEN.INTRO, SCREEN.PLAY, SCREEN.SCOREBOARD].includes(view.screen) && !view.peekScoreboard;
     sound.setScene(musicScene(n), inSection ? view.section.name : null, view.screen === SCREEN.PLAY ? view.itemIndex : null);
+    // Millonario con sus canciones: mandan sobre la música de siempre
+    sound.setCue(
+      millionaireCue(
+        {
+          screen: view.peekScoreboard ? 'peek' : view.screen,
+          sectionType: view.section?.type,
+          sectionIndex: view.sectionIndex,
+          introRules: view.introRules,
+          itemIndex: view.itemIndex,
+          itemCount: view.itemCount,
+          millionaire: view.millionaire,
+        },
+        performance.now(),
+      ),
+    );
+    const own = sound.cueActive; // las canciones ya traen sus golpes
 
     if (!p) return;
     if (n.key !== p.key) {
       if (n.screen === SCREEN.INTRO) {
         sound.play('whoosh');
-        sound.play('gong', 250);
+        if (!own) sound.play('gong', 250);
         backdrop?.flash(0.35);
       } else if (n.screen === SCREEN.COVER) {
         sound.play('hit');
@@ -156,13 +174,13 @@ export function createDirector({ backdrop }) {
     if (m && pm) {
       if (m.shown > pm.shown) sound.play('pop'); // aparece una respuesta
       for (const k of m.used) if (!pm.used.includes(k)) sound.play(k); // comodín usado
-      if (m.phase === 'marked' && pm.phase !== 'marked') sound.play('bell'); // «¿respuesta definitiva?»
+      if (m.phase === 'marked' && pm.phase !== 'marked' && !own) sound.play('bell'); // «¿respuesta definitiva?»
       if (m.phase === 'revealed' && pm.phase !== 'revealed') {
-        sound.play(m.correct ? 'correct' : 'wrong');
+        if (!m.correct || !own) sound.play(m.correct ? 'correct' : 'wrong');
         backdrop?.flash(0.4);
         if (m.correct) burst({ y: 0.45, count: 60 });
       }
-      if (m.call === 'done' && pm.call === 'running') sound.play('hit'); // se acabó el tiempo de la llamada
+      if (m.call === 'done' && pm.call === 'running' && !own) sound.play('hit'); // se acabó el tiempo de la llamada
       if (m.audience === 'done' && pm.audience === 'voting') sound.play('pop');
     }
 

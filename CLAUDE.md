@@ -215,7 +215,7 @@ mientras la página no se pinta (ventana oculta o minimizada).
   brasas, burbujas, lluvia, chispas, polvo), murciélagos y relámpagos con rayo. Al cambiar de entorno los colores se
   funden y las siluetas cambian a mitad de un oscurecimiento. Sin WebGL: degradado CSS. En desarrollo,
   `window.__fx` da acceso al fondo y al sonido desde la consola.
-- **Música:** 10 estilos según el momento (además: call y audienceVote, la llamada y el público del millonario) (`fx/music.js`, sobre los instrumentos de `fx/synth.js`): lobby
+- **Música:** 10 estilos según el momento (además: call y audienceVote, la llamada y el público del millonario, si no hay canciones) (`fx/music.js`, sobre los instrumentos de `fx/synth.js`): lobby
   (preparación, swing), organ (portada e intros), explore (jugando: colchón y caja de música del entorno), tension
   (pregunta abierta: ostinato que sube y latido), suspense (esperando veredicto: timbales y acorde disonante), reveal
   (revelado: resolución en mayor), march (marcador) y waltz (final). El realizador elige el estilo (`musicScene`); la
@@ -230,6 +230,23 @@ mientras la página no se pinta (ventana oculta o minimizada).
   definitiva (al cerrar), acierto, fallo y cada comodín (la tele detecta su uso con `jokersUsed`) suenan una vez en vez
   del efecto generado, con la música bajada mientras. Se guardan en IndexedDB del portátil
   (no en el repositorio, que es público). Un hueco con varias las alterna (al volver antes de 3 min, sigue donde iba).
+- **Canciones del millonario** (`core/millionaireMusic.js`, huecos `mill:<canción>` en tracks.js, uno por hueco):
+  tema, explicación, fácil, media, difícil, público y llamada. `MILLIONAIRE_CUES` = puntos sacados de analizar los
+  archivos del usuario (compás, golpes y bucles con similitud espectral > 0,97): bucle, «respuesta definitiva» (`lock`),
+  bucle de suspense, golpe de acierto (`reveal`), fin de votación (`voteEnd`: golpe = fin de los 15 s), fin del reloj de
+  la llamada (`clockEnd`: golpe = fin de los 30 s), `end` (sin el silencio final) y `gainDb` (iguala volúmenes).
+  `millionaireCue(vista, ahora)` (puro, con tests) dice qué suena: {key, track, from, loop, after}; el realizador lo
+  manda a `sound.setCue()`. audio.js descodifica las canciones (AudioBuffer: bucles exactos con loopStart/loopEnd),
+  calla la música de siempre mientras (`cueHeld`), no reinicia si la `key` no cambia, sigue sin cortar si ya va por ese
+  punto y, al acabar una sin bucle, toca `after` (el colchón desde el bucle). Por la tele recargada a mitad: `from` se
+  calcula con lo que queda del comodín. Con canciones sobran la campana, el acierto y el golpe generados. «Cómo se juega»:
+  tras el título de una sección de Test, `next` pasa primero a `introRules` (sala `#rulesFor`; `prev` vuelve al título).
+  La ventana de música tiene «▶» para escuchar cada punto (`sound.previewCue`).
+- **Carpeta del concurso** (`core/folder.js` `classifyFolder`, puro con tests; `host/contestFolder.js`): hoja .xlsx en la
+  raíz, `Millonario/`, `Caras/`, `Música/<Momento>/` y `Música/<Sección>/<Momento>/` (nombres sin tildes ni mayúsculas).
+  Con File System Access (Chrome/Edge) el handle se guarda en IndexedDB (`concurso-carpeta`) para «Volver a leer» con
+  un clic; si no, `webkitdirectory`. Se copia todo a los almacenes con `source: 'carpeta'` y al releer se sustituye.
+  La carpeta del presentador está en sus Documentos («Concurso del año - archivos»), fuera del repositorio.
 - **Caras** (`faceStore.js`, ventana `facesDialog.js`, `core/faces.js`): fotos en IndexedDB del portátil (recortadas a
   240 px); los nombres salen del archivo («Rodri, Rodrigo.jpg») y se editan. `HostRoom.setFaces()` reconoce a quien
   tenga uno de esos nombres (`matchFace`, sin mayúsculas ni tildes) → `player.face`; manda `faces` con las fotos en uso

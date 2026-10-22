@@ -1,0 +1,45 @@
+import { describe, expect, it } from 'vitest';
+import { classifyFolder, folderKey } from '../src/core/folder.js';
+
+const slots = [
+  { id: 'lobby', label: 'Preparación' },
+  { id: 'march', label: 'Marcador' },
+  { id: 'sfx:lock', label: 'Respuesta definitiva' },
+];
+const e = (path, lastModified = 0) => ({ path: path.split('/'), lastModified });
+
+describe('carpeta del concurso', () => {
+  it('compara nombres sin tildes, mayúsculas ni signos', () => {
+    expect(folderKey('Música')).toBe('musica');
+    expect(folderKey('Respuesta  definitiva!')).toBe('respuestadefinitiva');
+  });
+
+  it('reparte cada archivo por su sitio', () => {
+    const r = classifyFolder(
+      [
+        e('concurso viejo.xlsx', 1),
+        e('Concurso 2026.xlsx', 5),
+        e('~$Concurso 2026.xlsx', 9),
+        e('Millonario/Música pregunta fácil.mp3'),
+        e('Millonario/Música  pregunta difícil.mp3'),
+        e('Millonario/Llamar a alguien.mp3'),
+        e('millonario/notas.txt'),
+        e('Caras/Rodri, Rodrigo.jpg'),
+        e('caras/Ana.PNG'),
+        e('Caras/desktop.ini'),
+        e('Música/Preparación/swing.mp3'),
+        e('MUSICA/marcador/1 - marcha.mp3'),
+        e('Música/Halloween total/Respuesta definitiva/golpe.mp3'),
+        e('Música/Halloween total/Preparación/no vale aquí.mp3'),
+        e('Música/Otra sección/Marcador/x.mp3'),
+        e('Música/Nada/x.mp3'),
+      ],
+      { slots, sectionSlots: ['march', 'sfx:lock'], sections: ['Halloween total'] },
+    );
+    expect(r.sheet.path).toEqual(['Concurso 2026.xlsx']);
+    expect(Object.keys(r.millionaire).sort()).toEqual(['call', 'easy', 'hard']);
+    expect(r.faces.map((f) => f.path.at(-1))).toEqual(['Rodri, Rodrigo.jpg', 'Ana.PNG']);
+    expect(r.music.map((m) => m.slot)).toEqual(['lobby', 'march', 'Halloween total|sfx:lock']);
+    expect(r.ignored).toEqual(['millonario/notas.txt', 'Música/Halloween total/Preparación/no vale aquí.mp3', 'Música/Otra sección/Marcador/x.mp3', 'Música/Nada/x.mp3']);
+  });
+});

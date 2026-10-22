@@ -213,6 +213,7 @@ function gameTabBody() {
     case 'cover':
       return [h('section', { class: 'c-card center' }, h('p', { class: 'c-kicker' }, 'En la tele: portada'), h('h2', {}, view.title)), bigNext('Presentar la primera sección →'), navRow()];
     case 'intro':
+      if (view.section?.type === 'test' && view.playable && !view.introRules) return [sectionCard(), bigNext('Explicar cómo se juega →'), navRow()];
       return [sectionCard(), bigNext(view.playable ? 'Empezar sección →' : 'Saltar esta sección →'), navRow()];
     case 'play':
       if (view.millionaire) return millionairePanel();

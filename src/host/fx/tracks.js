@@ -1,6 +1,7 @@
 // Tus canciones (.mp3) para cada momento del concurso. Se guardan en el propio portátil (IndexedDB): no se suben a
 // ningún sitio, así que no hace falta meterlas en el repositorio (que es público) y siguen ahí al volver a abrir la tele.
 // Un momento sin canciones usa la música generada (music.js).
+import { MILLIONAIRE_TRACKS } from '../../core/millionaireMusic.js';
 
 /** Momentos del concurso → estilos de music.js (mismas claves). Valen para todo el concurso. */
 export const MUSIC_SLOTS = [
@@ -12,15 +13,19 @@ export const MUSIC_SLOTS = [
   { id: 'reveal', label: 'Revelado', help: 'Suena al desvelar la respuesta y los puntos' },
   { id: 'march', label: 'Marcador', help: 'Suena en el marcador al acabar cada sección' },
   { id: 'waltz', label: 'Final', help: 'Suena en el podio final' },
-  { id: 'call', label: 'Llamada (millonario)', help: 'Suena durante los 30 s de la llamada' },
-  { id: 'audienceVote', label: 'Público votando (millonario)', help: 'Suena durante los 15 s en que vota el público' },
 ];
 
 /**
  * Momentos que se pueden cambiar en una sección concreta (p. ej. la música de «¿Quién quiere ser millonario?» en el
  * Test). Si una sección no tiene canción para un momento, suena la general de ese momento.
  */
-export const SECTION_SLOTS = ['organ', 'explore', 'tension', 'suspense', 'reveal', 'march', 'call', 'audienceVote'];
+export const SECTION_SLOTS = ['organ', 'explore', 'tension', 'suspense', 'reveal', 'march'];
+
+/**
+ * Las 7 canciones del millonario (todas las secciones de Test): una por hueco, con sus puntos de sincronía
+ * (core/millionaireMusic.js). Mandan sobre la música de esos momentos.
+ */
+export const MILLIONAIRE_SLOTS = MILLIONAIRE_TRACKS.map((t) => ({ ...t, id: `mill:${t.id}`, track: t.id }));
 
 /** Clave de un momento de una sección (la sección se reconoce por su nombre en la hoja). */
 export const sectionSlot = (sectionName, scene) => `${sectionName}|${scene}`;
@@ -47,7 +52,7 @@ export const SFX_SLOT = { bell: 'sfx:lock', correct: 'sfx:correct', wrong: 'sfx:
  */
 export const LADDER_SCENES = new Set(['explore', 'tension', 'suspense']);
 
-export const slotInfo = (scene) => MUSIC_SLOTS.find((s) => s.id === scene) ?? EFFECT_SLOTS.find((s) => s.id === scene);
+export const slotInfo = (scene) => MUSIC_SLOTS.find((s) => s.id === scene) ?? EFFECT_SLOTS.find((s) => s.id === scene) ?? MILLIONAIRE_SLOTS.find((s) => s.id === scene);
 
 const DB = 'concurso-musica';
 const STORE = 'tracks';
@@ -71,6 +76,8 @@ async function tx(mode, fn) {
   });
 }
 
+export const isAudio = (f) => f.type?.startsWith('audio/') || /\.(mp3|m4a|ogg|wav|aac)$/i.test(f.name);
+
 export class TrackStore extends EventTarget {
   /** slot → [{id, name, url}] */
   tracks = new Map();
@@ -83,7 +90,7 @@ export class TrackStore extends EventTarget {
       // por nombre (con números en orden: «2 - …» antes que «10 - …»): así se controla el orden de la escalera
       for (const rec of all.sort((a, b) => a.name.localeCompare(b.name, 'es', { numeric: true }))) {
         if (!this.tracks.has(rec.slot)) this.tracks.set(rec.slot, []);
-        this.tracks.get(rec.slot).push({ id: rec.id, name: rec.name, url: URL.createObjectURL(rec.blob) });
+        this.tracks.get(rec.slot).push({ id: rec.id, name: rec.name, source: rec.source ?? null, blob: rec.blob, url: URL.createObjectURL(rec.blob) });
       }
     } catch (e) {
       console.warn('[música] no se pudieron leer las canciones guardadas', e);
@@ -91,14 +98,28 @@ export class TrackStore extends EventTarget {
     this.dispatchEvent(new Event('change'));
   }
 
-  async add(slot, files) {
-    const audio = [...files].filter((f) => f.type.startsWith('audio/') || /\.(mp3|m4a|ogg|wav)$/i.test(f.name));
+  /**
+   * Añade canciones a un hueco. Los del millonario tienen una sola: la nueva sustituye a la que hubiera.
+   * @param source 'carpeta' si vienen de la carpeta del concurso (al volver a leerla se sustituyen)
+   */
+  async add(slot, files, { source = null, reload = true } = {}) {
+    const audio = [...files].filter(isAudio);
     if (!audio.length) return 0;
+    const single = slot.startsWith('mill:');
+    const old = single ? (this.tracks.get(slot) ?? []).map((t) => t.id) : [];
     await tx('readwrite', (s) => {
-      for (const f of audio) s.put({ id: crypto.randomUUID(), slot, name: f.name.replace(/\.[^.]+$/, ''), blob: f, added: Date.now() });
+      old.forEach((id) => s.delete(id));
+      for (const f of single ? audio.slice(0, 1) : audio) s.put({ id: crypto.randomUUID(), slot, name: f.name.replace(/\.[^.]+$/, ''), blob: f, source, added: Date.now() });
     });
-    await this.load();
-    return audio.length;
+    if (reload) await this.load();
+    return single ? 1 : audio.length;
+  }
+
+  /** Quita las canciones que vinieron de un sitio (la carpeta, antes de volver a leerla). */
+  async removeSource(source, { reload = true } = {}) {
+    const ids = [...this.tracks.values()].flat().filter((t) => t.source === source).map((t) => t.id);
+    if (ids.length) await tx('readwrite', (s) => ids.forEach((id) => s.delete(id)));
+    if (reload) await this.load();
   }
 
   async remove(id) {

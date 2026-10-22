@@ -60,6 +60,7 @@ export class HostRoom extends EventTarget {
   // Antitrampas: quién está ahora fuera de la app (desde cuándo) y los avisos de la tele y el mando
   #away = new Map(); // playerId → instante en que salió
   #buzzerOpenedAt = null;
+  #rulesFor = null; // sección (millonario) cuya presentación va ya por «Cómo se juega»
   cheatAlerts = []; // [{id, playerId, name, ms, voided, forgiven, at}] los últimos
   #alertSeq = 0;
   #windowTimer = null;
@@ -174,6 +175,12 @@ export class HostRoom extends EventTarget {
   }
 
   /** ¿Se está jugando una pregunta del millonario (sección de Test)? */
+  /** ¿La presentación de un millonario va por «Cómo se juega»? */
+  get introRules() {
+    const r = this.runner;
+    return r.screen === SCREEN.INTRO && r.section?.type === 'test' && this.#rulesFor === r.sectionIndex;
+  }
+
   get inMillionairePlay() {
     return this.runner.screen === SCREEN.PLAY && this.runner.section?.type === 'test' && !this.runner.peekScoreboard && !!this.millionaire;
   }
@@ -403,6 +410,7 @@ export class HostRoom extends EventTarget {
       // Lista para la introducción del concurso en la tele
       sections: this.show.sections.map((s, i) => ({ name: s.name, label: SECTION_TYPES[s.type].label, env: sectionEnv(s, i) })),
       section: r.section,
+      introRules: this.introRules,
       sectionLabel: r.section ? SECTION_TYPES[r.section.type].label : '',
       playable: isPlayable(r.section),
       item: r.item,
@@ -467,6 +475,7 @@ export class HostRoom extends EventTarget {
         env: sectionEnv(v.section, v.sectionIndex),
       },
       sectionLabel: v.sectionLabel,
+      introRules: v.introRules,
       playable: v.playable,
       item: v.item,
       itemIndex: v.itemIndex,
@@ -519,11 +528,26 @@ export class HostRoom extends EventTarget {
         if (!this.canStart) return `Hacen falta al menos ${MIN_PLAYERS} jugadores conectados.`;
         this.roster.lockTeams(true); // al empezar, los equipos quedan cerrados
       }
+      // Millonario: tras el título de la sección, «Cómo se juega» (con su música) y luego la primera pregunta
+      const r = this.runner;
+      if (r.screen === SCREEN.INTRO && r.section?.type === 'test' && isPlayable(r.section) && this.#rulesFor !== r.sectionIndex) {
+        this.#rulesFor = r.sectionIndex;
+        return true;
+      }
       return this.runner.next();
     },
-    prev: () => this.runner.prev(),
+    prev: () => {
+      if (this.introRules) {
+        this.#rulesFor = null;
+        return true;
+      }
+      return this.runner.prev();
+    },
     nextItem: () => this.runner.nextItem(),
-    gotoSection: ({ index }) => this.runner.goToSection(Number(index)),
+    gotoSection: ({ index }) => {
+      this.#rulesFor = null;
+      return this.runner.goToSection(Number(index));
+    },
     endSection: () => this.runner.endSection(),
     scoreboard: () => this.runner.toggleScoreboard(),
     toSetup: () => this.runner.toSetup(),

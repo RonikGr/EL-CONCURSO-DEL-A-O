@@ -28,6 +28,7 @@ import { TrackStore } from './fx/tracks.js';
 import { FaceStore } from './faceStore.js';
 import { openFacesDialog } from './facesDialog.js';
 import { openMusicDialog } from './musicDialog.js';
+import { canRemember, chooseFolder, importFolder, rereadFolder, savedFolder } from './contestFolder.js';
 import { createDirector, envFor, screenKey } from './fx/director.js';
 import { enterScreen, kinetic, odometer } from './fx/motion.js';
 import { envGradient, HOME_ENV } from '../shared/environments.js';
@@ -81,6 +82,37 @@ faceStore.addEventListener('change', () => {
 });
 faceStore.load();
 if (import.meta.env.DEV) window.__fx = { backdrop, sound, trackStore, faceStore }; // para probar desde la consola
+
+// Carpeta del concurso: la hoja, las canciones y las caras de una vez (contestFolder.js)
+const folder = { handle: null, busy: false, report: null };
+savedFolder().then((handle) => {
+  folder.handle = handle;
+  lastScreenSignature = null;
+  if (room) render();
+});
+
+async function loadFolder(again) {
+  if (folder.busy || !room) return;
+  folder.busy = true;
+  lastScreenSignature = null;
+  render();
+  try {
+    const picked = again && folder.handle ? await rereadFolder(folder.handle) : await chooseFolder();
+    if (!picked) return;
+    if (canRemember) folder.handle = await savedFolder();
+    folder.report = {
+      name: picked.name,
+      ...(await importFolder(picked, { trackStore, faceStore, importSheet: importFile, sections: () => room.view().sections.map((s) => s.name) })),
+    };
+  } catch (e) {
+    console.error(e);
+    toast('No se pudo leer la carpeta.');
+  } finally {
+    folder.busy = false;
+    lastScreenSignature = null;
+    render();
+  }
+}
 
 let panel = null; // ventana de caras o de música abierta
 const openPanel = (open) => {
@@ -365,8 +397,10 @@ function renderScreen(view) {
           onLockTeams: (locked) => run('lockTeams', { locked }),
           onMoveTeam: (playerId, teamId) => run('moveTeam', { playerId, teamId }),
           onSpokesperson: (teamId, playerId) => run('setSpokesperson', { teamId, playerId }),
+          folder: { name: folder.handle?.name ?? null, busy: folder.busy, report: folder.report, onChoose: () => loadFolder(false), onReread: () => loadFolder(true) },
+          millionaireCount: [...trackStore.tracks.keys()].filter((k) => k.startsWith('mill:')).length,
           facesCount: faceStore.faces.length,
-          tracksCount: [...trackStore.tracks.values()].reduce((n, list) => n + list.length, 0),
+          tracksCount: [...trackStore.tracks].reduce((n, [k, list]) => n + (k.startsWith('mill:') ? 0 : list.length), 0),
           onOpenFaces: () => openPanel(() => openFacesDialog({ store: faceStore, players: () => room.view().players, toast })),
           onOpenMusic: () =>
             openPanel(() =>

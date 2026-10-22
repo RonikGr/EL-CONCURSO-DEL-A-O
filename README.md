@@ -238,11 +238,21 @@ Cubren la lógica que no depende de la red (`src/core`, `src/shared`).
   (o en el mando, pestaña Jugadores). Al presentar la sección, cada portavoz ordena a su equipo en su móvil, de la
   pregunta más fácil a la más difícil, y la tele enseña quién ya ha ordenado. En cada pregunta, la tele dice quién
   responde y los demás ven «¡sin soplar!».
-- **Canciones del millonario:** en **🎵 Música**, dentro de la sección del Test, además de los momentos hay efectos que
-  suenan una vez: respuesta definitiva, acierto, fallo y cada comodín, y los huecos «Llamada» (los 30 s) y «Público
-  votando» (los 15 s). Y si pones varias canciones en «Jugando»,
-  «Pregunta abierta» o «Suspense», van en escalera: la 1ª en la 1ª pregunta, la 2ª en la 2ª… (por orden de nombre:
-  ponles «1 - …», «2 - …»).
+- **Carpeta del concurso:** en la preparación, **📁 Elegir la carpeta del concurso**. Una carpeta del portátil con:
+  la hoja (.xlsx), `Millonario/` (sus 7 canciones), `Caras/` (una foto por persona, «Rodri, Rodrigo.jpg») y
+  `Música/<Momento>/` o `Música/<Sección>/<Momento>/` (momentos con el nombre de la ventana de música). La tele lo copia
+  todo al portátil y recuerda la carpeta (Chrome y Edge): luego basta **📁 Volver a leer**. Si se pierde la sala o se
+  crea otra, las canciones y las caras siguen ahí. Esa carpeta no va al repositorio, que es público.
+- **Canciones del millonario** (todas las secciones de Test): tema del programa, explicación, pregunta fácil, media y
+  difícil, preguntar al equipo y llamar a alguien. Están sincronizadas: el tema suena al presentar la sección; la
+  explicación, en «Cómo se juega» (la pantalla que sale tras el título); las de pregunta (por tercios: fácil, media,
+  difícil) hacen su intro y luego un bucle que no se nota, al marcar saltan al golpe de «respuesta definitiva» y a un
+  bucle de suspense, y al acertar al golpe final (al fallar, silencio). La del público empieza donde hace falta para
+  que su golpe caiga al acabar los 15 s; la de la llamada espera en bucle y, con el «ya», su golpe final cae a los 30 s.
+  En **🎵 Música** se escucha cada punto con «▶». Sin ellas suena la música generada.
+- **Otras canciones:** en **🎵 Música** hay huecos por sección y efectos que suenan una vez (respuesta definitiva,
+  acierto, fallo y cada comodín). Si pones varias canciones en «Jugando», «Pregunta abierta» o «Suspense» de una
+  sección, van en escalera: la 1ª en la 1ª pregunta, la 2ª en la 2ª… (por orden de nombre: «1 - …», «2 - …»).
 - **Caras:** en la preparación, botón **🙂 Caras**: suelta una foto por persona. El nombre del archivo da los nombres con
   que se le reconoce, separados por comas («Rodri, Rodrigo.jpg»), y se pueden cambiar ahí. Quien entre con uno de esos
   nombres (da igual mayúsculas y tildes) juega con su cara; si no, elige icono y color. Las fotos se guardan solo en ese

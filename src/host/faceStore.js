@@ -45,20 +45,23 @@ export class FaceStore extends EventTarget {
   async load() {
     try {
       const all = await tx('readonly', (s) => s.getAll());
-      this.faces = all.sort((a, b) => a.added - b.added).map(({ id, names, img }) => ({ id, names, img }));
+      this.faces = all.sort((a, b) => a.added - b.added).map(({ id, names, img, source }) => ({ id, names, img, source: source ?? null }));
     } catch (e) {
       console.warn('[caras] no se pudieron leer', e);
     }
     this.dispatchEvent(new Event('change'));
   }
 
-  /** Añade fotos; los nombres salen del nombre del archivo («Rodri, Rodrigo.jpg»). @returns cuántas */
-  async add(files) {
-    const images = [...files].filter((f) => f.type.startsWith('image/'));
+  /**
+   * Añade fotos; los nombres salen del nombre del archivo («Rodri, Rodrigo.jpg»). @returns cuántas
+   * @param source 'carpeta' si vienen de la carpeta del concurso (al volver a leerla se sustituyen)
+   */
+  async add(files, { source = null } = {}) {
+    const images = [...files].filter((f) => f.type.startsWith('image/') || /\.(jpe?g|png|webp|gif|avif)$/i.test(f.name));
     const records = [];
     for (const f of images) {
       try {
-        records.push({ id: crypto.randomUUID(), names: namesFromFileName(f.name), img: await thumbnail(f), added: Date.now() + records.length });
+        records.push({ id: crypto.randomUUID(), names: namesFromFileName(f.name), img: await thumbnail(f), source, added: Date.now() + records.length });
       } catch (e) {
         console.warn('[caras] no se pudo leer', f.name, e);
       }
@@ -74,6 +77,12 @@ export class FaceStore extends EventTarget {
     rec.names = names;
     await tx('readwrite', (s) => s.put(rec));
     await this.load();
+  }
+
+  /** Quita las fotos que vinieron de un sitio (la carpeta, antes de volver a leerla). */
+  async removeSource(source) {
+    const ids = this.faces.filter((f) => f.source === source).map((f) => f.id);
+    if (ids.length) await tx('readwrite', (s) => ids.forEach((id) => s.delete(id)));
   }
 
   async remove(id) {

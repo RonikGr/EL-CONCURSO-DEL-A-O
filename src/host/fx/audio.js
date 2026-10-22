@@ -6,8 +6,10 @@
 import { bell, bubble, crackle, mtof, noiseHit, owl, snare, thump, tone } from './synth.js';
 import { MOODS, STYLES } from './music.js';
 import { LADDER_SCENES, SFX_SLOT } from './tracks.js';
+import { MILLIONAIRE_CUES } from '../../core/millionaireMusic.js';
 
 const CROSSFADE = 0.7; // s (constante de tiempo del fundido entre estilos)
+const CUE_LEVEL = 0.75; // volumen de las canciones del millonario (como la música, sin reverberación)
 
 class SoundEngine extends EventTarget {
   ctx = null;
@@ -22,6 +24,16 @@ class SoundEngine extends EventTarget {
   #slot = null; // reproductor que suena ahora
   #amb = null; // ambiente del entorno
   #timers = new Set();
+  // Canciones del millonario (core/millionaireMusic.js): se descodifican enteras para saltar a sus puntos y hacer
+  // bucles exactos. Mientras suenan, la música de siempre calla.
+  #mill = new Map(); // canción → {id, blob}
+  #buffers = new Map(); // id del archivo → AudioBuffer
+  #decoding = new Set();
+  #cue = null; // lo que pide el realizador ahora
+  #preview = null; // lo que se está probando en la ventana de música (manda sobre #cue)
+  #cueKey = null; // última entrada atendida
+  #cuePlay = null; // lo que suena: {key, track, src, g, t0, from, loop, after}
+  #cueHeld = false; // ¿la música de siempre está callada por las canciones del millonario?
   #noise = null;
   #schedule = 0;
 
@@ -46,7 +58,9 @@ class SoundEngine extends EventTarget {
       this.#build();
     }
     this.ctx.resume().then(() => {
+      this.#decodeMill();
       this.#startMusic();
+      this.#applyCue();
       this.dispatchEvent(new Event('unlock'));
     });
   }
@@ -58,6 +72,7 @@ class SoundEngine extends EventTarget {
     this.master.gain.setTargetAtTime((this.settings.volume / 100) * 0.9, t, 0.1);
     this.sfxBus.gain.setTargetAtTime(this.settings.sfxOn ? 1 : 0, t, 0.05);
     this.musicBus.gain.setTargetAtTime(this.settings.musicOn ? 0.6 : 0, t, 0.4);
+    this.cueBus.gain.setTargetAtTime(this.settings.musicOn ? CUE_LEVEL : 0, t, 0.4);
   }
 
   /** Entorno actual: cambia la tonalidad y el ambiente. */
@@ -81,7 +96,7 @@ class SoundEngine extends EventTarget {
       if (this.#step !== step) {
         this.#step = step;
         const slot = this.#slotKey();
-        if (this.unlocked && slot && this.#isLadder(slot)) this.#playSlot(slot, false);
+        if (this.unlocked && slot && this.#isLadder(slot) && !this.#cueHeld) this.#playSlot(slot, false);
       }
       return;
     }
@@ -141,9 +156,11 @@ class SoundEngine extends EventTarget {
     const t = this.ctx.currentTime;
     const level = this.settings.musicOn ? 0.6 : 0;
     this.musicBus.gain.setTargetAtTime(level * 0.2, t, 0.08);
+    this.cueBus.gain.setTargetAtTime(this.settings.musicOn ? CUE_LEVEL * 0.2 : 0, t, 0.08);
     const done = () => {
       src.disconnect();
       this.musicBus.gain.setTargetAtTime(this.settings.musicOn ? 0.6 : 0, this.ctx.currentTime, 0.5);
+      this.cueBus.gain.setTargetAtTime(this.settings.musicOn ? CUE_LEVEL : 0, this.ctx.currentTime, 0.5);
     };
     audio.addEventListener('ended', done, { once: true });
     audio.addEventListener('error', done, { once: true });
@@ -180,6 +197,11 @@ class SoundEngine extends EventTarget {
     const musicSend = c.createGain();
     musicSend.gain.value = 0.7;
     this.musicBus.connect(musicSend).connect(this.reverb);
+
+    // Canciones del millonario: sin reverberación (ya vienen grabadas)
+    this.cueBus = c.createGain();
+    this.cueBus.gain.value = this.settings.musicOn ? CUE_LEVEL : 0;
+    this.cueBus.connect(this.master);
 
     this.sfxBus = c.createGain();
     this.sfxBus.gain.value = this.settings.sfxOn ? 1 : 0;
@@ -241,16 +263,159 @@ class SoundEngine extends EventTarget {
   /** Qué suena ahora (para depurar desde la consola). */
   state() {
     const p = this.#slot;
-    return { scene: this.#scene, mood: this.#moodId, generated: !!this.#layer, track: p && { slot: p.slot, src: p.audio.src, paused: p.audio.paused, time: p.audio.currentTime } };
+    const q = this.#cuePlay;
+    return {
+      scene: this.#scene,
+      mood: this.#moodId,
+      generated: !!this.#layer,
+      track: p && { slot: p.slot, src: p.audio.src, paused: p.audio.paused, time: p.audio.currentTime },
+      cue: q && { key: q.key, track: q.track, pos: q.src ? +this.#cuePos(q).toFixed(2) : null },
+    };
   }
 
   /** Tus canciones por momento: slot → [{url, name}] (ver tracks.js). */
   setTracks(map) {
     this.#tracks = map;
-    if (this.unlocked) this.#switchLayer(true);
+    this.#mill = new Map();
+    for (const [slot, list] of map) if (slot.startsWith('mill:') && list.length) this.#mill.set(slot.slice(5), { id: list[0].id, blob: list[0].blob });
+    this.#cueKey = null; // por si ha cambiado la canción que sonaba
+    if (!this.unlocked) return;
+    this.#decodeMill();
+    this.#switchLayer(true);
+    this.#applyCue();
+  }
+
+  // ------------------------------------------------------------------------------------------ millonario
+
+  /** Qué tiene que sonar del millonario (millionaireCue), o null para la música de siempre. */
+  setCue(cue) {
+    this.#cue = cue;
+    if (this.unlocked) this.#applyCue();
+  }
+
+  /** Probar un punto de una canción del millonario (ventana de música); null = dejar de probar. */
+  previewCue(cue) {
+    this.#preview = cue;
+    if (this.unlocked) this.#applyCue();
+  }
+
+  /** ¿Suenan ahora las canciones del millonario? (entonces sobran algunos efectos generados) */
+  get cueActive() {
+    return this.#cueHeld;
+  }
+
+  hasMillionaireTrack(track) {
+    return this.#mill.has(track);
+  }
+
+  #bufferOf(track) {
+    const rec = this.#mill.get(track);
+    return rec ? this.#buffers.get(rec.id) : null;
+  }
+
+  async #decodeMill() {
+    for (const [, rec] of this.#mill) {
+      if (this.#buffers.has(rec.id) || this.#decoding.has(rec.id)) continue;
+      this.#decoding.add(rec.id);
+      try {
+        this.#buffers.set(rec.id, await this.ctx.decodeAudioData(await rec.blob.arrayBuffer()));
+        this.#cueKey = null;
+        this.#applyCue();
+      } catch (e) {
+        console.warn('[música] no se pudo leer una canción del millonario', e);
+      } finally {
+        this.#decoding.delete(rec.id);
+      }
+    }
+  }
+
+  #applyCue() {
+    const cue = this.#preview ?? this.#cue;
+    // Sin canciones del millonario (o sin la que toca) suena la música de siempre
+    const usable = !!cue && this.#mill.size > 0 && (cue.track == null || !!this.#bufferOf(cue.track));
+    if (!usable) {
+      this.#cueKey = null;
+      if (!this.#cueHeld) return;
+      this.#stopCue();
+      this.#cueHeld = false;
+      this.#switchLayer();
+      return;
+    }
+    if (!this.#cueHeld) {
+      this.#cueHeld = true;
+      this.#fadeOut(this.#layer);
+      this.#layer = null;
+      this.#stopSlot();
+    }
+    if (this.#cueKey === cue.key) return;
+    this.#cueKey = cue.key;
+    // La misma canción ya va por ese punto (p. ej. el golpe final de la llamada al acabar el tiempo): que siga
+    const cur = this.#cuePlay;
+    if (cur?.src && cur.track === cue.track && !cue.loop) {
+      const pos = this.#cuePos(cur);
+      if (pos >= cue.from - 0.3 && pos <= cue.from + 2) {
+        cur.after = cue.after;
+        return;
+      }
+    }
+    this.#startCue(cue);
+  }
+
+  #startCue(cue) {
+    this.#stopCue();
+    if (!cue.track) return; // silencio
+    const c = this.ctx;
+    const t = c.currentTime;
+    const buf = this.#bufferOf(cue.track);
+    if (!buf) return;
+    const src = c.createBufferSource();
+    src.buffer = buf;
+    if (cue.loop) {
+      src.loop = true;
+      src.loopStart = cue.loop[0];
+      src.loopEnd = cue.loop[1];
+    }
+    const g = c.createGain();
+    const level = 10 ** ((MILLIONAIRE_CUES[cue.track]?.gainDb ?? 0) / 20);
+    // desde el principio, de golpe; a mitad de canción, un fundido cortísimo para que no chasque
+    if (cue.from > 0.05) {
+      g.gain.value = 0;
+      g.gain.setTargetAtTime(level, t, 0.015);
+    } else {
+      g.gain.value = level;
+    }
+    src.connect(g).connect(this.cueBus);
+    const from = Math.max(0, Math.min(cue.from, buf.duration - 0.05));
+    const end = MILLIONAIRE_CUES[cue.track]?.end;
+    if (!cue.loop && end > from) src.start(t, from, end - from);
+    else src.start(t, from);
+    const play = { key: cue.key, track: cue.track, src, g, t0: t, from, loop: cue.loop, after: cue.after };
+    src.onended = () => {
+      if (this.#cuePlay !== play) return;
+      this.#cuePlay = null;
+      if (play.after && this.#cueHeld) this.#startCue(play.after); // p. ej. tras la llamada, vuelve el colchón
+    };
+    this.#cuePlay = play;
+  }
+
+  #stopCue() {
+    const p = this.#cuePlay;
+    this.#cuePlay = null;
+    if (!p?.src) return;
+    const t = this.ctx.currentTime;
+    p.g.gain.setTargetAtTime(0, t, 0.08);
+    p.src.stop(t + 0.6);
+  }
+
+  /** Por dónde va (segundos de la canción), contando los bucles. */
+  #cuePos(p) {
+    let pos = p.from + (this.ctx.currentTime - p.t0);
+    if (p.loop && pos > p.loop[1]) pos = p.loop[0] + ((pos - p.loop[0]) % (p.loop[1] - p.loop[0]));
+    return pos;
   }
 
   #switchLayer(force = false) {
+    if (this.#cueHeld) return; // suenan las canciones del millonario
     const c = this.ctx;
     // Si hay canciones tuyas para este momento, suenan ellas; si no, la música generada.
     const slot = this.#slotKey();

@@ -7,6 +7,7 @@ import { envGradient, getEnv, sectionEnv } from '../shared/environments.js';
 import { flipReorder, kinetic, later, odometer } from './fx/motion.js';
 import { celebrate } from './fx/confetti.js';
 import { sound } from './fx/audio.js';
+import { JOKER_NAMES, jokerIcon } from '../shared/jokerIcons.js';
 
 const kbd = (key) => h('kbd', {}, key);
 const avatar = (p, cls = 'avatar') =>
@@ -108,19 +109,40 @@ export function setupScreen(view, ctx) {
   );
 }
 
-// Caras y música: dos botones que abren sus ventanas (main.js), con un resumen de lo que hay.
+// Archivos del concurso: la carpeta (hoja, canciones y caras de una vez) y las ventanas de caras y música (main.js).
 function extrasBox(ctx) {
   const n = ctx.tracksCount;
+  const f = ctx.folder;
+  const r = f.report;
   return h(
     'div',
     { class: 'import-box extras-box' },
+    h('h3', {}, 'Archivos del concurso'),
     h(
       'div',
       { class: 'import-actions' },
+      f.name
+        ? h('button', { class: 'btn primary', type: 'button', disabled: f.busy, onclick: f.onReread }, f.busy ? 'Leyendo…' : `📁 Volver a leer «${f.name}»`)
+        : h('button', { class: 'btn primary', type: 'button', disabled: f.busy, onclick: f.onChoose }, f.busy ? 'Leyendo…' : '📁 Elegir la carpeta del concurso'),
+      f.name ? h('button', { class: 'btn', type: 'button', disabled: f.busy, onclick: f.onChoose }, 'Otra carpeta…') : null,
       h('button', { class: 'btn', type: 'button', onclick: ctx.onOpenFaces }, `🙂 Caras · ${ctx.facesCount}`),
-      h('button', { class: 'btn', type: 'button', onclick: ctx.onOpenMusic }, `🎵 Música · ${n ? `${n} ${n === 1 ? 'canción' : 'canciones'}` : 'generada'}`),
+      h('button', { class: 'btn', type: 'button', onclick: ctx.onOpenMusic }, `🎵 Música · millonario ${ctx.millionaireCount}/7${n ? ` · ${n} ${n === 1 ? 'canción' : 'canciones'}` : ''}`),
     ),
-    h('p', { class: 'muted small' }, 'Fotos de los jugadores (se reconocen por su nombre) y tus canciones para cada momento. Se guardan en este portátil.'),
+    r
+      ? h(
+          'p',
+          { class: 'folder-report' },
+          `✓ «${r.name}»: `,
+          [r.sheet ? `hoja «${r.sheet}»` : 'sin hoja', `millonario ${r.millionaire}/7`, `${r.faces} ${r.faces === 1 ? 'cara' : 'caras'}`, `${r.music} ${r.music === 1 ? 'canción' : 'canciones'} más`].join(' · '),
+          r.ignored.length ? h('span', { class: 'muted', title: r.ignored.join('\n') }, ` · ${r.ignored.length} sin usar`) : null,
+        )
+      : null,
+    h(
+      'p',
+      { class: 'muted small' },
+      'En la carpeta: la hoja (.xlsx), «Millonario» (sus 7 canciones), «Caras» (fotos con los nombres en el del archivo) y «Música/<momento>». ',
+      'Todo se copia a este portátil: si se pierde la sala, sigue aquí.',
+    ),
   );
 }
 
@@ -271,6 +293,7 @@ export function coverScreen(view) {
 
 export function introScreen(view) {
   const s = view.section;
+  if (view.introRules) return millionaireRules(view);
   return h(
     'div',
     { class: 'intro anim-in' },
@@ -280,6 +303,37 @@ export function introScreen(view) {
     s.description ? h('p', { class: 'intro-desc' }, s.description) : null,
     h('p', { class: 'intro-points' }, pointsText(s.points, s.points.length > 1)),
     view.playable ? null : h('p', { class: 'intro-soon' }, 'Esta sección llegará en una próxima versión: se saltará.'),
+    view.turns ? turnsIntro(view.turns) : null,
+  );
+}
+
+/** Millonario: «Cómo se juega» (suena la Explicación), entre el título de la sección y la primera pregunta. */
+function millionaireRules(view) {
+  const teams = view.teams.length > 0;
+  const jokers = [
+    ['fifty', 'quita dos respuestas incorrectas'],
+    ['audience', `${teams ? 'tu equipo vota' : 'los demás votan'} en su móvil durante 15 s… ¡sin hablar!`],
+    ['call', `${teams ? 'un compañero' : 'alguien'} sale de la sala y te llama: 30 segundos`],
+  ];
+  return h(
+    'div',
+    { class: 'intro mill-rules anim-in' },
+    h('p', { class: 'intro-kicker' }, view.section.name),
+    kinetic('h1', 'intro-title display', 'Cómo se juega'),
+    h(
+      'ol',
+      { class: 'mill-rules-list' },
+      h('li', {}, teams ? 'Concursa una persona cada vez, alternando equipos y en el orden que elija vuestro portavoz.' : 'Concursa una persona cada vez.'),
+      h('li', {}, 'Las respuestas van apareciendo. Elige en tu móvil: toca una y vuelve a tocarla para confirmar.'),
+      h('li', {}, 'Cuando el presentador la marque, es tu respuesta definitiva.'),
+      h('li', {}, `${pointsText(view.section.points, true)} por acierto. Salir de la app durante tu pregunta es trampa: no puntúas.`),
+    ),
+    h('p', { class: 'mill-rules-sub' }, `Comodines: uno de cada ${teams ? 'por equipo' : 'por persona'} para toda la sección`),
+    h(
+      'ul',
+      { class: 'mill-rules-jokers' },
+      jokers.map(([k, text]) => h('li', {}, jokerIcon(k), h('div', {}, h('strong', {}, JOKER_NAMES[k]), h('span', {}, text)))),
+    ),
     view.turns ? turnsIntro(view.turns) : null,
   );
 }
