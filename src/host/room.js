@@ -25,6 +25,7 @@ import { ERROR_CODE, MSG } from '../shared/protocol.js';
 import { FPHASE, FreeRound } from '../core/free.js';
 import { PeerSource } from './sources/peerSource.js';
 import { BotPlayers } from './bots.js';
+import { AwayLog } from '../core/awayLog.js';
 import { saveRoom } from './persistence.js';
 import { matchFace } from '../core/faces.js';
 import { TURN_TYPES, answererFor, normalizeOrder, seatFor } from '../core/turns.js';
@@ -101,6 +102,8 @@ export class HostRoom extends EventTarget {
     this.setupStep = SETUP_STEPS.includes(saved?.setupStep) ? saved.setupStep : 'prep';
     // Jugadores que juegan desde el mando del presentador: en las secciones sin «El presentador juega», fuera
     this.presenterIds = new Set(saved?.presenterIds ?? []);
+    // Quién sale de la app (en cualquier momento): avisos y recuento para el mando
+    this.awayLog = new AwayLog(saved?.awayLog);
     this.answerRound = null;
     this.freeRound = null; // sección Libre: la prueba actual
     this.duelPick = []; // Duelo de reflejos: los dos que juegan (se mantiene entre rondas)
@@ -537,7 +540,10 @@ export class HostRoom extends EventTarget {
       millionaire: this.inMillionairePlay ? this.millionaireView({ forControl: true }) : null,
       pointsForCorrect: v.pointsForCorrect,
       pointsForWrong: v.pointsForWrong,
-      players: v.players.map((p) => ({ ...pub(p), score: p.score, connected: p.connected, rtt: p.rtt, lock: p.lock })),
+      players: v.players.map((p) => ({ ...pub(p), score: p.score, connected: p.connected, rtt: p.rtt, lock: p.lock, away: p.away })),
+      // Salidas de la app: los últimos avisos (el mando enseña los nuevos) y el recuento por concursante
+      awayFeed: this.awayLog.recent(10),
+      awaySummary: this.awayLog.summary(),
       teams: v.teams,
       teamsLocked: v.teamsLocked,
       standings: v.standings.map((s) => ({ team: s.team, score: s.score, members: s.members.map((m) => m.id) })),
@@ -794,6 +800,11 @@ export class HostRoom extends EventTarget {
       return true;
     },
     // Antitrampas: el presentador perdona a quien salió de la app (vuelve a poder responder o pulsar)
+    awayReset: () => {
+      this.awayLog.reset();
+      return true;
+    },
+
     forgive: ({ playerId }) => {
       let ok = false;
       if (this.inAnswerPlay) ok = this.answerRound.forgive(playerId);
@@ -968,17 +979,66 @@ export class HostRoom extends EventTarget {
    * fuera mientras tenía una pregunta abierta y sin responder (buscando la respuesta en Google…), según el ajuste se
    * anula su respuesta en esa pregunta o solo se avisa. La tele y el mando lo enseñan.
    */
+  /** Dónde va el concurso (para el registro de salidas): «Cultura general · pregunta 3», «Marcador»… */
+  #whereNow() {
+    const r = this.runner;
+    const s = r.section?.name;
+    switch (r.screen) {
+      case SCREEN.SETUP:
+        return 'Preparación';
+      case SCREEN.COVER:
+        return 'Portada';
+      case SCREEN.INTRO:
+        return `${s} · presentación`;
+      case SCREEN.PLAY:
+        return r.itemCount ? `${s} · pregunta ${r.itemIndex + 1}` : s;
+      case SCREEN.SCOREBOARD:
+        return 'Marcador';
+      default:
+        return 'Final';
+    }
+  }
+
+  /** ¿Tiene este jugador una pregunta en juego ahora mismo? (salir así es lo sospechoso) */
+  #inQuestion(playerId) {
+    if (this.benched(playerId)) return false;
+    if (this.inBuzzerPlay) return this.game.phase === PHASE.OPEN && !this.game.lockouts.has(playerId);
+    if (this.inAnswerPlay) {
+      const r = this.answerRound;
+      return r.phase === APHASE.OPEN && r.eligible.has(playerId) && !r.answers.has(playerId);
+    }
+    if (this.inMillionairePlay) {
+      const m = this.millionaire;
+      const seated = m.seat.playerId === playerId && (m.phase === MPHASE.READY || m.phase === MPHASE.PLAYING);
+      return seated || (m.audience?.state === 'voting' && m.audience.voters.includes(playerId));
+    }
+    return false;
+  }
+
+  #awayQuestion = new Map(); // playerId → ¿salió con la pregunta en juego?
+
   #onAway(playerId, msg) {
     const t = now();
+    const player = this.roster.get(playerId);
+    // El presentador que juega desde el mando no cuenta (es él quien lleva el concurso)
+    const logged = !!player && !this.presenterIds.has(playerId) && !(this.inMillionairePlay && this.millionaire.onCall(playerId));
     if (msg.state === 'out') {
       this.#away.set(playerId, t);
+      if (logged) {
+        const inQuestion = this.#inQuestion(playerId);
+        this.#awayQuestion.set(playerId, inQuestion);
+        this.awayLog.out(playerId, player.name, { at: Date.now(), where: this.#whereNow(), inQuestion });
+      }
       return this.#afterChange({ persist: false });
     }
     const leftAt = t - msg.ms;
     this.#away.delete(playerId);
+    const wasInQuestion = this.#awayQuestion.get(playerId) ?? false;
+    this.#awayQuestion.delete(playerId);
     const mode = this.settings.antiCheat;
     let ms = 0;
     let voided = false;
+    const logBack = () => logged && this.awayLog.back(playerId, player.name, { at: Date.now(), ms: msg.ms ?? 0, where: this.#whereNow(), inQuestion: wasInQuestion || ms >= AWAY_MIN_MS, voided });
     if (mode !== 'off' && this.inMillionairePlay) {
       const r = this.millionaire;
       if (r.onCall(playerId)) return this.#afterChange({ persist: false }); // en la llamada se puede salir: es el comodín
@@ -1009,7 +1069,8 @@ export class HostRoom extends EventTarget {
       this.cheatAlerts.push({ id: ++this.#alertSeq, playerId, name, ms: Math.round(ms), voided, forgiven: false, at: Date.now() });
       this.cheatAlerts = this.cheatAlerts.slice(-20);
     }
-    this.#afterChange({ persist: false });
+    logBack();
+    this.#afterChange();
   }
 
   /** Libre con contador: el móvil del concursante (uno por equipo) suma o resta. */
@@ -1588,6 +1649,7 @@ export class HostRoom extends EventTarget {
       turnOrders: this.turnOrders,
       setupStep: this.setupStep,
       presenterIds: [...this.presenterIds],
+      awayLog: this.awayLog.toJSON(),
     });
   }
 

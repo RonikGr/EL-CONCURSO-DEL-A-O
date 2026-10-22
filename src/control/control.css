@@ -133,6 +133,61 @@ body.offline .c-net {
   box-shadow: inset 0 3px 0 var(--accent);
 }
 
+/* --- Avisos de salidas de la app (arriba, encima de todo) --- */
+.c-away {
+  position: fixed;
+  top: max(0.6rem, env(safe-area-inset-top));
+  left: 0.6rem;
+  right: 0.6rem;
+  z-index: 20;
+  padding: 0.8rem 1rem;
+  border-radius: 0.9rem;
+  white-space: pre-line;
+  font-weight: 700;
+  color: #fff;
+  background: #4a2a8c; /* opaco: que no se lea la cabecera a través */
+  box-shadow: 0 0.6rem 2rem rgb(0 0 0 / 0.5);
+  animation: c-away-in 300ms ease-out;
+}
+
+.c-away.serious {
+  background: #b3261e;
+}
+
+@keyframes c-away-in {
+  from {
+    transform: translateY(-120%);
+  }
+}
+
+.c-away-now p:last-child {
+  margin: 0;
+  font-weight: 700;
+}
+
+.c-away-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.95rem;
+}
+
+.c-away-table th,
+.c-away-table td {
+  padding: 0.35rem 0.3rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.c-away-table th {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.c-away-table tr.serious td:first-child {
+  color: #ff8a80;
+  font-weight: 700;
+}
+
 /* --- Tarjetas --- */
 .c-card {
   background: var(--surface);

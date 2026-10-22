@@ -249,6 +249,10 @@ Cubren la lógica que no depende de la red (`src/core`, `src/shared`).
   huecos propios (p. ej. la música del millonario solo en el Test). Puedes poner varias: se alternan. Se guardan solo
   en ese portátil; donde no pongas ninguna suena la general o la música generada. Además hay efectos (pulsar, acierto,
   fallo, tictac, redoble, fanfarria…).
+- **Salidas de la app en el mando:** cada vez que un concursante minimiza el navegador o cambia de app o de pestaña,
+  tu mando te avisa arriba («👀 Ana ha salido de la app») y vibra, y otra vez al volver («↩️ Ana ha vuelto · 12 s
+  fuera»). En rojo si tenía una pregunta en juego. En **Juego** ves quién está fuera ahora, y en **Jugadores** el
+  recuento: cuántas veces ha salido cada uno, cuántas con pregunta y cuánto tiempo en total («Borrar recuento» lo pone a 0).
 - **Antitrampas:** si alguien sale de la app del móvil (para buscar en Google, cambiar de app o de pestaña…) con una
   pregunta abierta y sin responder más de 1,5 s, su respuesta en esa pregunta no cuenta (en el pulsador, queda
   bloqueado), y sale un aviso grande en la tele y en el mando, donde se le puede **perdonar**. Mientras está fuera, su

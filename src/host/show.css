@@ -1649,9 +1649,16 @@ body.splash-on {
   padding: 0;
 }
 
+/* Redonda siempre: la pantalla del ganador es una columna que encoge lo que puede para caber en la altura, y la foto
+   (la única con alto fijo) quedaba aplastada en un óvalo. Ahora no encoge; si falta sitio, es más pequeña y redonda. */
+.result-avatar {
+  flex: none;
+}
+
 .result-avatar:has(.face) {
-  width: 14rem;
-  height: 14rem;
+  width: min(14rem, 24vh);
+  height: auto;
+  aspect-ratio: 1;
   border-radius: 50%;
   overflow: hidden;
   box-shadow: 0 0 0 0.5rem rgb(255 255 255 / 0.8), 0 1rem 3rem rgb(0 0 0 / 0.5);
@@ -2459,4 +2466,53 @@ body.splash-on {
   margin: 0.4rem 0 0.8rem;
   font-size: 1.3rem;
   font-weight: 700;
+}
+
+/* Pantalla del ganador en teles «bajas» (o la ventana del portátil): todo a escala de la altura para que quepa entero
+   (antes, para caber, se aplastaba la foto) */
+@media (max-height: 860px) {
+  .result-overlay {
+    gap: 1.1vh;
+    padding: 2vh 2rem;
+  }
+
+  .result-q {
+    font-size: 2.6vh;
+  }
+
+  .result-avatar {
+    font-size: 14vh;
+  }
+
+  .result-avatar:has(.face) {
+    width: 19vh;
+  }
+
+  .result-name {
+    font-size: 12vh;
+  }
+
+  .result-team {
+    margin: 0;
+    font-size: 3.6vh;
+  }
+
+  .result-time {
+    font-size: 5.6vh;
+  }
+
+  .result-verdict {
+    font-size: 4.6vh;
+  }
+
+  .result-answer {
+    font-size: 4vh;
+  }
+
+  .followers,
+  .mini-standings {
+    margin-top: 0.5vh;
+    padding: 0.8vh 1rem;
+    font-size: 3vh;
+  }
 }

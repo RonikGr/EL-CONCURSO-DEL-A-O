@@ -145,6 +145,12 @@ pregunta abierta (desde `openedAt`, antes de la cuenta atrás) y sin responder; 
 turno. Con `AWAY_MIN_MS` (1,5 s) o más, según el ajuste `antiCheat`: 'void' (por defecto) anula su respuesta en esa
 pregunta (`disqualify`: no cuenta y no puede responder; en el pulsador, `LOCK.CHEAT`), 'warn' solo avisa, 'off' nada.
 Aviso grande en la tele (`cheatAlerts`) y en el mando, con «Perdonar» (`forgive`). Avisado en las reglas de la portada.
+Además, **cada** salida (en cualquier momento) queda en `sala.awayLog` (`core/awayLog.js` `AwayLog`, persistido):
+`out` al salir (dónde iba el concurso, `#whereNow`; ¿con pregunta en juego?, `#inQuestion`) y `back` al volver (tiempo
+fuera, ¿anulada?). No cuentan el presentador que juega desde el mando ni la llamada del millonario. El mando recibe
+`awayFeed` (últimos 10) y `awaySummary` en `controlState`: avisa arriba con vibración de cada aviso nuevo (rojo si
+tenía pregunta; al conectar no repite los viejos), enseña «👀 Fuera de la app ahora» en Juego y el recuento por
+concursante en Jugadores (veces, con pregunta, tiempo fuera; «Borrar recuento» = orden `awayReset`).
 
 **Por turnos** (columna «Por turnos» de la pestaña Concurso → `section.turns`; solo Test, Verdad o mentira, Estimación
 y Contador, y con equipos; `core/turns.js`): cada pregunta la responde uno de cada equipo. Cada equipo tiene un

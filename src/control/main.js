@@ -27,7 +27,8 @@ saveJSON(STORE_KEY, store);
 let connection = null;
 let view = null;
 let tab = 'game';
-let playFrame = null; // la página de jugador dentro del mando (pestaña «Jugar»): se crea la primera vez y no se quita
+let playFrame = null;
+let lastAwayId = null; // último aviso de «ha salido de la app» ya enseñado (al conectar, los viejos no se avisan) // la página de jugador dentro del mando (pestaña «Jugar»): se crea la primera vez y no se quita
 let cmdSeq = 0;
 let lastSignature = null;
 let status = 'connecting'; // connecting | pending | ready | reconnecting
@@ -86,6 +87,7 @@ function handleMessage(msg) {
       status = 'ready';
       document.body.classList.remove('offline');
       view = msg.view;
+      notifyAway(view.awayFeed ?? []);
       document.body.style.setProperty('--env-bg', envGradient(view.section?.env ?? HOME_ENV));
       render();
       break;
@@ -99,6 +101,48 @@ function handleMessage(msg) {
       else message('Mando no permitido', msg.message);
       break;
   }
+}
+
+/**
+ * Avisa en el mando de quién sale de la app (y de quién vuelve): un aviso arriba y una vibración, más fuerte si tenía
+ * una pregunta en juego. Solo los nuevos: al conectar el mando, lo de antes no se avisa (está en Jugadores).
+ */
+function notifyAway(feed) {
+  const newest = feed.at(-1)?.id ?? 0;
+  if (lastAwayId == null) {
+    lastAwayId = newest;
+    return;
+  }
+  const fresh = feed.filter((e) => e.id > lastAwayId);
+  lastAwayId = Math.max(lastAwayId, newest);
+  if (!fresh.length) return;
+  const serious = fresh.some((e) => e.inQuestion);
+  const text = fresh
+    .map((e) =>
+      e.kind === 'out'
+        ? `👀 ${e.name} ha salido de la app${e.inQuestion ? ' ¡con la pregunta en juego!' : ` (${e.where})`}`
+        : `↩️ ${e.name} ha vuelto · ${formatAway(e.ms)} fuera${e.voided ? ' · respuesta anulada' : ''}`,
+    )
+    .join('\n');
+  awayAlert(text, serious);
+  navigator.vibrate?.(serious ? [220, 120, 220] : 90);
+}
+
+const formatAway = (ms) => (ms >= 60_000 ? `${Math.floor(ms / 60_000)} min ${Math.round((ms % 60_000) / 1000)} s` : `${Math.max(1, Math.round(ms / 1000))} s`);
+
+/** Aviso de salidas: arriba, fuera del repintado (dura unos segundos; tocándolo se cierra). */
+let awayTimer = 0;
+function awayAlert(text, serious) {
+  let el = document.getElementById('c-away');
+  if (!el) {
+    el = h('div', { id: 'c-away', class: 'c-away', role: 'alert', onclick: () => (el.hidden = true) });
+    document.body.append(el);
+  }
+  el.textContent = text;
+  el.classList.toggle('serious', serious);
+  el.hidden = false;
+  clearTimeout(awayTimer);
+  awayTimer = setTimeout(() => (el.hidden = true), serious ? 9000 : 5000);
 }
 
 /** Manda una orden al portátil. */
@@ -238,8 +282,15 @@ function cheatCard() {
   );
 }
 
+/** Quién está fuera de la app en este momento. */
+function awayNowCard() {
+  const out = view.players.filter((p) => p.away);
+  if (!out.length) return null;
+  return h('section', { class: 'c-card c-away-now' }, h('p', { class: 'c-kicker' }, '👀 Fuera de la app ahora'), h('p', {}, out.map((p) => p.name).join(', ')));
+}
+
 function gameTab() {
-  return [cheatCard(), gameTabBody()];
+  return [cheatCard(), awayNowCard(), gameTabBody()];
 }
 
 function gameTabBody() {
@@ -906,7 +957,42 @@ function spokespeopleCard() {
 }
 
 function playersTab() {
-  return [spokespeopleCard(), playersTabBody()];
+  return [spokespeopleCard(), awaySummaryCard(), playersTabBody()];
+}
+
+/** Recuento de salidas de la app por concursante (quien más con pregunta, arriba). */
+function awaySummaryCard() {
+  const rows = view.awaySummary ?? [];
+  return h(
+    'section',
+    { class: 'c-card' },
+    h('p', { class: 'c-kicker' }, '👀 Salidas de la app'),
+    rows.length
+      ? [
+          h(
+            'table',
+            { class: 'c-away-table' },
+            h('thead', {}, h('tr', {}, h('th', {}, 'Quién'), h('th', {}, 'Veces'), h('th', {}, 'Con pregunta'), h('th', {}, 'Tiempo fuera'))),
+            h(
+              'tbody',
+              {},
+              rows.map((r) =>
+                h(
+                  'tr',
+                  { class: r.inQuestion ? 'serious' : '' },
+                  h('td', {}, r.name),
+                  h('td', {}, String(r.count)),
+                  h('td', {}, r.inQuestion ? `🚨 ${r.inQuestion}` : '—'),
+                  h('td', {}, formatAway(r.totalMs)),
+                ),
+              ),
+            ),
+          ),
+          h('p', { class: 'muted small' }, 'Cuenta cada vez que alguien minimiza, cambia de app o de pestaña, en cualquier momento. «Con pregunta»: tenía una pregunta en juego.'),
+          btn('Borrar recuento', () => confirm('¿Borrar el recuento de salidas?') && cmd('awayReset')),
+        ]
+      : h('p', { class: 'muted small' }, 'Nadie ha salido de la app todavía. Si alguien lo hace, te aviso aquí arriba al momento.'),
+  );
 }
 
 function playersTabBody() {
@@ -946,7 +1032,7 @@ function playersTabBody() {
               'div',
               { class: `c-player ${p.connected ? '' : 'offline'}` },
               avatar(p),
-              h('span', { class: 'c-pname' }, p.name, p.lock ? h('small', {}, ' · bloqueado') : null),
+              h('span', { class: 'c-pname' }, p.name, p.lock ? h('small', {}, ' · bloqueado') : null, p.away ? h('small', {}, ' · 👀 fuera') : null),
               h('strong', { class: 'c-score' }, String(p.score)),
               btn('−', () => cmd('adjustScore', { playerId: p.id, delta: -1 }), 'round'),
               btn('+', () => cmd('adjustScore', { playerId: p.id, delta: 1 }), 'round'),
