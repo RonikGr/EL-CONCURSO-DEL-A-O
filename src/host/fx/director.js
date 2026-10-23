@@ -19,7 +19,20 @@ export function envFor(view) {
 
 /** Clave de "pantalla": si cambia, la pantalla entra con transición. */
 export function screenKey(view) {
-  const sub = view.screen === SCREEN.PLAY ? view.itemIndex : view.screen === SCREEN.SETUP ? view.setupStep : view.introRules ? 'reglas' : view.versus ? 'equipos' : '';
+  const sub =
+    view.screen === SCREEN.PLAY
+      ? view.itemIndex
+      : view.screen === SCREEN.SETUP
+        ? view.setupStep
+        : view.introRules
+          ? 'reglas'
+          : view.versus
+            ? 'equipos'
+            : view.punish?.step === 'vote'
+              ? 'castigos'
+              : view.punish?.step === 'roulette'
+                ? 'ruleta'
+                : '';
   return [view.peekScoreboard ? 'peek' : view.screen, view.sectionIndex, sub].join('|');
 }
 
@@ -44,6 +57,10 @@ function snapshot(view) {
     },
     rules: !!view.introRules,
     step: view.screen === SCREEN.SETUP ? view.setupStep : view.versus ? 'versus' : null,
+    words: view.words && { round: view.words.roundId, phase: view.words.phase, n: view.words.results.length, last: view.words.results.at(-1)?.result ?? null, score: view.words.score },
+    shake: view.shake && { round: view.shake.roundId, phase: view.shake.phase },
+    bet: view.bet && { round: view.bet.roundId, phase: view.bet.phase, win: view.bet.owners.some((o) => o.result > 0) },
+    punish: view.punish && { step: view.punish.step, closed: view.punish.closed, votes: view.punish.tally.reduce((s, x) => s + x, 0), spin: view.punish.spin?.at ?? null },
     millionaire: view.millionaire && {
       round: view.millionaire.roundId,
       phase: view.millionaire.phase,
@@ -70,6 +87,10 @@ function musicScene(n) {
   if (n.screen === SCREEN.SCOREBOARD || n.screen === 'peek') return 'march';
   if (n.screen === SCREEN.FINAL) return 'waltz';
   const { game: g, answer: a, free: f, millionaire: m } = n;
+  // Juegos nuevos: tensión mientras corre el tiempo; revelado al acabar
+  if (n.words) return n.words.phase === 'running' ? 'tension' : n.words.phase === 'done' ? 'reveal' : 'explore';
+  if (n.shake) return n.shake.phase === 'running' ? 'tension' : n.shake.phase === 'done' ? 'reveal' : 'explore';
+  if (n.bet) return n.bet.phase === 'revealed' ? 'reveal' : n.bet.phase === 'question' ? 'tension' : 'suspense';
   // Millonario: la llamada y el público tienen su música; luego, pregunta → respuesta marcada → verde
   if (m) {
     if (m.call === 'running') return 'call';
@@ -197,6 +218,57 @@ export function createDirector({ backdrop }) {
       }
       if (m.call === 'done' && pm.call === 'running' && !own) sound.play('hit'); // se acabó el tiempo de la llamada
       if (m.audience === 'done' && pm.audience === 'voting') sound.play('pop');
+    }
+
+    // Palabras secretas: cada tarjeta suena (acertada, pasada o falta); al acabar el tiempo, campana
+    const w = n.words;
+    const pw = p.words?.round === w?.round ? p.words : null;
+    if (w && pw) {
+      if (w.phase === 'running' && pw.phase !== 'running') sound.play('go');
+      if (w.n > pw.n) sound.play(w.last === 'ok' ? 'correct' : w.last === 'foul' ? 'wrong' : 'pop');
+      if (w.phase === 'done' && pw.phase === 'running') {
+        sound.play('bell');
+        if (w.score) {
+          sound.play('fanfare', 500);
+          burst({ y: 0.4, count: 50 });
+        }
+      }
+    }
+
+    // Agita el móvil: al acabar, campana y confeti para el ganador
+    const s = n.shake;
+    const ps = p.shake?.round === s?.round ? p.shake : null;
+    if (s && ps && s.phase === 'done' && ps.phase !== 'done') {
+      sound.play('bell');
+      sound.play('fanfare', 400);
+      celebrate(2200);
+    }
+
+    // La gran apuesta
+    const b = n.bet;
+    const pb = p.bet?.round === b?.round ? p.bet : null;
+    if (b && pb && b.phase !== pb.phase) {
+      if (b.phase === 'question') sound.play('whoosh');
+      if (b.phase === 'revealed') {
+        sound.play('roll');
+        sound.play(b.win ? 'correct' : 'wrong', 1200);
+        if (b.win) setTimeout(() => burst({ y: 0.45, count: 60 }), 1200);
+      }
+    }
+
+    // Castigos: cada voto, el cierre de la votación y la ruleta (redoble mientras gira y fanfarria al pararse)
+    const pu = n.punish;
+    const ppu = p.punish;
+    if (pu && ppu && pu.step === ppu.step) {
+      if (pu.votes !== ppu.votes) sound.play('blip');
+      if (pu.closed && !ppu.closed) {
+        sound.play('gong');
+        backdrop?.flash(0.4);
+      }
+      if (pu.spin && pu.spin !== ppu.spin) {
+        sound.play('roll');
+        sound.play('fanfare', 6000);
+      }
     }
 
     // Libre

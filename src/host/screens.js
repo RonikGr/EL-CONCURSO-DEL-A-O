@@ -76,6 +76,34 @@ function importBox(view, ctx) {
   );
 }
 
+/** «¿Qué juegos jugamos?»: casillas para quitar las secciones que esta noche no se juegan. */
+function gamesBox(view, ctx) {
+  const on = view.sections.filter((s) => s.on).length;
+  return h(
+    'div',
+    { class: 'import-box games-box' },
+    h('h3', {}, '¿Qué juegos jugamos?', h('span', { class: 'muted small' }, ` · ${on} de ${view.sections.length}`)),
+    h(
+      'ul',
+      { class: 'games-list' },
+      view.sections.map((s, i) =>
+        h(
+          'li',
+          { class: s.on ? 'on' : 'off' },
+          h(
+            'label',
+            {},
+            h('input', { type: 'checkbox', checked: s.on, onchange: (e) => ctx.onToggleSection(s.id, e.target.checked) }),
+            h('span', { class: 'gl-name' }, `${i + 1}. ${s.name}`),
+            h('span', { class: 'gl-type muted small' }, s.label),
+          ),
+        ),
+      ),
+    ),
+    h('p', { class: 'muted small' }, 'Quita las que no te apetezcan esta noche: se saltan. También desde el mando.'),
+  );
+}
+
 /** Paso 1: preparación (sin jugadores todavía): la hoja, los archivos y el mando. */
 function prepScreen(view, ctx) {
   return h(
@@ -86,6 +114,7 @@ function prepScreen(view, ctx) {
       { class: 'setup-main' },
       h('div', { class: 'prep-head' }, h('h1', { class: 'prep-title' }, 'Preparación'), h('p', { class: 'muted' }, 'Carga el concurso y sus archivos y empareja tu mando. La gente se conecta después de presentar el concurso.')),
       importBox(view, ctx),
+      gamesBox(view, ctx),
       extrasBox(ctx),
       h('div', { class: 'setup-start' }, h('span', {}), h('button', { class: 'btn primary huge', onclick: ctx.onStart }, 'Presentar el concurso ', kbd('Espacio'))),
     ),
@@ -287,8 +316,10 @@ export function coverScreen(view) {
         h('h2', {}, `Esta noche · ${view.sectionCount} ${view.sectionCount === 1 ? 'sección' : 'secciones'}`),
         h(
           'ol',
-          { class: `cover-sections ${view.sections.length > 5 ? 'many' : ''}` },
-          view.sections.map((s, i) =>
+          { class: `cover-sections ${view.sectionCount > 5 ? 'many' : ''}` },
+          view.sections
+            .filter((s) => s.on)
+            .map((s, i) =>
             h(
               'li',
               { style: { '--d': `${900 + i * 140}ms`, '--env': envGradient(s.env) } },
@@ -364,11 +395,11 @@ export function introScreen(view) {
   return h(
     'div',
     { class: 'intro anim-in' },
-    h('p', { class: 'intro-kicker' }, `Sección ${view.sectionIndex + 1} de ${view.sectionCount} · ${getEnv(sectionEnv(s, view.sectionIndex)).name}`),
+    h('p', { class: 'intro-kicker' }, `Sección ${view.sectionNumber} de ${view.sectionCount} · ${getEnv(sectionEnv(s, view.sectionIndex)).name}`),
     kinetic('h1', 'intro-title display', s.name),
     h('p', { class: 'intro-type' }, view.sectionLabel),
     s.description ? h('p', { class: 'intro-desc' }, s.description) : null,
-    h('p', { class: 'intro-points' }, s.type === 'test' ? levelPointsText(s.points) : pointsText(s.points, s.points.length > 1)),
+    h('p', { class: 'intro-points' }, s.type === 'test' ? levelPointsText(s.points) : s.type === 'apuesta' ? 'Os jugáis vuestros puntos' : s.type === 'palabras' ? pointsText(s.points, true) + ' por palabra acertada' : pointsText(s.points, s.points.length > 1)),
     view.playable ? null : h('p', { class: 'intro-soon' }, 'Esta sección llegará en una próxima versión: se saltará.'),
     view.turns ? turnsIntro(view.turns) : null,
   );
@@ -544,4 +575,86 @@ export function finalScreen(view) {
   sound.play('fanfare', PODIUM_AT[1]);
   later(root, PODIUM_AT[1], () => celebrate(4500));
   return root;
+}
+
+// ---------------------------------------------------------------------------------------- Castigos
+
+/** Tras presentar los equipos: cada uno vota 3 castigos en su móvil; al cerrar, los 3 que van a la ruleta. */
+export function punishVoteScreen(view) {
+  const p = view.punish;
+  const max = Math.max(1, ...p.tally);
+  const finalists = new Set(p.finalists?.map((f) => f.index) ?? []);
+  return h(
+    'div',
+    { class: 'punish anim-in' },
+    h('p', { class: 'intro-kicker' }, view.title),
+    kinetic('h1', 'punish-title display', p.closed ? '¡Estos van a la ruleta!' : '¿Qué castigo para quien pierda?'),
+    h(
+      'p',
+      { class: 'answer-prompt' },
+      p.closed ? 'Al final del concurso, la ruleta elegirá uno para el equipo que quede último.' : `Votad en el móvil vuestros 3 favoritos · ${p.voters} ${p.voters === 1 ? 'ha votado' : 'han votado'}`,
+    ),
+    h(
+      'ol',
+      { class: 'punish-list' },
+      p.options.map((text, i) =>
+        h(
+          'li',
+          { class: p.closed ? (finalists.has(i) ? 'finalist' : 'out') : '', style: { '--w': `${(p.tally[i] / max) * 100}%` } },
+          h('span', { class: 'pl-bar' }),
+          h('span', { class: 'pl-text' }, text),
+          h('span', { class: 'pl-votes' }, String(p.tally[i])),
+        ),
+      ),
+    ),
+  );
+}
+
+const SPIN_MS = 6000; // lo que tarda la ruleta en pararse
+let spunAt = null; // la tirada que ya se animó (al repintar no vuelve a girar)
+
+/** En el final: la ruleta con los 3 castigos; gira y se para en el que toca al que ha perdido. */
+export function rouletteScreen(view) {
+  const p = view.punish;
+  const list = p.finalists ?? [];
+  const slice = 360 / Math.max(1, list.length);
+  const colors = ['#ff8a1f', '#7c4dff', '#2fbf71', '#e53935', '#1e88e5'];
+  const wheel = h('div', { class: 'roulette-wheel' });
+  wheel.style.background = `conic-gradient(${list.map((_, i) => `${colors[i % colors.length]} ${i * slice}deg ${(i + 1) * slice}deg`).join(', ')})`;
+  list.forEach((f, i) => {
+    const label = h('span', { class: 'rw-label' }, f.text);
+    label.style.transform = `rotate(${i * slice + slice / 2}deg)`; // el texto, en la mitad de arriba de su porción
+    wheel.append(label);
+  });
+  const result = h('p', { class: 'roulette-result display', hidden: true });
+  if (p.spin) {
+    const k = list.findIndex((f) => f.index === p.spin.index);
+    const target = 360 * 6 + (360 - (k * slice + slice / 2));
+    const fresh = spunAt !== p.spin.at && p.spin.ago < SPIN_MS;
+    spunAt = p.spin.at;
+    const land = () => {
+      result.textContent = p.spin.text;
+      result.hidden = false;
+    };
+    if (fresh) {
+      requestAnimationFrame(() => requestAnimationFrame(() => (wheel.style.transform = `rotate(${target}deg)`)));
+      later(wheel, SPIN_MS - p.spin.ago, () => {
+        land();
+        celebrate(3000);
+      });
+    } else {
+      wheel.style.transition = 'none';
+      wheel.style.transform = `rotate(${target}deg)`;
+      land();
+    }
+  }
+  return h(
+    'div',
+    { class: 'roulette anim-in' },
+    kinetic('h1', 'punish-title display', 'La ruleta del castigo'),
+    p.loser ? h('p', { class: 'roulette-loser', style: { '--tc': getColor(p.loser.color).bg } }, `Pierde${p.loser.isTeam ? 'n' : ''}: `, h('strong', {}, p.loser.name)) : null,
+    h('div', { class: 'roulette-box' }, h('span', { class: 'roulette-pointer' }, '▼'), wheel),
+    result,
+    p.spin ? null : h('p', { class: 'muted' }, 'Pulsa Espacio (o «Girar» en el mando) para girar la ruleta'),
+  );
 }

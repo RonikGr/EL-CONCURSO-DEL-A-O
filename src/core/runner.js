@@ -3,6 +3,8 @@
 //   setup ─▶ cover ─▶ [ intro ─▶ play (pregunta 1…N) ─▶ scoreboard ] × secciones ─▶ final
 //
 // Una sección sin lista de preguntas (pulsador improvisado) sigue en "play" hasta que el presentador la termina.
+// Las secciones que el presentador quita en la preparación («¿Qué juegos jugamos?», `skipped`) se saltan al avanzar
+// y al retroceder (ir a una a propósito sí se puede).
 // Las secciones de tipos aún no disponibles (o sin filas) muestran su intro y se saltan al avanzar.
 import { PLAYABLE_TYPES, SECTION_TYPES } from './show.js';
 
@@ -28,6 +30,8 @@ export class ShowRunner {
     this.itemIndex = 0;
     this.shown = { question: false, answer: false }; // qué se ha enseñado en la tele de la pregunta actual
     this.peekScoreboard = false; // marcador "por encima" sin perder el sitio (tecla M)
+    const ids = new Set(show.sections.map((s) => s.id));
+    this.skipped = new Set((saved?.skipped ?? []).filter((id) => ids.has(id))); // secciones que esta noche no se juegan
     if (saved && Object.values(SCREEN).includes(saved.screen)) {
       this.screen = saved.screen;
       this.sectionIndex = Math.min(Math.max(0, saved.sectionIndex | 0), Math.max(0, show.sections.length - 1));
@@ -36,6 +40,40 @@ export class ShowRunner {
       if (this.itemCount && this.itemIndex >= this.itemCount) this.itemIndex = this.itemCount - 1;
       if (!show.sections.length && this.screen !== SCREEN.SETUP && this.screen !== SCREEN.COVER) this.screen = SCREEN.FINAL;
     }
+  }
+
+  /** ¿Se juega esta sección esta noche? */
+  isOn(index) {
+    const s = this.show.sections[index];
+    return !!s && !this.skipped.has(s.id);
+  }
+
+  /** Quitar o poner una sección (en la preparación). */
+  setSkipped(sectionId, skip) {
+    if (!this.show.sections.some((s) => s.id === sectionId)) return false;
+    if (skip) this.skipped.add(sectionId);
+    else this.skipped.delete(sectionId);
+    return true;
+  }
+
+  /** Las secciones que se juegan, en orden. */
+  get playedSections() {
+    return this.show.sections.filter((s) => !this.skipped.has(s.id));
+  }
+
+  /** Puesto (1, 2…) de esta sección entre las que se juegan. */
+  positionOf(index) {
+    return this.show.sections.slice(0, index + 1).filter((s) => !this.skipped.has(s.id)).length;
+  }
+
+  #nextOn(from) {
+    for (let i = Math.max(0, from); i < this.show.sections.length; i++) if (this.isOn(i)) return i;
+    return -1;
+  }
+
+  #prevOn(from) {
+    for (let i = Math.min(from, this.show.sections.length - 1); i >= 0; i--) if (this.isOn(i)) return i;
+    return -1;
   }
 
   get section() {
@@ -61,8 +99,10 @@ export class ShowRunner {
     switch (this.screen) {
       case SCREEN.SETUP:
         return this.#go(SCREEN.COVER);
-      case SCREEN.COVER:
-        return this.show.sections.length ? this.#go(SCREEN.INTRO, 0) : this.#go(SCREEN.FINAL);
+      case SCREEN.COVER: {
+        const first = this.#nextOn(0);
+        return first >= 0 ? this.#go(SCREEN.INTRO, first) : this.#go(SCREEN.FINAL);
+      }
       case SCREEN.INTRO:
         return isPlayable(this.section) ? this.#go(SCREEN.PLAY, this.sectionIndex, 0) : this.#afterSection();
       case SCREEN.PLAY:
@@ -87,15 +127,19 @@ export class ShowRunner {
     switch (this.screen) {
       case SCREEN.COVER:
         return this.#go(SCREEN.SETUP);
-      case SCREEN.INTRO:
-        return this.sectionIndex > 0 ? this.#go(SCREEN.SCOREBOARD, this.sectionIndex - 1) : this.#go(SCREEN.COVER);
+      case SCREEN.INTRO: {
+        const before = this.#prevOn(this.sectionIndex - 1);
+        return before >= 0 ? this.#go(SCREEN.SCOREBOARD, before) : this.#go(SCREEN.COVER);
+      }
       case SCREEN.PLAY:
         return this.itemIndex > 0 ? this.#go(SCREEN.PLAY, this.sectionIndex, this.itemIndex - 1) : this.#go(SCREEN.INTRO);
       case SCREEN.SCOREBOARD:
         if (!isPlayable(this.section)) return this.#go(SCREEN.INTRO);
         return this.#go(SCREEN.PLAY, this.sectionIndex, this.itemCount ? this.itemCount - 1 : this.itemIndex);
-      case SCREEN.FINAL:
-        return this.show.sections.length ? this.#go(SCREEN.SCOREBOARD, this.show.sections.length - 1) : this.#go(SCREEN.COVER);
+      case SCREEN.FINAL: {
+        const last = this.#prevOn(this.show.sections.length - 1);
+        return last >= 0 ? this.#go(SCREEN.SCOREBOARD, last) : this.#go(SCREEN.COVER);
+      }
       default:
         return false;
     }
@@ -138,12 +182,12 @@ export class ShowRunner {
   }
 
   toJSON() {
-    return { screen: this.screen, sectionIndex: this.sectionIndex, itemIndex: this.itemIndex, shown: { ...this.shown } };
+    return { screen: this.screen, sectionIndex: this.sectionIndex, itemIndex: this.itemIndex, shown: { ...this.shown }, skipped: [...this.skipped] };
   }
 
   #afterSection() {
-    const nextIndex = this.sectionIndex + 1;
-    return nextIndex < this.show.sections.length ? this.#go(SCREEN.INTRO, nextIndex, 0) : this.#go(SCREEN.FINAL);
+    const nextIndex = this.#nextOn(this.sectionIndex + 1);
+    return nextIndex >= 0 ? this.#go(SCREEN.INTRO, nextIndex, 0) : this.#go(SCREEN.FINAL);
   }
 
   #go(screen, sectionIndex = this.sectionIndex, itemIndex = screen === SCREEN.PLAY ? this.itemIndex : 0) {

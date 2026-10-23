@@ -7,6 +7,9 @@ import { APHASE, isTiming } from '../core/answers.js';
 import { MPHASE } from '../core/millionaire.js';
 import { FPHASE, TOOL } from '../core/free.js';
 import { SCREEN } from '../core/runner.js';
+import { WPHASE } from '../core/words.js';
+import { SPHASE } from '../core/shake.js';
+import { BPHASE } from '../core/bet.js';
 import { COLORS, ICONS } from '../shared/appearance.js';
 import { BOT_PREFIX, botAnswer, botMillionaireChoice, botName, botPressAt, isBot, pick, randInt, shuffle, teamFor } from '../core/bots.js';
 
@@ -115,6 +118,10 @@ export class BotPlayers {
       this.#millionaire(id);
       this.#turnOrder(id);
       this.#count(id);
+      this.#words(id);
+      this.#shake(id);
+      this.#bet(id);
+      this.#punish(id);
     }
     this.#hurry = false;
   }
@@ -195,6 +202,77 @@ export class BotPlayers {
       .filter((m) => m.teamId === p.teamId)
       .map((m) => m.id);
     this.#later(randInt(this.#rng, 1500, 3500), () => this.#input.onTurnOrder(id, { order: shuffle(this.#rng, members) }));
+  }
+
+  #play(id, game, roundId, action, value = null) {
+    this.#input.onPlay(id, { seq: ++this.#seq, game, roundId, action, value });
+  }
+
+  // ---------- Palabras secretas: si le toca, empieza y va acertando (o pasando); si es rival, a veces pita
+  #words(id) {
+    const g = this.#room.games.palabras;
+    if (!g.inPlay) return;
+    const r = g.round;
+    const role = g.roleOf(id);
+    if (role === 'actor' && r.phase === WPHASE.READY && this.#once(`wstart:${id}:${r.roundId}`)) {
+      this.#later(randInt(this.#rng, 1500, 3000), () => this.#play(id, 'palabras', r.roundId, 'start'));
+    }
+    if (r.phase !== WPHASE.RUNNING || r.current == null) return;
+    const card = `${r.roundId}:${r.results.length}`; // cada tarjeta, una decisión
+    if (role === 'actor' && this.#once(`wcard:${id}:${card}`)) {
+      this.#later(randInt(this.#rng, 3000, 7000), () => r.phase === WPHASE.RUNNING && `${r.roundId}:${r.results.length}` === card && this.#play(id, 'palabras', r.roundId, this.#rng() < 0.65 ? 'ok' : 'pass'));
+    }
+    if (role === 'rival' && this.#once(`wfoul:${id}:${card}`) && this.#rng() < 0.04) {
+      this.#later(randInt(this.#rng, 1000, 4000), () => r.phase === WPHASE.RUNNING && `${r.roundId}:${r.results.length}` === card && this.#play(id, 'palabras', r.roundId, 'foul'));
+    }
+  }
+
+  // ---------- Agita el móvil: cada bot agita a su ritmo y manda su total cada 300 ms
+  #shake(id) {
+    const g = this.#room.games.agitar;
+    if (!g.inPlay || g.round.phase !== SPHASE.RUNNING) return;
+    const r = g.round;
+    if (!this.#once(`shake:${id}:${r.roundId}`)) return;
+    const rate = randInt(this.#rng, 8, 25); // sacudidas por segundo
+    let total = 0;
+    const step = () => {
+      if (g.round !== r || r.phase !== SPHASE.RUNNING) return;
+      const t = now();
+      if (t >= r.tOpen) {
+        total += (rate * 0.3) * (0.6 + this.#rng() * 0.8);
+        this.#play(id, 'agitar', r.roundId, 'total', Math.round(total));
+      }
+      if (t < r.endsAt) this.#later(300, step);
+    };
+    this.#later(300, step);
+  }
+
+  // ---------- La gran apuesta: si decide por su equipo (o por sí mismo), apuesta y luego responde
+  #bet(id) {
+    const g = this.#room.games.apuesta;
+    if (!g.inPlay) return;
+    const r = g.round;
+    const mine = g.viewFor(this.#room.roster.get(id));
+    if (!mine.acts) return;
+    if (r.phase === BPHASE.BETTING && this.#once(`bet:${id}:${r.roundId}`)) {
+      this.#later(randInt(this.#rng, 1000, 3500), () => this.#play(id, 'apuesta', r.roundId, 'bet', Math.round(mine.max * (0.2 + this.#rng() * 0.6))));
+    }
+    if (r.phase === BPHASE.QUESTION && this.#once(`betans:${id}:${r.roundId}`)) {
+      const q = r.question;
+      const value = botMillionaireChoice({ correct: q.correct, count: q.options.length, removed: [] }, this.#rng);
+      this.#later(randInt(this.#rng, 2000, 5000), () => r.phase === BPHASE.QUESTION && this.#play(id, 'apuesta', r.roundId, 'answer', value));
+    }
+  }
+
+  // ---------- Castigos: cada bot vota 3 al azar
+  #punish(id) {
+    const room = this.#room;
+    if (room.punishStep !== 'vote' || room.punish.closed || !this.#once(`punish:${id}:${room.punish.options.length}`)) return;
+    const picks = shuffle(
+      this.#rng,
+      room.punish.options.map((_, i) => i),
+    ).slice(0, 3);
+    picks.forEach((i, k) => this.#later(randInt(this.#rng, 800, 3000) + k * 400, () => this.#play(id, 'castigo', null, 'toggle', i)));
   }
 
   // ---------- Libre con contador: el bot que cuenta suma de vez en cuando

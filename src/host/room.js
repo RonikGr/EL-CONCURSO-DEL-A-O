@@ -26,6 +26,10 @@ import { FPHASE, FreeRound } from '../core/free.js';
 import { PeerSource } from './sources/peerSource.js';
 import { BotPlayers } from './bots.js';
 import { AwayLog } from '../core/awayLog.js';
+import { WordsGame } from './games/words.js';
+import { ShakeGame } from './games/shake.js';
+import { BetGame } from './games/bet.js';
+import { PunishmentVote } from '../core/punishments.js';
 import { saveRoom } from './persistence.js';
 import { matchFace } from '../core/faces.js';
 import { TURN_TYPES, answererFor, normalizeOrder, seatFor } from '../core/turns.js';
@@ -66,6 +70,8 @@ export class HostRoom extends EventTarget {
   #buzzerOpenedAt = null;
   #rulesFor = null; // sección (millonario) cuya presentación va ya por «Cómo se juega»
   #versusStep = false; // portada: antes, la presentación de los equipos («Rojos contra Azules»)
+  #punishStep = false; // portada: tras los equipos, la votación de castigos
+  #rouletteStep = false; // final: tras el podio, la ruleta del castigo
   cheatAlerts = []; // [{id, playerId, name, ms, voided, forgiven, at}] los últimos
   #alertSeq = 0;
   #windowTimer = null;
@@ -104,13 +110,27 @@ export class HostRoom extends EventTarget {
     this.presenterIds = new Set(saved?.presenterIds ?? []);
     // Quién sale de la app (en cualquier momento): avisos y recuento para el mando
     this.awayLog = new AwayLog(saved?.awayLog);
+    // Castigos para quien pierda: se votan tras presentar los equipos; en el final, la ruleta
+    this.punish = new PunishmentVote(this.show.punishments ?? [], saved?.punish);
     this.answerRound = null;
     this.freeRound = null; // sección Libre: la prueba actual
     this.duelPick = []; // Duelo de reflejos: los dos que juegan (se mantiene entre rondas)
+    // Juegos con su propio controlador (host/games/): Palabras secretas, Agita el móvil y La gran apuesta
+    const ctx = {
+      room: this,
+      changed: (opts) => this.#afterChange(opts),
+      turnOrder: (teamId) => this.#turnOrder(teamId),
+      roundId: (key) => `${key}#${++this.#roundSeq}`,
+      now,
+      pub: (p) => publicPlayer(p),
+    };
+    this.games = { palabras: new WordsGame(ctx, saved?.games?.palabras), agitar: new ShakeGame(ctx), apuesta: new BetGame(ctx) };
+    for (const g of Object.values(this.games)) Object.assign(this.#actions, g.actions());
     this.#playKey = this.runner.playKey;
     this.#syncAnswerRound();
     this.#syncFreeRound();
     this.#syncMillionaire();
+    this.#syncGames();
     this.lastImport = null;
 
     this.network = { state: 'connecting', message: '' };
@@ -137,6 +157,7 @@ export class HostRoom extends EventTarget {
         onFreeCount: (playerId, msg) => this.#onFreeCount(playerId, msg),
         onAway: (playerId, msg) => this.#onAway(playerId, msg),
         onTurnOrder: (playerId, msg) => this.#onTurnOrder(playerId, msg),
+        onPlay: (playerId, msg) => this.#onPlay(playerId, msg),
         onSyncReport: (playerId, report) => {
           this.sync.set(playerId, report);
           this.#changed({ persist: false });
@@ -169,6 +190,7 @@ export class HostRoom extends EventTarget {
     clearTimeout(this.#controlPush);
     this.source.destroy();
     this.bots.stop();
+    for (const g of Object.values(this.games)) g.stop();
   }
 
   get canStart() {
@@ -197,6 +219,47 @@ export class HostRoom extends EventTarget {
   get hasVersus() {
     const players = this.roster.list();
     return this.roster.teams.filter((t) => players.some((p) => p.teamId === t.id)).length >= 2;
+  }
+
+  /** ¿Hay castigos en la hoja? (al menos dos, para que haya algo que votar) */
+  get hasPunish() {
+    return this.punish.options.length >= 2;
+  }
+
+  /** ¿En qué paso de los castigos estamos? 'vote' (portada) | 'roulette' (final) | null */
+  get punishStep() {
+    if (this.runner.screen === SCREEN.COVER && this.#punishStep) return 'vote';
+    if (this.runner.screen === SCREEN.FINAL && this.#rouletteStep) return 'roulette';
+    return null;
+  }
+
+  /** Quien pierde: el equipo con menos puntos (o, sin equipos, el jugador). */
+  get loser() {
+    const standings = this.roster.teamStandings();
+    if (standings.length) {
+      const last = standings.at(-1);
+      return { name: last.team.name, color: last.team.color, isTeam: true };
+    }
+    const players = [...this.roster.list()].sort((a, b) => a.score - b.score);
+    return players[0] ? { name: players[0].name, color: players[0].color, isTeam: false } : null;
+  }
+
+  /** Castigos para la tele, el mando y los móviles. */
+  punishView(player = null) {
+    const step = this.punishStep;
+    if (!step && !(this.runner.screen === SCREEN.FINAL && this.punish.spin)) return null;
+    const p = this.punish;
+    return {
+      step,
+      options: p.options,
+      tally: p.tally(),
+      voters: Object.keys(p.votes).length,
+      closed: p.closed,
+      finalists: p.finalists?.map((i) => ({ index: i, text: p.options[i] })) ?? null,
+      spin: p.spin && { index: p.spin.index, text: p.options[p.spin.index], at: p.spin.at, ago: now() - p.spin.at },
+      loser: this.loser,
+      mine: player ? (p.votes[player.id] ?? []) : null,
+    };
   }
 
   /** ¿La portada va por la presentación de los equipos? */
@@ -448,9 +511,10 @@ export class HostRoom extends EventTarget {
       screen: r.screen,
       peekScoreboard: r.peekScoreboard,
       sectionIndex: r.sectionIndex,
-      sectionCount: this.show.sections.length,
-      // Lista para la introducción del concurso en la tele
-      sections: this.show.sections.map((s, i) => ({ name: s.name, label: SECTION_TYPES[s.type].label, env: sectionEnv(s, i) })),
+      sectionCount: r.playedSections.length, // las que se juegan esta noche
+      sectionNumber: r.positionOf(r.sectionIndex), // «Sección 3 de 7»
+      // Lista para la introducción del concurso en la tele (y la preparación: cuáles se juegan)
+      sections: this.show.sections.map((s, i) => ({ id: s.id, name: s.name, label: SECTION_TYPES[s.type].label, env: sectionEnv(s, i), on: r.isOn(i) })),
       section: r.section,
       setupStep: this.setupStep,
       versus: this.versusStep,
@@ -466,6 +530,10 @@ export class HostRoom extends EventTarget {
       answer: this.inAnswerPlay ? this.answerView() : null,
       free: this.inFreePlay ? this.freeView() : null,
       millionaire: this.inMillionairePlay ? this.millionaireView() : null,
+      words: this.games.palabras.inPlay ? this.games.palabras.view() : null,
+      shake: this.games.agitar.inPlay ? this.games.agitar.view() : null,
+      bet: this.games.apuesta.inPlay ? this.games.apuesta.view() : null,
+      punish: this.punishView(),
       pointsForCorrect: this.pointsForCorrect,
       pointsForWrong: this.pointsForWrong,
       players: this.players(),
@@ -512,6 +580,7 @@ export class HostRoom extends EventTarget {
         label: SECTION_TYPES[s.type].label,
         playable: isPlayable(s),
         items: s.items.length,
+        on: this.runner.isOn(index),
       })),
       section: v.section && {
         name: v.section.name,
@@ -538,6 +607,11 @@ export class HostRoom extends EventTarget {
       answer: this.inAnswerPlay ? this.answerView({ forControl: true }) : null,
       free: this.inFreePlay ? this.freeView({ forControl: true }) : null,
       millionaire: this.inMillionairePlay ? this.millionaireView({ forControl: true }) : null,
+      words: this.games.palabras.inPlay ? this.games.palabras.view({ forControl: true }) : null,
+      shake: this.games.agitar.inPlay ? this.games.agitar.view() : null,
+      bet: this.games.apuesta.inPlay ? this.games.apuesta.view({ forControl: true }) : null,
+      punish: this.punishView(),
+      hasPunish: this.hasPunish,
       pointsForCorrect: v.pointsForCorrect,
       pointsForWrong: v.pointsForWrong,
       players: v.players.map((p) => ({ ...pub(p), score: p.score, connected: p.connected, rtt: p.rtt, lock: p.lock, away: p.away })),
@@ -585,12 +659,28 @@ export class HostRoom extends EventTarget {
         if (!this.canStart) return `Hacen falta al menos ${MIN_PLAYERS} jugadores conectados.`;
         this.roster.lockTeams(true); // al empezar, los equipos quedan cerrados
         const ok = r.next();
-        this.#versusStep = ok !== false && r.screen === SCREEN.COVER && this.hasVersus;
+        const atCover = ok !== false && r.screen === SCREEN.COVER;
+        this.#versusStep = atCover && this.hasVersus;
+        this.#punishStep = atCover && !this.#versusStep && this.hasPunish && !this.punish.closed;
         return ok;
       }
       if (r.screen === SCREEN.COVER && this.#versusStep) {
         this.#versusStep = false;
+        this.#punishStep = this.hasPunish && !this.punish.closed;
         return true;
+      }
+      if (r.screen === SCREEN.COVER && this.#punishStep) {
+        // primero se cierra la votación (se ven los 3 que pasan); luego, la portada
+        if (!this.punish.closed) return this.punish.close();
+        this.#punishStep = false;
+        return true;
+      }
+      if (r.screen === SCREEN.FINAL && this.hasPunish && this.punish.closed) {
+        if (!this.#rouletteStep) {
+          this.#rouletteStep = true;
+          return true;
+        }
+        return this.punish.spin ? false : this.punish.spinWheel(now()) != null; // ¡a girar!
       }
       // Millonario: tras el título de la sección, «Cómo se juega» (con su música) y luego la primera pregunta
       if (r.screen === SCREEN.INTRO && r.section?.type === 'test' && isPlayable(r.section) && this.#rulesFor !== r.sectionIndex) {
@@ -609,10 +699,22 @@ export class HostRoom extends EventTarget {
         this.setupStep = SETUP_STEPS[SETUP_STEPS.indexOf(this.setupStep) - 1];
         return true;
       }
+      if (r.screen === SCREEN.FINAL && this.#rouletteStep) {
+        this.#rouletteStep = false;
+        return true;
+      }
       if (r.screen === SCREEN.COVER) {
-        if (!this.#versusStep && this.hasVersus) {
-          this.#versusStep = true;
+        // portada ← castigos ← equipos ← conexión
+        if (!this.#versusStep && !this.#punishStep && this.hasPunish) {
+          this.#punishStep = true;
           return true;
+        }
+        if (this.#punishStep) {
+          this.#punishStep = false;
+          if (this.hasVersus) {
+            this.#versusStep = true;
+            return true;
+          }
         }
         this.#versusStep = false;
       }
@@ -622,6 +724,8 @@ export class HostRoom extends EventTarget {
     gotoSection: ({ index }) => {
       this.#rulesFor = null;
       this.#versusStep = false;
+      this.#punishStep = false;
+      this.#rouletteStep = false;
       return this.runner.goToSection(Number(index));
     },
     endSection: () => this.runner.endSection(),
@@ -656,6 +760,7 @@ export class HostRoom extends EventTarget {
       return true;
     },
     restart: () => {
+      for (const g of Object.values(this.games)) if (g.inPlay) return g.restart();
       if (this.inMillionairePlay) return this.#restartMillionaire();
       if (this.inAnswerPlay) return this.#restartAnswerRound();
       if (this.inFreePlay) return this.#restartFreeRound();
@@ -800,6 +905,21 @@ export class HostRoom extends EventTarget {
       return true;
     },
     // Antitrampas: el presentador perdona a quien salió de la app (vuelve a poder responder o pulsar)
+    // ¿Qué juegos jugamos? (en la preparación): quitar o poner una sección
+    toggleSection: ({ id, on }) => {
+      if (this.runner.screen !== SCREEN.SETUP) return 'Los juegos se eligen en la preparación.';
+      if (!on && this.runner.playedSections.length <= 1 && this.runner.playedSections[0]?.id === id) return 'Tiene que quedar al menos un juego.';
+      return this.runner.setSkipped(String(id), !on);
+    },
+
+    // Castigos: cerrar la votación (pasan los 3 más votados), volver a votar y girar la ruleta
+    punishClose: () => this.punishStep === 'vote' && this.punish.close(),
+    punishReopen: () => {
+      this.punish.reset();
+      return true;
+    },
+    punishSpin: () => this.punishStep === 'roulette' && this.punish.spinWheel(now()) != null,
+
     awayReset: () => {
       this.awayLog.reset();
       return true;
@@ -834,6 +954,7 @@ export class HostRoom extends EventTarget {
       this.#syncAnswerRound();
       this.#syncFreeRound();
       this.#syncMillionaire();
+      this.#syncGames();
       return true;
     },
     // Concursantes de prueba (🤖 Pruebas): añadir, quitar, que respondan solos o ya
@@ -891,6 +1012,8 @@ export class HostRoom extends EventTarget {
     this.settings.lockEarlyBuzz = show.settings.lockEarlyBuzz;
     this.jokers = new JokerBank(show.settings.jokers, {});
     this.itemResults = {};
+    this.punish = new PunishmentVote(show.punishments ?? []);
+    this.games.palabras.resetDecks();
     this.lastImport = { ...report, title: show.title, sections: show.sections.length, teams: show.teams.length };
     this.#afterChange();
     return true;
@@ -1071,6 +1194,27 @@ export class HostRoom extends EventTarget {
     }
     logBack();
     this.#afterChange();
+  }
+
+  #syncGames() {
+    for (const g of Object.values(this.games ?? {})) g.sync();
+  }
+
+  /** Mensaje de un móvil para uno de los juegos nuevos (o el voto de castigos). */
+  #onPlay(playerId, msg) {
+    const ack = (result, message = null) => this.source.sendTo(playerId, { t: MSG.ANSWER_ACK, seq: msg.seq, result, message });
+    if (msg.game === 'castigo') return this.#onPunishVote(playerId, msg, ack);
+    const game = Object.values(this.games).find((g) => g.type === msg.game);
+    if (!game) return ack('closed');
+    game.onMessage(playerId, msg, ack);
+  }
+
+  /** Voto de castigos desde el móvil (marcar o desmarcar uno; hasta 3). */
+  #onPunishVote(playerId, msg, ack) {
+    if (this.punishStep !== 'vote') return ack('closed');
+    const res = this.punish.toggle(playerId, Number(msg.value));
+    ack(res === 'ok' ? 'ok' : res, res === 'full' ? 'Ya has votado 3: quita uno para cambiarlo.' : null);
+    if (res === 'ok') this.#afterChange({ persist: false });
   }
 
   /** Libre con contador: el móvil del concursante (uno por equipo) suma o resta. */
@@ -1405,8 +1549,8 @@ export class HostRoom extends EventTarget {
             label: SECTION_TYPES[r.section.type].label,
             description: r.section.description,
             points: r.section.points,
-            index: r.sectionIndex,
-            count: this.show.sections.length,
+            index: r.positionOf(r.sectionIndex) - 1, // entre las que se juegan
+            count: r.playedSections.length,
             env: sectionEnv(r.section, r.sectionIndex), // entorno de Halloween: el fondo del móvil
             // En juego: qué pregunta / prueba / ronda va (0 = sin lista).
             itemIndex: r.screen === SCREEN.PLAY ? r.itemIndex : null,
@@ -1426,6 +1570,10 @@ export class HostRoom extends EventTarget {
       answer: this.inAnswerPlay && !benched ? this.#answerViewFor(player) : null,
       free: this.inFreePlay ? this.#freeViewFor(player) : null,
       millionaire: this.inMillionairePlay && !benched ? this.#millionaireFor(player) : null,
+      words: this.games.palabras.inPlay && !benched ? this.games.palabras.viewFor(player) : null,
+      shake: this.games.agitar.inPlay && !benched ? this.games.agitar.viewFor(player) : null,
+      bet: this.games.apuesta.inPlay && !benched ? this.games.apuesta.viewFor(player) : null,
+      punish: this.punishView(player),
       turns: benched ? null : this.#turnsFor(player),
       benched, // el presentador, en una sección donde no juega
     };
@@ -1556,6 +1704,7 @@ export class HostRoom extends EventTarget {
       this.#syncAnswerRound();
       this.#syncFreeRound();
       this.#syncMillionaire();
+      this.#syncGames();
     }
     // Millonario sin nadie en el asiento (p. ej. la tele se recargó y aún no habían vuelto los móviles): en cuanto
     // haya alguien conectado, se sienta quien toca
@@ -1645,6 +1794,8 @@ export class HostRoom extends EventTarget {
       settings: this.settings,
       jokersUsed: this.jokers.toJSON(),
       itemResults: this.itemResults,
+      games: { palabras: this.games.palabras.toJSON() },
+      punish: this.punish.toJSON(),
       spokespeople: Object.fromEntries(this.spokespeople),
       turnOrders: this.turnOrders,
       setupStep: this.setupStep,

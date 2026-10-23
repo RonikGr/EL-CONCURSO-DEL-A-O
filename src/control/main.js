@@ -298,12 +298,16 @@ function gameTabBody() {
     case 'setup':
       return setupPanel();
     case 'cover':
+      if (view.punish?.step === 'vote') return punishVotePanel();
       if (view.versus) return [h('section', { class: 'c-card center' }, h('p', { class: 'c-kicker' }, 'En la tele: los equipos'), h('h2', {}, view.teams.map((t) => t.name).join(' vs '))), bigNext('Portada →'), navRow()];
       return [h('section', { class: 'c-card center' }, h('p', { class: 'c-kicker' }, 'En la tele: portada'), h('h2', {}, view.title)), bigNext('Presentar la primera sección →'), navRow()];
     case 'intro':
       if (view.section?.type === 'test' && view.playable && !view.introRules) return [sectionCard(), bigNext('Explicar cómo se juega →'), navRow()];
       return [sectionCard(), bigNext(view.playable ? 'Empezar sección →' : 'Saltar esta sección →'), navRow()];
     case 'play':
+      if (view.words) return wordsPanel();
+      if (view.shake) return shakePanel();
+      if (view.bet) return betPanel();
       if (view.millionaire) return millionairePanel();
       if (view.free) return freePanel();
       if (view.answer) return answerPanel();
@@ -311,10 +315,146 @@ function gameTabBody() {
     case 'scoreboard':
       return [standingsCard('Marcador'), bigNext('Siguiente sección →'), navRow()];
     case 'final':
-      return [standingsCard('Clasificación final'), navRow()];
+      if (view.punish?.step === 'roulette') return roulettePanel();
+      return [standingsCard('Clasificación final'), view.hasPunish ? bigNext('🎡 La ruleta del castigo →') : null, navRow()];
     default:
       return null;
   }
+}
+
+// ---------- Juegos nuevos y castigos
+
+/** Reloj que cuenta hacia atrás (lo que quedaba cuando llegó el estado). */
+let liveClockTimer = 0;
+function liveClock(msLeft) {
+  clearInterval(liveClockTimer);
+  const el = h('strong', { class: 'c-clock' });
+  const end = performance.now() + (msLeft ?? 0);
+  const step = () => (el.textContent = `${Math.max(0, Math.ceil((end - performance.now()) / 1000))} s`);
+  step();
+  liveClockTimer = setInterval(step, 250);
+  return el;
+}
+
+const WORD_MARK = { ok: '✓', pass: '↷', foul: '✗' };
+
+/** Palabras secretas: la tarjeta (tú la ves siempre), el reloj y los botones por si el móvil de quien juega falla. */
+function wordsPanel() {
+  const w = view.words;
+  const card = w.card;
+  const head = h(
+    'section',
+    { class: 'c-card' },
+    h('p', { class: 'c-kicker' }, `${view.section.name} · Turno ${w.turn} de ${w.turns}`),
+    h('h2', {}, w.actor ? `Le toca a ${w.actor.name}` : 'Nadie conectado'),
+    w.team ? h('p', { class: 'muted' }, w.team.name) : null,
+  );
+  const results = w.results.length ? h('p', { class: 'c-words' }, w.results.map((r) => h('span', { class: r.result }, `${WORD_MARK[r.result]} ${r.word}`))) : null;
+  if (w.phase === 'ready') return [head, h('p', { class: 'muted small center' }, 'Empieza al pulsar «¡Empezar!» en su móvil (o aquí).'), h('button', { class: 'btn primary big', onclick: () => cmd('wordsStart') }, '¡Empezar!'), navRow()];
+  if (w.phase === 'done')
+    return [
+      head,
+      h('section', { class: 'c-card center' }, h('h2', {}, `${w.score} ${w.score === 1 ? 'palabra' : 'palabras'}`), w.score ? h('p', {}, `+${w.score * w.points} ${w.team ? `para ${w.team.name}` : ''}`) : null, results),
+      h('button', { class: 'btn primary big', onclick: () => cmd('nextItem') }, 'Siguiente turno →'),
+      h('div', { class: 'c-row' }, btn('Repetir el turno', () => confirm('¿Repetir este turno? Se quitan sus puntos.') && cmd('restart'))),
+      navRow(),
+    ];
+  return [
+    head,
+    h(
+      'section',
+      { class: 'c-card c-word-card center' },
+      h('div', { class: 'c-row' }, liveClock(w.endsInMs), h('strong', {}, `✓ ${w.score}`)),
+      card ? h('p', { class: 'c-kicker' }, `${card.icon} ${card.label}`) : null,
+      card ? h('h2', { class: 'c-word' }, card.word) : null,
+      card?.banned?.length ? h('p', { class: 'c-banned' }, card.banned.join(' · ')) : null,
+    ),
+    h('div', { class: 'c-grid2' }, btn('Pasar', () => cmd('wordsPass')), btn('✓ ¡Acertada!', () => cmd('wordsOk'), 'primary')),
+    h('div', { class: 'c-grid2' }, btn('¡Falta!', () => cmd('wordsFoul'), 'danger'), btn('↶ Deshacer', () => cmd('wordsUndo'))),
+    results,
+    btn('Terminar el turno ya', () => cmd('wordsStop')),
+  ];
+}
+
+/** Agita el móvil: la salida y la carrera. */
+function shakePanel() {
+  const s = view.shake;
+  const head = h('section', { class: 'c-card' }, h('p', { class: 'c-kicker' }, [view.section.name, s.rounds > 1 ? `Ronda ${s.round} de ${s.rounds}` : ''].filter(Boolean).join(' · ')), h('h2', {}, '📱 Agita el móvil'), h('p', { class: 'muted' }, `${s.seconds} segundos · gana quien más agite`));
+  const list = h(
+    'ol',
+    { class: 'c-standings' },
+    s.players.map((p) => h('li', {}, h('span', {}, `${p.place ? `${p.place}º ` : ''}${p.name}`), h('strong', {}, String(p.total)), s.points?.[p.id] ? h('small', {}, ` +${s.points[p.id]}`) : null)),
+  );
+  if (s.phase === 'ready') return [head, h('button', { class: 'btn primary big', onclick: () => cmd('shakeStart') }, '¡Empezar! (3, 2, 1…)'), navRow()];
+  if (s.phase === 'done') return [head, h('section', { class: 'c-card' }, list), h('button', { class: 'btn primary big', onclick: () => cmd('nextItem') }, 'Siguiente →'), h('div', { class: 'c-row' }, btn('Repetir la ronda', () => confirm('¿Repetir esta ronda? Se quitan sus puntos.') && cmd('restart'))), navRow()];
+  return [head, h('section', { class: 'c-card' }, h('div', { class: 'c-row' }, liveClock(Math.max(0, s.endsInMs ?? 0))), list), btn('Parar ya', () => cmd('shakeStop'))];
+}
+
+/** La gran apuesta: tú ves las apuestas y respuestas de todos; puedes apostar o responder por un equipo. */
+function betPanel() {
+  const b = view.bet;
+  const L = ['A', 'B', 'C', 'D'];
+  const head = h('section', { class: 'c-card' }, h('p', { class: 'c-kicker' }, [view.section.name, b.rounds > 1 ? `Apuesta ${b.round} de ${b.rounds}` : ''].filter(Boolean).join(' · ')), h('h2', {}, '💰 La gran apuesta'), b.question ? h('p', {}, b.question) : null, b.options ? h('p', { class: 'muted' }, b.options.map((o, i) => `${L[i]}: ${o}${i === b.correct ? ' ✓' : ''}`).join(' · ')) : null);
+  const owners = h(
+    'section',
+    { class: 'c-card' },
+    b.owners.map((o) =>
+      h(
+        'div',
+        { class: 'c-row c-bet-owner' },
+        h('strong', {}, o.name),
+        h('span', { class: 'muted' }, `💰 ${o.bet ?? '—'} / ${o.max}`),
+        b.phase === 'betting' ? btn('Apostar…', () => {
+          const v = prompt(`¿Cuánto apuesta ${o.name}? (0 a ${o.max})`, String(o.bet ?? 0));
+          if (v != null) cmd('betSet', { owner: o.id, amount: Number(v) });
+        }) : null,
+        b.phase === 'question' ? h('span', {}, L.slice(0, b.options.length).map((l, i) => btn(l, () => cmd('betAnswer', { owner: o.id, index: i }), o.answer === i ? 'primary small' : 'small'))) : null,
+        b.phase === 'revealed' ? h('strong', { class: o.result > 0 ? 'ok' : o.result < 0 ? 'warn' : '' }, o.result > 0 ? `+${o.result}` : String(o.result ?? 0)) : null,
+      ),
+    ),
+  );
+  if (b.phase === 'betting') return [head, owners, h('button', { class: 'btn primary big', onclick: () => cmd('betClose') }, b.allBet ? 'Cerrar apuestas y ver la pregunta →' : 'Cerrar apuestas (faltan) →'), navRow()];
+  if (b.phase === 'question') return [head, owners, h('button', { class: 'btn primary big', onclick: () => cmd('betReveal') }, b.allAnswered ? 'Revelar →' : 'Revelar (no han respondido todos) →'), navRow()];
+  return [head, owners, h('button', { class: 'btn primary big', onclick: () => cmd('nextItem') }, 'Siguiente →'), navRow()];
+}
+
+/** Castigos: la votación (tras presentar los equipos). */
+function punishVotePanel() {
+  const p = view.punish;
+  const finalists = new Set(p.finalists?.map((f) => f.index) ?? []);
+  return [
+    h(
+      'section',
+      { class: 'c-card' },
+      h('p', { class: 'c-kicker' }, `Castigos · ${p.voters} ${p.voters === 1 ? 'ha votado' : 'han votado'}`),
+      h('h2', {}, p.closed ? 'Van a la ruleta' : 'Votando castigos'),
+      h(
+        'ol',
+        { class: 'c-standings' },
+        p.options.map((text, i) => h('li', { class: p.closed && !finalists.has(i) ? 'dim' : '' }, h('span', {}, `${finalists.has(i) ? '🎡 ' : ''}${text}`), h('strong', {}, String(p.tally[i])))),
+      ),
+    ),
+    h('button', { class: 'btn primary big', onclick: () => cmd('next') }, p.closed ? 'Portada →' : 'Cerrar votación (pasan 3) →'),
+    p.closed ? h('div', { class: 'c-row' }, btn('Volver a votar', () => confirm('¿Borrar los votos y votar otra vez?') && cmd('punishReopen'))) : null,
+    navRow(),
+  ];
+}
+
+/** Castigos: la ruleta (en el final). */
+function roulettePanel() {
+  const p = view.punish;
+  return [
+    h(
+      'section',
+      { class: 'c-card center' },
+      h('p', { class: 'c-kicker' }, 'La ruleta del castigo'),
+      p.loser ? h('h2', {}, `Pierde${p.loser.isTeam ? 'n' : ''}: ${p.loser.name}`) : null,
+      h('p', {}, (p.finalists ?? []).map((f) => f.text).join(' · ')),
+      p.spin ? h('p', { class: 'c-word' }, `🎡 ${p.spin.text}`) : null,
+    ),
+    p.spin ? null : h('button', { class: 'btn primary big', onclick: () => cmd('punishSpin') }, '🎡 ¡Girar la ruleta!'),
+    navRow(),
+  ];
 }
 
 function bigNext(label) {
@@ -333,6 +473,20 @@ function setupPanel() {
         h('h2', {}, view.title),
         h('p', { class: 'muted' }, `${view.sections.length} secciones · ${view.teams.length ? `${view.teams.length} equipos` : 'sin equipos'}`),
         h('p', { class: 'muted small' }, 'Carga la hoja y la carpeta del concurso en la tele. Luego, presenta el concurso: sale el título con su canción.'),
+      ),
+      h(
+        'section',
+        { class: 'c-card' },
+        h('p', { class: 'c-kicker' }, `¿Qué juegos jugamos? · ${view.sections.filter((s) => s.on).length} de ${view.sections.length}`),
+        view.sections.map((s) =>
+          h(
+            'label',
+            { class: `c-game ${s.on ? '' : 'off'}` },
+            h('input', { type: 'checkbox', checked: s.on, onchange: (e) => cmd('toggleSection', { id: s.id, on: e.target.checked }) }),
+            h('span', {}, s.name),
+            h('small', { class: 'muted' }, s.label),
+          ),
+        ),
       ),
       bigNext('Presentar el concurso →'),
     ];
@@ -392,7 +546,7 @@ function sectionCard() {
   return h(
     'section',
     { class: 'c-card' },
-    h('p', { class: 'c-kicker' }, `Sección ${view.sectionIndex + 1} de ${view.sections.length} · ${view.sectionLabel}`),
+    h('p', { class: 'c-kicker' }, `Sección ${view.sections.filter((s) => s.on && s.index <= view.sectionIndex).length} de ${view.sections.filter((s) => s.on).length} · ${view.sectionLabel}`),
     h('h2', {}, s.name),
     s.description ? h('p', {}, s.description) : null,
     h('p', { class: 'muted' }, `Puntos: ${s.points.join(' · ')}`),
@@ -1079,7 +1233,7 @@ function sectionsTab() {
                 },
               },
               h('span', { class: 'c-sec-name' }, `${s.index + 1}. ${s.name}`),
-              h('small', {}, `${s.label}${s.items ? ` · ${s.items}` : ''}${s.playable ? '' : ' · próximamente'}`),
+              h('small', {}, `${s.label}${s.items ? ` · ${s.items}` : ''}${s.playable ? '' : ' · próximamente'}${s.on ? '' : ' · no se juega esta noche'}`),
             ),
           ),
         ),

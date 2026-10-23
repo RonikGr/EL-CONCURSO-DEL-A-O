@@ -17,6 +17,7 @@ export const MSG = {
   FREE_COUNT: 'freeCount', // sección Libre: +1/−1 desde el móvil (0 = pedir llevar la cuenta)
   TURN_ORDER: 'turnOrder', // por turnos: el portavoz manda el orden de su equipo {order: [playerId…]}
   AWAY: 'away', // antitrampas: el jugador ha salido de la app ('out') o ha vuelto ('back', con los ms que estuvo fuera)
+  PLAY: 'play', // juegos nuevos (palabras, agitar, apuesta, castigo): {seq, game, roundId, action, value?}; responde answerAck
   CMD: 'cmd', // solo el mando
   // portátil → móvil
   WELCOME: 'welcome',
@@ -127,6 +128,10 @@ export function parsePlayerMessage(msg) {
     case MSG.AWAY:
       if (msg.state === 'out') return { t: msg.t, state: 'out' };
       return msg.state === 'back' && isNum(msg.ms) && msg.ms >= 0 ? { t: msg.t, state: 'back', ms: Math.min(msg.ms, 3_600_000) } : null;
+    case MSG.PLAY:
+      if (!isNum(msg.seq) || !isStr(msg.game, 20) || !isStr(msg.action, 20)) return null;
+      if (msg.value != null && !isNum(msg.value)) return null;
+      return { t: msg.t, seq: msg.seq, game: msg.game, roundId: optStr(msg.roundId, 80), action: msg.action, value: msg.value ?? null };
     case MSG.FREE_COUNT:
       return isNum(msg.seq) && isStr(msg.roundId, 80) && [-1, 0, 1].includes(msg.delta) ? { t: msg.t, seq: msg.seq, roundId: msg.roundId, delta: msg.delta } : null;
     case MSG.SYNC:

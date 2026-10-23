@@ -4,11 +4,13 @@ Pulsador de concurso con móviles, estilo Kahoot. La pantalla del presentador se
 conectado por HDMI); cada jugador usa su móvil como pulsador, sin instalar nada. Web 100 % estática
 (GitHub Pages) con WebRTC mediante [PeerJS](https://peerjs.com/).
 
-> Estado: **fase 9** — concurso por secciones con equipos, cargado desde una hoja de cálculo; la tele es el
+> Estado: **fase 10** — concurso por secciones con equipos, cargado desde una hoja de cálculo; la tele es el
 > espectáculo (tema de Halloween, con un decorado animado, música y efectos distintos en cada sección) y el
 > presentador lo maneja desde su móvil. Se juegan **Pulsador**, **Test** (como «¿Quién quiere ser millonario?»),
 > **Verdad o mentira**, **Dos verdades y una mentira**, **¿Quién es más probable…?**, **Estimación**,
-> **Parar el contador**, **Duelo de reflejos** y **Libre** (pruebas tipo «Fit o Fat» con cronómetro o contador).
+> **Parar el contador**, **Duelo de reflejos**, **Libre** (pruebas tipo «Fit o Fat» con cronómetro o contador),
+> **Palabras secretas** (mímica, Tabú, descríbelo, tararéalo), **Agita el móvil** y **La gran apuesta**. Antes de
+> empezar se eligen los juegos de la noche y se votan los **castigos** del equipo que pierda (al final, ruleta).
 
 ## Preparar el concurso
 
@@ -23,6 +25,10 @@ conectado por HDMI); cada jugador usa su móvil como pulsador, sin instalar nada
 4. Opcional: en la pestaña **Concurso**, la columna **Entorno** elige el decorado de cada sección (Cementerio, Bosque
    encantado, Huerto de calabazas, Laboratorio, Mansión encantada, Telaraña, Aquelarre, Cripta helada, Tormenta o
    Noche de luna). Si se deja vacía, cada sección tiene uno distinto.
+5. **Castigos**: en la pestaña Castigos, una opción por fila (sin filas, no hay castigo).
+6. La plantilla viene llena (12 secciones con preguntas de Halloween, equipos Zombies y Hombres Lobo): sirve tal cual.
+   ¿Una noche sin algún juego? No hace falta borrarlo: en la preparación de la tele, **¿Qué juegos jugamos?** tiene una
+   casilla por sección (también en el mando, pestaña Juego, durante la preparación). Las que quitas se saltan.
 
 ## Cómo se juega
 
@@ -34,20 +40,23 @@ conectado por HDMI); cada jugador usa su móvil como pulsador, sin instalar nada
 3. **Presentar el concurso**: el título en grande con su canción (hueco «Título del concurso» de 🎵 Música). Un toque
    o una tecla y sale el QR grande para que **se conecte la gente**: eligen nombre e icono y, si hay equipos, su equipo.
    Comprueba los equipos en la tele (se puede mover a alguien) y pulsa **Presentar los equipos**: los equipos se cierran
-   y sale «Los Rojos contra Los Azules» con su música (hueco «Presentación de equipos»).
-4. Portada → presentación de cada sección → preguntas → marcador → … → final con podios.
-5. En el **Pulsador**: «Mostrar pregunta» (la pone en grande en la tele), «Abrir turno» → a los 300 ms tele y
+   y sale «Zombies contra Hombres Lobo» con su música (hueco «Presentación de equipos»).
+4. **Castigos**: todos eligen en el móvil sus 3 favoritos de la lista (la tele va contando los votos). Siguiente cierra
+   la votación: los 3 más votados (empates al azar) van a la ruleta.
+5. Portada → presentación de cada sección → preguntas → marcador → … → final con podios → **ruleta del castigo**
+   (Espacio o «Girar» en el mando): gira 6 s y sale el castigo del equipo que ha quedado último.
+6. En el **Pulsador**: «Mostrar pregunta» (la pone en grande en la tele), «Abrir turno» → a los 300 ms tele y
    móviles pasan a **¡Pulsad!** a la vez. La primera pulsación llena la tele con el ganador, su tiempo y el orden de
    los siguientes (con «casi empate» si la diferencia es menor de 30 ms). Luego **Acierto** (suma los puntos de la
    sección) o **Fallo: rebote al resto** (bloquea a quien falló y reabre el turno), «Mostrar respuesta» y
    «Siguiente pregunta».
-6. Quien pulse antes de abrir el turno queda **bloqueado** en esa pregunta (se puede desactivar en **Ajustes** o
+7. Quien pulse antes de abrir el turno queda **bloqueado** en esa pregunta (se puede desactivar en **Ajustes** o
    perdonar con «Desbloquear»).
 
-7. **Test = «¿Quién quiere ser millonario?»**: concursa una persona cada vez, alternando equipos (pregunta 1 → Los
-   Rojos, pregunta 2 → Los Azules…) y dentro de cada equipo en el orden que eligió su portavoz. La plantilla trae
-   **2 fáciles, 2 medias y 2 difíciles** (columna «Dificultad»; vacía = por tercios), que valen **1, 3 y 5 puntos**
-   (columna Puntos del Test en la pestaña Concurso: «1,3,5»). Cada una suena con su música (fácil, media o difícil). No hay reloj: desde el mando vas **enseñando las respuestas** (una a
+8. **Test = «¿Quién quiere ser millonario?»**: concursa una persona cada vez, alternando equipos (pregunta 1 → Zombies,
+   pregunta 2 → Hombres Lobo…) y dentro de cada equipo en el orden que eligió su portavoz. La plantilla trae
+   **4 fáciles, 4 medias y 4 difíciles** (columna «Dificultad»; vacía = por tercios), que valen **2, 5 y 10 puntos**
+   (columna Puntos del Test en la pestaña Concurso: «2,5,10»). Cada una suena con su música (fácil, media o difícil). No hay reloj: desde el mando vas **enseñando las respuestas** (una a
    una o todas); el concursante elige en su móvil (tú ves cuál) y la **marcas** cuando la dé por definitiva (se pone
    amarilla con letras negras; también puedes marcar otra si la dice en voz alta); luego **muestras la correcta**: verde.
    - **Comodines**, uno de cada para todo el concurso, por equipo (o por jugador sin equipos), y solo con las cuatro
@@ -57,7 +66,7 @@ conectado por HDMI); cada jugador usa su móvil como pulsador, sin instalar nada
      con su reloj en la tele y su propia música).
    - Si el concursante sale de la app fuera de la llamada, aunque acierte no puntúa (puedes perdonarle).
    - En el teclado del portátil, Espacio: enseñar respuesta → marcar → mostrar la correcta → siguiente.
-8. En las secciones de **respuestas** (Verdad o mentira, Dos verdades, Votación, Estimación) todos responden a
+9. En las secciones de **respuestas** (Verdad o mentira, Dos verdades, Votación, Estimación) todos responden a
    la vez desde el móvil: «Abrir respuestas» → cuenta atrás (se cierra sola al acabar o cuando han respondido todos)
    → «Revelar» (respuesta correcta, recuento, quién suma) → «Siguiente pregunta». La primera respuesta es la buena.
    - **Votación**: nadie puede votarse; suman quienes votan al más votado (con empate, a cualquiera de los empatados).
@@ -66,13 +75,13 @@ conectado por HDMI); cada jugador usa su móvil como pulsador, sin instalar nada
      1 punto por cada uno al que engaña.
    - En el móvil, la respuesta se elige con un toque y se **confirma tocando otra vez la misma**.
    - «Reiniciar pregunta» después de revelar quita los puntos que dio esa pregunta.
-9. **Parar el contador**: «¡Empezar!» → cuenta atrás 3-2-1 → el reloj corre en la tele y en los móviles (visible, a
+10. **Parar el contador**: «¡Empezar!» → cuenta atrás 3-2-1 → el reloj corre en la tele y en los móviles (visible, a
    ciegas o desaparece a los N segundos, según la fila) → cada uno pulsa STOP → «Revelar» ordena por cercanía al
    objetivo. Cuenta el instante exacto del toque con el reloj sincronizado.
-10. **Duelo de reflejos**: «Poner en rojo» → entre 2 y 6 s después, al azar, todo se pone verde (tele y móviles a la
+11. **Duelo de reflejos**: «Poner en rojo» → entre 2 y 6 s después, al azar, todo se pone verde (tele y móviles a la
    vez) → gana la reacción más rápida. Quien pulsa en rojo queda fuera de esa ronda. En modo «Duelo», el presentador
    elige en el mando a los dos que juegan.
-11. **Libre** («Fit o Fat»): cada fila es una prueba. En el mando marcas quién participa (jugadores o equipos, según
+12. **Libre** («Fit o Fat»): cada fila es una prueba. En el mando marcas quién participa (jugadores o equipos, según
     la columna Participan) y la tele la presenta.
     - **Cronómetro**: «¡Empezar!» y, cuando alguien cae, «Eliminado» (con «Deshacer» por si te equivocas). Al caer el
       último se para solo. Gana quien más aguanta.
@@ -80,6 +89,19 @@ conectado por HDMI); cada jugador usa su móvil como pulsador, sin instalar nada
     - **Ninguna**: eliges al ganador directamente.
     - El mando propone el ganador (puedes cambiarlo o marcar varios) y «Dar puntos»: a cada jugador o, si participan
       equipos, al equipo entero.
+13. **Palabras secretas**: cada turno es de un equipo (se alternan; «Turnos por equipo» y «Segundos por turno» en
+    Ajustes) y lo hace el siguiente de ese equipo, en el orden de su portavoz. Su móvil le enseña la tarjeta (palabra,
+    modo y, en Tabú, las prohibidas) y pulsa «¡Empezar!»; luego «✓ ¡Acertada!» o «Pasar» con cada una. Su equipo
+    adivina en voz alta; el **equipo rival** ve la misma tarjeta en sus móviles y pulsa **¡Tabú!** (o ¡Falta!) si hace
+    trampa. La tele enseña el reloj, el modo y las que van saliendo, nunca la palabra en juego. Tú lo ves todo en el
+    mando y puedes corregir (acertada, pasar, falta, deshacer). Cada acertada da los puntos de la sección al equipo.
+    Modos: 🎭 Mímica, 🤐 Tabú, 🗣️ Descríbelo y 🎵 Tararéalo; las tarjetas no se repiten hasta que salen todas.
+14. **Agita el móvil**: «¡Empezar!» → 3-2-1 → todos agitan el móvil durante los segundos de la fila; la tele enseña la
+    carrera en directo (y el total de cada equipo). Gana quien más agite (puntos por puestos). En iPhone hay que tocar
+    «Activar el sensor» la primera vez; sin sensor, se juega dando toques a la pantalla.
+15. **La gran apuesta** (para el final): el portavoz de cada equipo (o cada uno, sin equipos) apuesta desde el móvil
+    cuántos puntos se juega, entre 0 y los que tiene (mínimo 5). «Cerrar apuestas» → sale la pregunta y responden →
+    «Revelar»: quien acierta gana lo apostado y quien falla lo pierde.
 
 En el móvil de cada concursante, bajo su nombre, se ve en qué sección está (nº de sección, tipo, pregunta y puntos en
 juego) y su equipo con el puesto. Tocando sus puntos se abre el **marcador** (equipos y concursantes, en directo) sin
@@ -88,7 +110,7 @@ salir de lo que está pasando: «Volver al juego» lo cierra.
 **Probar sin móviles:** en la barra de la tele (abajo; mueve el ratón si no se ve), **🤖 Pruebas**: «+1», «+5» o
 «Llenar los huecos» mete concursantes de prueba («🤖 Lola», «🤖 Paco»…) con equipo, icono y color, y juegan solos al
 azar: pulsan, responden, votan, eligen en el millonario, votan en el Público, ordenan su equipo si son portavoces y
-cuentan en Libre. Con «Responden solos» apagado, solo lo hacen al pulsar «¡Responded ya!». «Quitarlos» los saca.
+cuentan en Libre, hacen mímica (y a veces pitan falta), agitan, apuestan y votan castigos. Con «Responden solos» apagado, solo lo hacen al pulsar «¡Responded ya!». «Quitarlos» los saca.
 Tú llevas el concurso como siempre, desde el teclado o el mando.
 
 El mando tiene cuatro pestañas: **Juego** (lo que toca ahora), **Jugadores** (puntos ±, puntos de equipo, mover de

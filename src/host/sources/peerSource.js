@@ -154,6 +154,9 @@ export class PeerSource {
       case MSG.TURN_ORDER:
         this.handlers.onTurnOrder?.(entry.id, msg);
         break;
+      case MSG.PLAY:
+        this.handlers.onPlay?.(entry.id, msg);
+        break;
       case MSG.SYNC_REPORT:
         this.handlers.onSyncReport?.(entry.id, msg);
         break;

@@ -658,3 +658,226 @@ button.me-score {
     animation: none;
   }
 }
+
+/* ------------------------------------------------------------------ Juegos nuevos en el móvil */
+.games-pad {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.8rem;
+  padding: 0.4rem 0 1rem;
+  text-align: center;
+}
+
+.games-pad .ap-big.win {
+  color: var(--ok);
+}
+
+.games-pad .ap-big.lose {
+  color: #ff6b6b;
+}
+
+.gp-go {
+  margin-top: auto;
+}
+
+.gp-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.gp-clock {
+  margin: 0;
+}
+
+.gp-score {
+  margin: 0;
+  font-size: 1.8rem;
+  font-weight: 900;
+  color: var(--ok);
+}
+
+.gp-card {
+  display: grid;
+  gap: 0.5rem;
+  padding: 1.1rem 1rem;
+  border-radius: 1.2rem;
+  background: rgb(255 255 255 / 0.95);
+  color: #1b1030;
+  box-shadow: 0 0.6rem 1.6rem rgb(0 0 0 / 0.45);
+}
+
+.gp-mode {
+  margin: 0;
+  font-weight: 800;
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.gp-mode.big {
+  font-size: 1.6rem;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.gp-word {
+  margin: 0;
+  font-size: clamp(2.2rem, 11vw, 3.4rem);
+  font-weight: 900;
+  line-height: 1.05;
+  overflow-wrap: anywhere;
+}
+
+.gp-banned {
+  list-style: none;
+  margin: 0;
+  padding: 0.5rem 0 0;
+  border-top: 2px dashed rgb(0 0 0 / 0.2);
+  display: grid;
+  gap: 0.15rem;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #c62828;
+}
+
+.gp-rule {
+  margin: 0;
+  font-size: 0.9rem;
+  opacity: 0.75;
+}
+
+.gp-actions {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 0.6rem;
+  margin-top: auto;
+}
+
+.gp-actions .btn {
+  min-height: 4.2rem;
+  font-size: 1.3rem;
+}
+
+.gp-ok {
+  background: var(--ok);
+  color: #06210f;
+}
+
+.gp-foul {
+  min-height: 5rem;
+  margin-top: auto;
+  font-size: 1.6rem;
+  font-weight: 900;
+  background: #d32f2f;
+  color: #fff;
+}
+
+.gp-words {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.gp-words li {
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.1);
+}
+
+.gp-words li.ok {
+  background: color-mix(in srgb, var(--ok) 40%, transparent);
+}
+
+.gp-words li.foul {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+.gp-tap {
+  flex: 1;
+  display: grid;
+  place-content: center;
+  gap: 0.2rem;
+  min-height: 16rem;
+  border: 0;
+  border-radius: 1.5rem;
+  color: inherit;
+  background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--me, var(--accent)) 70%, #fff), var(--me, var(--accent)) 70%);
+  box-shadow: 0 0 2.5rem color-mix(in srgb, var(--me, var(--accent)) 55%, transparent);
+  touch-action: manipulation;
+}
+
+.gp-tap .ap-count {
+  margin: 0;
+}
+
+.gp-shake-num {
+  margin: 0;
+  font-size: 4rem;
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+
+.gp-bet {
+  margin: 0;
+  font-size: 2.4rem;
+  font-weight: 900;
+  color: var(--accent);
+}
+
+.gp-range {
+  width: 100%;
+  accent-color: var(--accent);
+}
+
+.gp-quick {
+  display: flex;
+  gap: 0.4rem;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.gp-options {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.gp-punish {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.gp-punish-opt {
+  min-height: 3.2rem;
+  text-align: left;
+  white-space: normal;
+}
+
+.gp-punish-opt.chosen,
+.gp-punish li.chosen {
+  background: var(--accent);
+  color: #1b1030;
+  font-weight: 800;
+}
+
+.gp-punish li {
+  padding: 0.7rem;
+  border-radius: 0.8rem;
+}
+
+.gp-punish-result {
+  margin: 0;
+  font-size: 1.8rem;
+  font-weight: 900;
+  color: var(--accent);
+}

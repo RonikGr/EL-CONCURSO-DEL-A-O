@@ -45,7 +45,8 @@ Ojo con PowerShell 5.1: `Get-Content`/`Set-Content` sin `-Encoding` rompen los a
   (pantallas), `main.js` (pintado, teclado, importar), persistencia (`concurso.host.v2`). Las conexiones entran por
   `sources/peerSource.js` (jugadores y mandos); fase futura: mandos físicos (Gamepad API) con offset 0.
   `show.css` = capa visual del espectáculo sobre `host.css`. `fx/` = espectáculo (ver «Espectáculo (fase 9)»).
-- `src/player/` — móvil del jugador: reconexión, sincronización, botón, elegir equipo.
+- `src/player/` — móvil del jugador: reconexión, sincronización, botón, elegir equipo; `gamesPad.js` = juegos de la fase 10.
+- `src/host/games/` — controladores de los juegos de la fase 10 (ver «Juegos de fiesta»).
 - **Concursantes de prueba** («🤖 Pruebas» en la barra de la tele, `host/botsDialog.js`; órdenes botsAdd {count},
   botsRemove, botsAuto {on}, botsAct): `host/bots.js` `BotPlayers` entra por los mismos manejadores que la red
   (`room` los guarda en `handlers` y se los pasa a PeerSource y a los bots), sin red: hello en los huecos libres (equipo
@@ -70,7 +71,8 @@ Jugador → tele: `hello {v, role:'player', playerId, name, color, icon, teamId}
 `answer {seq, roundId, value, tLocal?, offset?, err?}` (value = índice de opción, playerId votado o número),
 `joker {seq, roundId, kind, target?}` (millonario; target = a quién se llama), `freeCount {seq, roundId, delta}` (Libre con contador: +1/−1 desde el móvil elegido; responde
 `answerAck`), `turnOrder {order}` (portavoz: orden de su equipo en una sección por turnos), `away {state: out|back, ms?}`
-(antitrampas: salió de la app / volvió y cuánto estuvo fuera), `sync {id, t0}`, `syncReport {offset, err, rtt, samples}`.
+(antitrampas: salió de la app / volvió y cuánto estuvo fuera), `play {seq, game, roundId, action, value}` (juegos de la
+fase 10: game = palabras | agitar | apuesta | castigo; responde `answerAck`), `sync {id, t0}`, `syncReport {offset, err, rtt, samples}`.
 
 Tele → jugador: `welcome {you, adjusted}`, `state {room, title, playerCount, minPlayers, taken, teams, teamsLocked, you,
 screen, section, game, winner, answer, free, standings}` (`section` = nombre, tipo, descripción, puntos, nº de sección y de
@@ -87,6 +89,8 @@ luego `controlState {view}` (vista completa con respuestas, agrupada cada 150 ms
 scoreboard, toSetup, showQuestion, showAnswer, open, correct, wrong, restart, unlock, forgive, openAnswers, closeAnswers, reveal, setDuel,
 setSpokesperson, setTurnOrder, mShow, mSeat, mMark, mUnmark, mReveal, mCallStart, mCallEnd, mAudienceCancel, mAudienceEnd,
 freeParticipants, freeCounter, freeStart, freeOut, freeRevive, freeCount, freeStop, freeAward,
+wordsStart, wordsOk, wordsPass, wordsFoul, wordsUndo, wordsStop, shakeStart, shakeStop, betClose, betReveal, betSet, betAnswer,
+punishClose, punishReopen, punishSpin, toggleSection,
 lockTeams, moveTeam, adjustScore, adjustTeamBonus, resetScores, removePlayer, approveControl, denyControl, updateSettings.
 
 - Emparejar mando: la tele (preparación) enseña un QR a `control.html?sala=CÓDIGO#k=CLAVE` (la clave tras `#` no sale del
@@ -211,6 +215,42 @@ mientras la página no se pinta (ventana oculta o minimizada).
 - Recarga del presentador: estado en localStorage (`concurso.host.v1`, caduca a las 12 h) → "Recuperar sala". Se vuelve
   a registrar el mismo ID; si PeerJS lo tiene ocupado (`unavailable-id`) se reintenta cada 2 s.
 - Una vez establecidas, las conexiones son P2P: si cae el servidor PeerJS solo fallan las conexiones nuevas.
+
+### Juegos de fiesta (fase 10)
+
+Lógica pura con tests en `core/words.js`, `core/shake.js`, `core/bet.js` y `core/punishments.js`. En la tele, un
+controlador por juego en `host/games/` (`WordsGame`, `ShakeGame`, `BetGame`) con la misma forma: `type`, `inPlay`,
+`sync()` (crea la ronda de la pregunta actual o recupera la jugada de `itemResults`), `stop()`, `actions()` (órdenes que
+`room` añade a las suyas), `onMessage(playerId, msg, ack)` (mensajes `play`), `restart()` (R: quita sus puntos),
+`view({forControl})` (tele / mando), `viewFor(player)` (móvil) y `toJSON()`. Reciben `ctx = {room, changed, turnOrder,
+roundId, now, pub}`. `room` los guarda en `this.games`, mete `words` / `shake` / `bet` en la vista y en el estado del
+jugador (null si está en el banquillo) y les pasa los `play` (`#onPlay`; `castigo` va a la votación). Tele:
+`wordsStage.js` (y su `runRing`, reloj redondo), `shakeStage.js`, `betStage.js`; móvil: `player/gamesPad.js`; mando:
+`wordsPanel`, `shakePanel`, `betPanel`, `punishVotePanel`, `roulettePanel`.
+
+- **Palabras secretas** (pestaña Palabras: Palabra, Prohibidas, Modo): las filas son tarjetas (`section.cards`) y los
+  ítems del recorrido son **turnos** (`{turn, teamIndex, seconds}`: «Turnos por equipo» × equipos, alternando; sin
+  equipos, 6 que rotan entre la gente). Hace adivinar el k-ésimo del orden de su portavoz (`answererFor`). `WordDeck`
+  por sección (guardado en `games.palabras.decks`): no repite hasta acabar el mazo. `WordsRound`: ready → running
+  (reloj de «Segundos por turno») → done; marcas ok / pass / foul y deshacer. El que la hace y el **equipo rival** ven la
+  tarjeta en el móvil (el rival pita «¡Tabú!» = foul); su equipo y la tele, solo el modo. Puntos = acertadas ×
+  `points[0]` al bonus del equipo (sin equipos, a quien la hace). Modos en `WORD_MODES` (show.js).
+- **Agita el móvil** (pestaña Agitar: Segundos, una fila por carrera): `ShakeRound` con cuenta atrás de 3 s; el móvil
+  cuenta sacudidas con `devicemotion` (en iOS, botón «Activar el sensor»; sin sensor, cada toque vale 3) y manda su
+  total cada 250 ms (monótono, hasta 600 ms tras el final). Puntos por puestos. La tele se repinta como mucho cada 300 ms.
+- **La gran apuesta** (pestaña Apuesta, como el Test sin dificultad): `BetRound` betting → question → revealed. Apuesta
+  el portavoz de cada equipo (o cada jugador), de 0 a `maxBet(puntos) = max(5, puntos)`; sin apuesta = 0. Acierto
+  +apuesta, fallo −apuesta (al bonus del equipo o a los puntos del jugador). Tele y móviles no ven apuestas ni
+  respuestas ajenas hasta revelar; el mando sí, y puede apostar o responder por un equipo (`betSet`, `betAnswer`).
+- **Castigos** (pestaña Castigos → `show.punishments`; con 2 o más hay castigo): `PunishmentVote` (persistido en
+  `punish`). Tras la presentación de equipos, `punishStep = 'vote'`: cada uno marca 3 en el móvil; `next` cierra
+  (`close`: los 3 más votados, empates al azar → `finalists`) y el siguiente va a la portada. En el final, `next` →
+  `'roulette'` y `punishSpin` (o Espacio) elige al azar entre los finalistas para `loser` (último equipo, o último
+  jugador). La ruleta gira 6 s con CSS; un `spin` guardado se da por girado hace mucho al recargar (no vuelve a girar).
+- **Qué se juega:** `runner.skipped` (persistido) + orden `toggleSection {id, on}` (solo en la preparación; al menos
+  una). `next` / `prev` / fin de sección saltan las quitadas; nº de sección y total cuentan solo las que se juegan.
+- Los concursantes de prueba también juegan: hacen la tarjeta si les toca (65 % aciertan), pitan a veces, agitan a su
+  ritmo, apuestan y responden si son portavoces y votan 3 castigos.
 
 ### Justicia en los tiempos (fase 3)
 
@@ -337,8 +377,8 @@ mientras la página no se pinta (ventana oculta o minimizada).
   presentador y la sección no lo permite (Test, Verdad, Estimación…: ve las respuestas): fuera de los elegibles de
   respuestas, del pulsador (`closed`), del asiento y del público/llamada del millonario y del orden de su equipo (y mejor
   no portavoz); su móvil dice «🎤 Presentas» (`state.benched`) y la tele pone 🎤 en su tarjeta.
-- **Pantallas de la tele:** Preparación → Título → Conexión → Equipos (A vs B) → Portada → [Intro de sección → rondas →
-  Marcador] × N → Final (podios).
+- **Pantallas de la tele:** Preparación → Título → Conexión → Equipos (A vs B) → Votación de castigos → Portada →
+  [Intro de sección → rondas → Marcador] × N → Final (podios) → Ruleta del castigo.
 - **Equipos:** se eligen al entrar; antes de empezar, pantalla de comprobación y "Equipos cerrados" (solo el
   presentador puede mover a alguien después). Puntos individuales visibles; equipo = suma de sus miembros + puntos
   dados al equipo entero.
@@ -353,7 +393,7 @@ mientras la página no se pinta (ventana oculta o minimizada).
 - **Secciones:**
   - **Pulsador** (la actual) + la pregunta en grande en la tele cuando el presentador quiera.
   - **Test** = «¿Quién quiere ser millonario?»: un concursante cada vez; comodines 50:50, Público y Llamada (por equipo);
-    2 fáciles, 2 medias y 2 difíciles (columna «Dificultad» o por tercios) que valen 1 · 3 · 5 (Puntos del Test con tres
+    fáciles, medias y difíciles (columna «Dificultad» o por tercios; la plantilla trae 4 de cada) que valen 2 · 5 · 10 (Puntos del Test con tres
     valores: `pointsForLevel`; la pregunta lleva `level` y sus puntos, y su música es la de su dificultad).
   - **Verdad o mentira**: V/F a la vez; variante "Dos verdades y una mentira" sobre un jugador (él no vota).
   - **¿Quién es más probable que…?**: todos votan a un jugador; revelado con suspense; puntos a quien vota con la mayoría.
@@ -361,6 +401,10 @@ mientras la página no se pinta (ventana oculta o minimizada).
   - **Parar el contador**: objetivo en segundos; modo visible / a ciegas / desaparece a los N s, elegible por ronda.
   - **Duelo de reflejos**: rojo → verde tras 2–6 s al azar; pulsar en rojo elimina de la ronda; todos o un duelo.
   - **Libre** (p. ej. "Fit o Fat"): participantes y puntos; herramientas cronómetro (con "eliminado") y contador +1/−1.
+  - **Palabras secretas**: mímica, Tabú, descríbelo o tararéalo; uno del equipo la hace, el rival vigila y pita.
+  - **Agita el móvil**: carrera de sacudidas (acelerómetro). **La gran apuesta**: para el final, se apuestan los puntos.
+- **Castigos:** todos votan 3 al empezar; al final, ruleta entre los 3 más votados para el equipo que pierde.
+- **Qué se juega esta noche:** el presentador quita secciones con casillas en la preparación (sin tocar la hoja).
 
 ## Fases
 
@@ -376,5 +420,6 @@ mientras la página no se pinta (ventana oculta o minimizada).
 8. ~~Spotify~~ — descartado: la música la pone el presentador aparte.
 9. Espectáculo con tema de Halloween: entorno por sección (WebGL), música y efectos generados, transiciones, marcador
    animado, revelados con suspense, podio con confeti, wake lock, tarjetas compactas para 20 jugadores. ✔
+10. Juegos de fiesta: Palabras secretas, Agita el móvil, La gran apuesta; castigos con ruleta; elegir los juegos. ✔
 
-Hoja de ruta posterior: mandos físicos (Gamepad API), imagen pixelada, agitar el móvil, rosco, dibuja y adivina.
+Hoja de ruta posterior: mandos físicos (Gamepad API), imagen pixelada, rosco, dibuja y adivina.

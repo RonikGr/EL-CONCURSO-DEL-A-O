@@ -126,4 +126,24 @@ describe('recorrido del concurso', () => {
     expect(isPlayable(tres)).toBe(true);
     expect(isPlayable(null)).toBe(false);
   });
+
+  it('se salta las secciones que no se juegan esta noche', () => {
+    const r = new ShowRunner(show());
+    r.setSkipped('s1', true);
+    r.next(); // portada
+    r.next();
+    expect(where(r)).toEqual([SCREEN.INTRO, 1, 0]); // la primera que se juega
+    r.prev();
+    expect(r.screen).toBe(SCREEN.COVER); // y al volver, se la salta también
+    expect(r.playedSections.map((x) => x.name)).toEqual(['Dos', 'Tres']);
+    expect(r.positionOf(2)).toBe(2);
+    r.setSkipped('s3', true);
+    r.goToSection(1);
+    r.next(); // sin filas: se salta…
+    expect(r.screen).toBe(SCREEN.FINAL); // …y la siguiente no se juega
+    r.prev();
+    expect(where(r)).toEqual([SCREEN.SCOREBOARD, 1, 0]);
+    // se guarda
+    expect(new ShowRunner(show(), JSON.parse(JSON.stringify(r.toJSON()))).skipped).toEqual(new Set(['s1', 's3']));
+  });
 });

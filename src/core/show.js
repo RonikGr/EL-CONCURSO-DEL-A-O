@@ -17,6 +17,17 @@ export const SECTION_TYPES = {
   contador: { label: 'Parar el contador', sheet: 'Contador', ranked: true, presenterPlays: true, needsItems: true },
   reflejos: { label: 'Duelo de reflejos', sheet: 'Reflejos', ranked: true, presenterPlays: true, needsItems: false },
   libre: { label: 'Libre', sheet: 'Libre', ranked: false, presenterPlays: true, needsItems: true },
+  palabras: { label: 'Palabras secretas', sheet: 'Palabras', ranked: false, presenterPlays: false, needsItems: true },
+  agitar: { label: 'Agita el móvil', sheet: 'Agitar', ranked: true, presenterPlays: true, needsItems: false },
+  apuesta: { label: 'La gran apuesta', sheet: 'Apuesta', ranked: false, presenterPlays: false, needsItems: true },
+};
+
+/** Palabras secretas: cómo se hace adivinar cada palabra. */
+export const WORD_MODES = {
+  mimica: { label: 'Mímica', icon: '🎭', rule: 'Sin hablar ni hacer ruidos' },
+  tabu: { label: 'Tabú', icon: '🤐', rule: 'Explícala sin decir las palabras prohibidas' },
+  describe: { label: 'Descríbelo', icon: '🗣️', rule: 'Explícala sin decir la palabra' },
+  tararea: { label: 'Tararéalo', icon: '🎵', rule: 'Solo tarareando: sin letra' },
 };
 
 /** Tipos que ya se pueden jugar (el resto se muestra como "próximamente"). */
@@ -29,6 +40,8 @@ export const DEFAULT_SETTINGS = {
   lockEarlyBuzz: true,
   testSeconds: 20,
   jokers: { fifty: 1, audience: 1, call: 1 },
+  wordSeconds: 60, // Palabras secretas: segundos por turno
+  wordRounds: 2, // Palabras secretas: turnos por equipo
 };
 
 const RANKED_DEFAULT_POINTS = [3, 2, 1];
@@ -51,6 +64,7 @@ export function defaultShow() {
         items: [],
       },
     ],
+    punishments: [],
   };
 }
 
@@ -201,6 +215,10 @@ const COLUMNS = {
   contador: { section: ['seccion'], target: ['objetivo'], mode: ['modo'], hideAfter: ['desaparece a los', 'desaparece'] },
   reflejos: { section: ['seccion'], rounds: ['rondas'], mode: ['participan'] },
   libre: { section: ['seccion'], title: ['prueba'], description: ['descripcion'], tool: ['herramienta'], who: ['participan'], points: ['puntos'] },
+  palabras: { section: ['seccion'], word: ['palabra'], banned: ['prohibidas', 'palabras prohibidas'], mode: ['modo'] },
+  agitar: { section: ['seccion'], seconds: ['segundos'] },
+  apuesta: { section: ['seccion'], question: ['pregunta'], a: ['a'], b: ['b'], c: ['c'], d: ['d'], correct: ['correcta'] },
+  castigos: { text: ['castigo'] },
 };
 
 const TYPE_ALIASES = [
@@ -213,6 +231,9 @@ const TYPE_ALIASES = [
   ['contador', ['contador', 'parar el contador']],
   ['reflejos', ['reflejos', 'duelo de reflejos', 'semaforo']],
   ['libre', ['libre']],
+  ['palabras', ['palabras secretas', 'palabras', 'mimica', 'tabu']],
+  ['agitar', ['agita el movil', 'agitar', 'agita']],
+  ['apuesta', ['la gran apuesta', 'apuesta']],
 ];
 
 export function parseSectionType(value) {
@@ -251,6 +272,8 @@ export function parseShowWorkbook(sheets) {
         return n;
       };
       if (key.startsWith('titulo')) settings.title = text(value) || settings.title;
+      else if (key.includes('turno') && key.includes('segundo')) settings.wordSeconds = number(10) ?? settings.wordSeconds;
+      else if (key.includes('turnos por equipo')) settings.wordRounds = number(1) ?? settings.wordRounds;
       else if (key.includes('50')) settings.jokers.fifty = number() ?? settings.jokers.fifty;
       else if (key.includes('llamada')) settings.jokers.call = number() ?? settings.jokers.call;
       else if (key.includes('publico')) settings.jokers.audience = number() ?? settings.jokers.audience;
@@ -423,9 +446,28 @@ export function parseShowWorkbook(sheets) {
       const rows = s.items.length ? s.items : [{ rounds: 3, duel: false }];
       s.items = rows.flatMap((row) => Array.from({ length: row.rounds }, (_, i) => ({ round: i + 1, rounds: row.rounds, duel: row.duel })));
     }
+    if (s.type === 'agitar' && !s.items.length) s.items = [{ seconds: 10 }]; // sin filas: una ronda de 10 s
+    if (s.type === 'palabras' && s.items.length) {
+      // Las filas son las tarjetas; los «puntos» del recorrido, los turnos: cada equipo N veces, alternando
+      // (sin equipos, 6 turnos que van rotando entre la gente).
+      s.cards = s.items;
+      const nTeams = teams.length > 1 ? teams.length : 0;
+      const turns = nTeams ? settings.wordRounds * nTeams : 6;
+      s.items = Array.from({ length: turns }, (_, k) => ({ turn: k, teamIndex: nTeams ? k % nTeams : null, seconds: settings.wordSeconds }));
+    }
   }
 
-  const show = { title: settings.title, settings, teams: teams.length > 1 ? teams : [], sections };
+  // --- Castigos (para quien pierda): se votan al empezar y al final una ruleta elige uno
+  const punishments = [];
+  const castigos = findSheet(sheets, 'Castigos');
+  if (castigos) {
+    for (const { values } of readTable(castigos.data, COLUMNS.castigos).rows) {
+      const t = text(values.text);
+      if (t && !punishments.some((p) => norm(p) === norm(t))) punishments.push(t);
+    }
+  }
+
+  const show = { title: settings.title, settings, teams: teams.length > 1 ? teams : [], sections, punishments };
   return { show, errors, warnings };
 }
 
@@ -519,6 +561,41 @@ const ITEM_PARSERS = {
     const m = norm(v.mode);
     if (m && !['todos', 'duelo'].includes(m)) return err('"Participan" debe ser Todos o Duelo.');
     return { rounds, duel: m === 'duelo' };
+  },
+
+  /** Palabras secretas: una tarjeta (palabra, prohibidas y modo; sin modo: Tabú si tiene prohibidas, si no Mímica). */
+  palabras(v, err) {
+    const word = text(v.word);
+    if (!word) return err('Falta la palabra.');
+    const banned = text(v.banned)
+      .split(/[,;\n]/)
+      .map((w) => w.trim())
+      .filter(Boolean);
+    const m = norm(v.mode);
+    const mode = !m ? (banned.length ? 'tabu' : 'mimica') : m.startsWith('mim') ? 'mimica' : m.startsWith('tab') ? 'tabu' : m.startsWith('desc') ? 'describe' : m.startsWith('tara') ? 'tararea' : null;
+    if (!mode) return err('"Modo" debe ser Mímica, Tabú, Descríbelo o Tararéalo.');
+    if (mode === 'tabu' && !banned.length) return err('En Tabú hacen falta palabras prohibidas (separadas por comas).');
+    return { word, banned, mode };
+  },
+
+  agitar(v, err) {
+    const seconds = isEmpty(v.seconds) ? 10 : parseNumber(v.seconds);
+    if (seconds == null || seconds < 3 || seconds > 60) return err('"Segundos" debe ser un número entre 3 y 60.');
+    return { seconds };
+  },
+
+  /** La gran apuesta: una pregunta de opciones por fila (como el Test). */
+  apuesta(v, err) {
+    const question = text(v.question);
+    if (!question) return err('Falta la pregunta.');
+    const options = ['a', 'b', 'c', 'd'].map((k) => text(v[k]));
+    const lastFilled = options.findLastIndex(Boolean);
+    if (lastFilled < 1) return err('Hacen falta al menos dos respuestas (A y B).');
+    if (options.slice(0, lastFilled + 1).some((o) => !o)) return err('Las respuestas tienen que ir seguidas: no dejes A, B o C vacías.');
+    const letter = norm(v.correct).toUpperCase();
+    const correct = 'ABCD'.indexOf(letter);
+    if (letter.length !== 1 || correct < 0 || correct > lastFilled) return err('"Correcta" debe ser la letra de una de las respuestas (A, B, C o D).');
+    return { question, options: options.slice(0, lastFilled + 1), correct };
   },
 
   libre(v, err, settings, section) {

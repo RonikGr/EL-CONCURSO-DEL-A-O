@@ -586,3 +586,88 @@ body.offline .c-net {
 body.c-playing .c-main {
   display: none;
 }
+
+/* Preparación: qué juegos se juegan esta noche */
+.c-game {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.c-game input {
+  width: 1.3rem;
+  height: 1.3rem;
+  accent-color: var(--accent);
+}
+
+.c-game small {
+  margin-left: auto;
+}
+
+.c-game.off span {
+  text-decoration: line-through;
+  opacity: 0.55;
+}
+
+/* Juegos nuevos en el mando */
+.c-clock {
+  font-size: 1.6rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.c-word-card .c-word,
+.c-word {
+  margin: 0.3rem 0;
+  font-size: 2.2rem;
+  overflow-wrap: anywhere;
+}
+
+.c-banned {
+  margin: 0;
+  font-weight: 700;
+  color: #ff8a80;
+}
+
+.c-grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+
+.c-grid2 .btn {
+  min-height: 3.6rem;
+}
+
+.c-words {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin: 0.4rem 0 0;
+}
+
+.c-words span {
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.08);
+}
+
+.c-words .ok {
+  color: var(--ok);
+}
+
+.c-words .foul {
+  text-decoration: line-through;
+}
+
+.c-bet-owner {
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.4rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.c-standings li.dim {
+  opacity: 0.4;
+}

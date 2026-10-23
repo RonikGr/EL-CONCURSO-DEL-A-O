@@ -17,9 +17,15 @@ import { createStage } from './stage.js';
 import { createAnswerStage } from './answerStage.js';
 import { createFreeStage } from './freeStage.js';
 import { createMillionaireStage } from './millionaireStage.js';
+import { createWordsStage } from './wordsStage.js';
+import { createShakeStage } from './shakeStage.js';
+import { createBetStage } from './betStage.js';
+import { WPHASE } from '../core/words.js';
+import { SPHASE } from '../core/shake.js';
+import { BPHASE } from '../core/bet.js';
 import { MPHASE } from '../core/millionaire.js';
 import { APHASE } from '../core/answers.js';
-import { coverScreen, finalScreen, introScreen, scoreboardScreen, setupScreen, versusScreen } from './screens.js';
+import { coverScreen, finalScreen, introScreen, punishVoteScreen, rouletteScreen, scoreboardScreen, setupScreen, versusScreen } from './screens.js';
 import { openSettingsDialog } from './settingsDialog.js';
 import { createDebugPanel } from './debugPanel.js';
 import { Backdrop } from './fx/backdrop.js';
@@ -44,6 +50,9 @@ let stage = null;
 let answerStage = null;
 let freeStage = null;
 let millionaireStage = null;
+let wordsStage = null;
+let shakeStage = null;
+let betStage = null;
 let qrs = null; // {join, joinMini, control}
 let lastScreenSignature = null;
 const debug = createDebugPanel();
@@ -265,6 +274,9 @@ function renderShell() {
   answerStage = createAnswerStage();
   freeStage = createFreeStage();
   millionaireStage = createMillionaireStage();
+  wordsStage = createWordsStage();
+  shakeStage = createShakeStage();
+  betStage = createBetStage();
 
   clear(app).append(
     h(
@@ -384,6 +396,10 @@ function renderScreen(view) {
     // En el marcador y el final no se ve quién está conectado: que una desconexión no repita sus animaciones.
     players: view.players.map(({ rtt, connected, ...p }) => (view.screen === SCREEN.FINAL || view.screen === SCREEN.SCOREBOARD || view.peekScoreboard ? p : { ...p, connected })),
     settings: null,
+    // Lo que «falta» de un reloj cambia en cada vista: la pantalla ya lo calcula con su hora, no hay que repintar por ello
+    words: view.words && { ...view.words, endsInMs: null },
+    shake: view.shake && { ...view.shake, opensInMs: null, endsInMs: null },
+    punish: view.punish && { ...view.punish, spin: view.punish.spin && { ...view.punish.spin, ago: null } },
     // La apertura programada no cambia ningún dato: hay que repintar igualmente cuando llega.
     started: [
       view.game && t >= view.game.tOpen,
@@ -402,6 +418,9 @@ function renderScreen(view) {
   answerStage.stop();
   freeStage.stop();
   millionaireStage.stop();
+  wordsStage.stop();
+  betStage.stop();
+  if (!view.shake) shakeStage.stop(); // la carrera se repinta cada 300 ms: solo se reinicia al salir de ella
   // Los sonidos programados (suspense, podio) se anulan al cambiar de momento, no en cada repintado.
   const momentKey = [screenKey(view), view.answer?.roundId, view.answer?.phase, view.game?.phase, view.free?.phase].join('|');
   if (momentKey !== lastMomentKey) sound.cancel();
@@ -428,6 +447,7 @@ function renderScreen(view) {
           onLockTeams: (locked) => run('lockTeams', { locked }),
           onMoveTeam: (playerId, teamId) => run('moveTeam', { playerId, teamId }),
           onSpokesperson: (teamId, playerId) => run('setSpokesperson', { teamId, playerId }),
+          onToggleSection: (id, on) => run('toggleSection', { id, on }),
           folder: { name: folder.handle?.name ?? null, busy: folder.busy, report: folder.report, onChoose: () => loadFolder(false), onReread: () => loadFolder(true) },
           millionaireCount: [...trackStore.tracks.keys()].filter((k) => k.startsWith('mill:')).length,
           facesCount: faceStore.faces.length,
@@ -440,10 +460,20 @@ function renderScreen(view) {
         }),
       );
     case SCREEN.COVER:
-      return fill(screen, view.versus ? versusScreen(view) : coverScreen(view));
+      return fill(screen, view.versus ? versusScreen(view) : view.punish?.step === 'vote' ? punishVoteScreen(view) : coverScreen(view));
     case SCREEN.INTRO:
       return fill(screen, introScreen(view));
     case SCREEN.PLAY:
+      for (const [data, st] of [
+        [view.words, wordsStage],
+        [view.shake, shakeStage],
+        [view.bet, betStage],
+      ]) {
+        if (!data) continue;
+        st.render(view);
+        if (st.root.parentNode !== screen) fill(screen, st.root);
+        return;
+      }
       if (view.millionaire) {
         millionaireStage.render(view);
         if (millionaireStage.root.parentNode !== screen) fill(screen, millionaireStage.root);
@@ -468,7 +498,7 @@ function renderScreen(view) {
     case SCREEN.SCOREBOARD:
       return fill(screen, scoreboardScreen(view, { title: `Marcador tras «${view.section?.name ?? ''}»` }));
     case SCREEN.FINAL:
-      return fill(screen, finalScreen(view));
+      return fill(screen, view.punish?.step === 'roulette' ? rouletteScreen(view) : finalScreen(view));
   }
 }
 
@@ -677,7 +707,18 @@ document.addEventListener('keydown', (e) => {
   switch (e.code) {
     case 'Space':
       e.preventDefault(); // que no "pulse" el botón con foco
-      if (room.inMillionairePlay) {
+      if (room.games.palabras.inPlay) {
+        const p = room.games.palabras.round.phase;
+        if (p === WPHASE.READY) run('wordsStart');
+        else if (p === WPHASE.DONE) run('nextItem');
+      } else if (room.games.agitar.inPlay) {
+        const p = room.games.agitar.round.phase;
+        if (p === SPHASE.READY) run('shakeStart');
+        else if (p === SPHASE.DONE) run('nextItem');
+      } else if (room.games.apuesta.inPlay) {
+        const p = room.games.apuesta.round.phase;
+        run(p === BPHASE.BETTING ? 'betClose' : p === BPHASE.QUESTION ? 'betReveal' : 'nextItem');
+      } else if (room.inMillionairePlay) {
         const m = room.millionaire;
         if (m.phase === MPHASE.REVEALED) run('nextItem');
         else if (m.phase === MPHASE.MARKED) run('mReveal');
@@ -688,7 +729,7 @@ document.addEventListener('keydown', (e) => {
         run(next);
       } else if (phase === PHASE.IDLE) actions.open();
       else if (phase === PHASE.RESULT || phase === PHASE.CLOSED) actions.nextItem();
-      else if (phase == null && screen !== SCREEN.FINAL) run('next');
+      else if (phase == null && (screen !== SCREEN.FINAL || room.hasPunish)) run('next'); // en el final: la ruleta
       break;
     case 'ArrowRight':
       run('next');
@@ -703,13 +744,15 @@ document.addEventListener('keydown', (e) => {
       actions.showAnswer();
       break;
     case 'KeyR':
-      if (phase || answerPhase || room.inFreePlay || room.inMillionairePlay) actions.restart();
+      if (phase || answerPhase || room.inFreePlay || room.inMillionairePlay || Object.values(room.games).some((g) => g.inPlay)) actions.restart();
       break;
     case 'KeyA':
       if (phase === PHASE.RESULT) actions.correct();
+      else if (room.games.palabras.inPlay) run('wordsOk');
       break;
     case 'KeyF':
       if (phase === PHASE.RESULT) actions.wrong();
+      else if (room.games.palabras.inPlay) run('wordsFoul');
       break;
     case 'KeyM':
       run('scoreboard');
